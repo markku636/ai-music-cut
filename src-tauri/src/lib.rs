@@ -1,6 +1,7 @@
 mod commands;
 mod error;
 mod ffmpeg;
+mod media;
 mod proc;
 mod project;
 mod store;
@@ -41,17 +42,30 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::show_main_window,
+            commands::client_log,
+            commands::dev_env,
             commands::settings_get,
             commands::settings_set,
             commands::app_paths,
             commands::ffmpeg_detect,
             commands::media_probe,
             commands::media_fingerprint,
+            commands::media_cache_status,
+            commands::media_prepare,
+            commands::media_analyze_local,
+            commands::media_cancel,
+            commands::media_cache_write_transcript,
+            commands::media_cache_read_transcript,
+            commands::media_cache_clear,
             commands::ttls_health,
             commands::ttls_key_status,
             commands::ttls_key_set,
             commands::ttls_key_clear,
             commands::ttls_key_verify,
+            commands::ttls_transcribe_start,
+            commands::ttls_transcribe_poll,
+            commands::ttls_transcribe_result,
+            commands::ttls_transcribe_cancel,
             commands::project_save,
             commands::project_load,
             commands::open_path,

@@ -1,6 +1,6 @@
-//! Tauri command 薄層：`AppState` + 設定 / ffmpeg / 媒體 / ttls 金鑰 / 專案 / 開啟路徑。
-//! 媒體分析、轉寫、輸出、AI 助手各自在 `media.rs` / `transcribe.rs` / `render.rs` / `agent.rs`。
+//! Tauri command 薄層：`AppState` + 設定 / ffmpeg / 媒體 / ttls / 專案 / 開啟路徑。
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
@@ -8,15 +8,15 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::error::{AppError, AppResult};
-use crate::{ffmpeg, project, store, ttls};
+use crate::{ffmpeg, media, project, store, ttls};
 
 pub struct AppState {
     pub http: reqwest::Client,
     /// 解析後的 ffmpeg / ffprobe 路徑快取；設定變更時清空重解析。
     pub ffmpeg: Arc<Mutex<Option<ffmpeg::FfmpegBins>>>,
     pub settings: Arc<RwLock<store::AppSettings>>,
-    /// 媒體前處理（抽音 / 波形）背景任務（key = job_id）。
-    pub media_jobs: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
+    /// 可取消工作的旗標（key = job_id）：分析 / 輸出等長跑 ffmpeg 迴圈定期檢查。
+    pub cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
 }
 
 impl AppState {
@@ -28,7 +28,7 @@ impl AppState {
                 .expect("http client"),
             ffmpeg: Arc::new(Mutex::new(None)),
             settings: Arc::new(RwLock::new(store::AppSettings::default())),
-            media_jobs: Arc::new(Mutex::new(HashMap::new())),
+            cancel_flags: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -44,11 +44,41 @@ impl AppState {
         *self.ffmpeg.lock() = Some(b.clone());
         Ok(b)
     }
+
+    pub fn cancel_flag(&self, job_id: &str) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        self.cancel_flags.lock().insert(job_id.to_string(), flag.clone());
+        flag
+    }
+
+    pub fn clear_flag(&self, job_id: &str) {
+        self.cancel_flags.lock().remove(job_id);
+    }
+
+    fn base_url(&self) -> String {
+        self.settings.read().ttls_base_url.clone()
+    }
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// 前端錯誤 / 除錯訊息 → stderr（tauri dev 終端可見）。
+#[tauri::command]
+pub fn client_log(msg: String) {
+    eprintln!("[client] {msg}");
+}
+
+/// dev 煙霧測試用：只在 debug build 回環境變數（AICUT_DEV_OPEN / AICUT_DEV_ANALYZE）；release 一律 None。
+#[tauri::command]
+pub fn dev_env(name: String) -> Option<String> {
+    if cfg!(debug_assertions) {
+        std::env::var(name).ok().filter(|v| !v.trim().is_empty())
+    } else {
+        None
     }
 }
 
@@ -136,11 +166,89 @@ pub async fn media_fingerprint(path: String) -> AppResult<String> {
         .map_err(|e| AppError::Io(e.to_string()))?
 }
 
+#[tauri::command]
+pub fn media_cache_status(app: AppHandle, fingerprint: String) -> AppResult<media::CacheStatus> {
+    Ok(media::cache_status(&media::media_dir(&app, &fingerprint)?))
+}
+
+#[derive(Serialize)]
+pub struct PrepareResult {
+    pub upload_path: String,
+    pub cached: bool,
+}
+
+#[tauri::command]
+pub async fn media_prepare(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    fingerprint: String,
+) -> AppResult<PrepareResult> {
+    let bins = state.ffmpeg_bins().await?;
+    let dir = media::media_dir(&app, &fingerprint)?;
+    let (p, cached) = media::prepare_upload(&bins, &path, &dir).await?;
+    Ok(PrepareResult { upload_path: p.to_string_lossy().into_owned(), cached })
+}
+
+/// 回二進位（ArrayBuffer）：格式見 media.rs `Analyzer::finish`。
+#[tauri::command]
+pub async fn media_analyze_local(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    job_id: String,
+    path: String,
+    fingerprint: String,
+    duration_ms: u64,
+) -> AppResult<tauri::ipc::Response> {
+    let bins = state.ffmpeg_bins().await?;
+    let dir = media::media_dir(&app, &fingerprint)?;
+    let flag = state.cancel_flag(&job_id);
+    let r = media::analyze_local(&app, &bins, &path, &dir, &job_id, duration_ms, flag).await;
+    state.clear_flag(&job_id);
+    Ok(tauri::ipc::Response::new(r?))
+}
+
+#[tauri::command]
+pub fn media_cancel(state: State<'_, AppState>, job_id: String) {
+    if let Some(f) = state.cancel_flags.lock().get(&job_id) {
+        f.store(true, Ordering::Relaxed);
+    }
+}
+
+#[tauri::command]
+pub async fn media_cache_write_transcript(app: AppHandle, fingerprint: String, doc: serde_json::Value) -> AppResult<()> {
+    let dir = media::media_dir(&app, &fingerprint)?;
+    store::write_json_in(&dir, media::TRANSCRIPT_FILE, &doc).await
+}
+
+#[tauri::command]
+pub async fn media_cache_read_transcript(app: AppHandle, fingerprint: String) -> AppResult<Option<serde_json::Value>> {
+    let dir = media::media_dir(&app, &fingerprint)?;
+    let p = dir.join(media::TRANSCRIPT_FILE);
+    match tokio::fs::read(&p).await {
+        Ok(b) => Ok(serde_json::from_slice(&b).ok()),
+        Err(_) => Ok(None),
+    }
+}
+
+#[tauri::command]
+pub async fn media_cache_clear(app: AppHandle, fingerprint: Option<String>) -> AppResult<()> {
+    let root = store::app_cache_dir(&app)?.join("media");
+    let target = match fingerprint {
+        Some(fp) => media::media_dir(&app, &fp)?,
+        None => root,
+    };
+    if target.exists() {
+        tokio::fs::remove_dir_all(&target).await?;
+    }
+    Ok(())
+}
+
 // ---------------- ttls 健康 / 金鑰 ----------------
 
 #[tauri::command]
 pub async fn ttls_health(state: State<'_, AppState>) -> AppResult<ttls::TtlsHealth> {
-    let base = state.settings.read().ttls_base_url.clone();
+    let base = state.base_url();
     Ok(ttls::health(&state.http, &base).await)
 }
 
@@ -183,8 +291,41 @@ pub fn ttls_key_clear() -> KeyStatus {
 
 #[tauri::command]
 pub async fn ttls_key_verify(state: State<'_, AppState>) -> AppResult<bool> {
-    let base = state.settings.read().ttls_base_url.clone();
+    let base = state.base_url();
     ttls::verify_key(&state.http, &base).await
+}
+
+// ---------------- ttls 轉寫任務 ----------------
+
+#[tauri::command]
+pub async fn ttls_transcribe_start(
+    state: State<'_, AppState>,
+    upload_path: String,
+    language: String,
+    model: String,
+    hotwords: String,
+) -> AppResult<String> {
+    let base = state.base_url();
+    let opts = ttls::TranscribeOpts { language, model, hotwords };
+    ttls::transcribe_start(&state.http, &base, &upload_path, &opts).await
+}
+
+#[tauri::command]
+pub async fn ttls_transcribe_poll(state: State<'_, AppState>, job_id: String) -> AppResult<serde_json::Value> {
+    let base = state.base_url();
+    ttls::transcribe_poll(&state.http, &base, &job_id).await
+}
+
+#[tauri::command]
+pub async fn ttls_transcribe_result(state: State<'_, AppState>, job_id: String) -> AppResult<serde_json::Value> {
+    let base = state.base_url();
+    ttls::transcribe_result(&state.http, &base, &job_id).await
+}
+
+#[tauri::command]
+pub async fn ttls_transcribe_cancel(state: State<'_, AppState>, job_id: String) -> AppResult<()> {
+    let base = state.base_url();
+    ttls::transcribe_cancel(&state.http, &base, &job_id).await
 }
 
 // ---------------- 專案 ----------------

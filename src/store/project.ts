@@ -36,7 +36,7 @@ interface ProjectStore {
   markDirty: () => void;
   newProject: () => void;
   loadFrom: (path: string) => Promise<ProjectFileV1>;
-  saveTo: (path?: string) => Promise<string>;
+  saveTo: (path?: string, enrich?: (analysis: Record<string, MediaAnalysisV1>) => Record<string, MediaAnalysisV1>) => Promise<string>;
 }
 
 function fileName(p: string): string {
@@ -114,17 +114,18 @@ export const useProject = create<ProjectStore>((set, get) => ({
     return f;
   },
 
-  saveTo: async (path) => {
+  saveTo: async (path, enrich) => {
     const s = get();
+    const analysis = enrich ? enrich(s.analysis) : s.analysis;
     const target = path ?? s.path;
     if (!target) throw new Error("未指定專案檔路徑");
     const doc = buildProjectFile(
-      { media: s.media, activeMediaId: s.activeMediaId, settings: { aggressiveness: s.aggressiveness, targetLufs: s.targetLufs }, analysis: s.analysis },
+      { media: s.media, activeMediaId: s.activeMediaId, settings: { aggressiveness: s.aggressiveness, targetLufs: s.targetLufs }, analysis },
       { name: APP_NAME, version: __APP_VERSION__ },
       s.createdAt ? { createdAt: s.createdAt } : null,
     );
     await api.projectSave(target, doc);
-    set({ path: target, dirty: false, createdAt: doc.createdAt });
+    set({ path: target, dirty: false, createdAt: doc.createdAt, analysis });
     return target;
   },
 }));

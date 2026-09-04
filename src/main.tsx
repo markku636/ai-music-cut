@@ -2,6 +2,18 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { applyDocLang, readStoredLang, t, useLang } from "./i18n";
+import { invoke } from "@tauri-apps/api/core";
+
+// 前端錯誤回報到 Rust stderr（tauri dev 終端看得到；非 Tauri 環境靜默）。
+const report = (msg: string) => {
+  try {
+    void invoke("client_log", { msg }).catch(() => {});
+  } catch {
+    /* 非 Tauri 環境 */
+  }
+};
+window.addEventListener("error", (e) => report(`[error] ${e.message} @${e.filename}:${e.lineno}`));
+window.addEventListener("unhandledrejection", (e) => report(`[unhandledrejection] ${String((e as PromiseRejectionEvent).reason)}`));
 // 自我托管字體（離線內嵌，不連 CDN）：Inter 作介面字、JetBrains Mono 作資料 / SQL 等寬字。
 // 只內嵌 latin / latin-ext 子集（fonts.css），取代裸 import 的全語系 14 檔。
 import "./fonts.css";

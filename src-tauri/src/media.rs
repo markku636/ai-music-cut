@@ -78,7 +78,8 @@ pub async fn prepare_upload(bins: &FfmpegBins, src: &str, dir: &Path) -> AppResu
     let mut c = proc::cmd(&bins.ffmpeg);
     c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i"]);
     c.arg(src);
-    c.args(["-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "48k", "-application", "voip"]);
+    // 輸出先寫 .part 再 rename → 副檔名推不出容器，必須明確 -f ogg。
+    c.args(["-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "48k", "-application", "voip", "-f", "ogg"]);
     c.arg(&tmp);
     let o = c.output().await.map_err(|e| AppError::Ffmpeg(format!("ffmpeg 啟動失敗：{e}")))?;
     if !o.status.success() {

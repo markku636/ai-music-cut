@@ -63,6 +63,37 @@ export interface AppPaths {
   cache_dir: string;
 }
 
+export interface CacheStatus {
+  upload: boolean;
+  analysis: boolean;
+  transcript: boolean;
+  dir: string;
+}
+
+export interface PrepareResult {
+  upload_path: string;
+  cached: boolean;
+}
+
+/** ttls `GET /v1/transcribe/jobs/{id}` snapshot。 */
+export interface TranscribeJobInfo {
+  job_id: string;
+  status: "queued" | "running" | "post" | "done" | "failed" | "cancelled";
+  error: string | null;
+  progress: string | null;
+  summary: Record<string, unknown>;
+  result_url: string | null;
+  waiting_sec: number;
+  running_sec: number | null;
+}
+
+/** `media-progress` 事件 payload。 */
+export interface MediaProgress {
+  job_id: string;
+  phase: string;
+  pct: number;
+}
+
 /** Rust `AppError` 序列化形狀。 */
 export interface AppErrorShape {
   kind: string;
@@ -87,19 +118,39 @@ export function errStatus(e: unknown): number | null {
   return isAppError(e) ? (e.status ?? null) : null;
 }
 
+export function errKind(e: unknown): string | null {
+  return isAppError(e) ? e.kind : null;
+}
+
 export const api = {
   showMainWindow: () => invoke<void>("show_main_window"),
+  clientLog: (msg: string) => invoke<void>("client_log", { msg }),
+  devEnv: (name: string) => invoke<string | null>("dev_env", { name }),
   settingsGet: () => invoke<AppSettings>("settings_get"),
   settingsSet: (settings: AppSettings) => invoke<AppSettings>("settings_set", { settings }),
   appPaths: () => invoke<AppPaths>("app_paths"),
   ffmpegDetect: (custom?: string | null) => invoke<FfmpegStatus>("ffmpeg_detect", { custom: custom ?? null }),
   mediaProbe: (path: string) => invoke<MediaProbe>("media_probe", { path }),
   mediaFingerprint: (path: string) => invoke<string>("media_fingerprint", { path }),
+  mediaCacheStatus: (fingerprint: string) => invoke<CacheStatus>("media_cache_status", { fingerprint }),
+  mediaPrepare: (path: string, fingerprint: string) => invoke<PrepareResult>("media_prepare", { path, fingerprint }),
+  /** 回自訂二進位（見 analysis/peaks.ts）。 */
+  mediaAnalyzeLocal: (jobId: string, path: string, fingerprint: string, durationMs: number) =>
+    invoke<ArrayBuffer>("media_analyze_local", { jobId, path, fingerprint, durationMs }),
+  mediaCancel: (jobId: string) => invoke<void>("media_cancel", { jobId }),
+  mediaCacheWriteTranscript: (fingerprint: string, doc: unknown) => invoke<void>("media_cache_write_transcript", { fingerprint, doc }),
+  mediaCacheReadTranscript: (fingerprint: string) => invoke<unknown | null>("media_cache_read_transcript", { fingerprint }),
+  mediaCacheClear: (fingerprint?: string) => invoke<void>("media_cache_clear", { fingerprint: fingerprint ?? null }),
   ttlsHealth: () => invoke<TtlsHealth>("ttls_health"),
   ttlsKeyStatus: () => invoke<KeyStatus>("ttls_key_status"),
   ttlsKeySet: (key: string) => invoke<KeyStatus>("ttls_key_set", { key }),
   ttlsKeyClear: () => invoke<KeyStatus>("ttls_key_clear"),
   ttlsKeyVerify: () => invoke<boolean>("ttls_key_verify"),
+  ttlsTranscribeStart: (uploadPath: string, language: string, model: string, hotwords: string) =>
+    invoke<string>("ttls_transcribe_start", { uploadPath, language, model, hotwords }),
+  ttlsTranscribePoll: (jobId: string) => invoke<TranscribeJobInfo>("ttls_transcribe_poll", { jobId }),
+  ttlsTranscribeResult: (jobId: string) => invoke<unknown>("ttls_transcribe_result", { jobId }),
+  ttlsTranscribeCancel: (jobId: string) => invoke<void>("ttls_transcribe_cancel", { jobId }),
   projectSave: (path: string, doc: unknown) => invoke<void>("project_save", { path, doc }),
   projectLoad: (path: string) => invoke<unknown>("project_load", { path }),
   openPath: (path: string) => invoke<void>("open_path", { path }),

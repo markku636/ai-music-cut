@@ -317,6 +317,15 @@ const en: Catalog = {
   "靜音這段": "Mute this range",
   "預聽（前後各 1 秒）": "Preview (1 s before and after)",
   "（{dur} 音檔約需 {est}）": " (about {est} for {dur} of audio)",
+  "已複製": "Copied",
+  "複製失敗": "Copy failed",
+  "發生未預期的錯誤": "Something went wrong",
+  "確定": "OK",
+  "確認": "Confirm",
+  "載入中": "Loading",
+  "輸入": "Input",
+  "通知": "Notifications",
+  "重新載入": "Reload",
 };
 
 export default en;

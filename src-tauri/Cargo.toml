@@ -1,0 +1,61 @@
+[package]
+name = "ai-music-cut"
+version = "0.1.0"
+description = "AI Music Cut — AI podcast rough-cut desktop tool"
+license = "MIT"
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "ai_music_cut_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# protocol-asset：讓 <audio src= {convertFileSrc(path)}> 能直接播本機媒體（含 Range 請求 seek）。
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+# preserve_order：專案檔 / 逐字稿 JSON 鍵序照原樣寫回，diff 才好讀。
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+# ttls REST client：rustls（延續 db-kit 避開 OpenSSL / NASM 的原則），multipart 上傳 + stream 下載。
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots", "json", "multipart", "stream"] }
+thiserror = "1"
+parking_lot = "0.12"
+dirs = "6"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+# 媒體指紋（size ‖ 首尾 4 MiB）：同檔重開免重跑 ASR。
+blake3 = "1"
+# Windows 路徑正規化不帶 \\?\ 前綴（ffmpeg / asset protocol 都吃不下 verbatim path）。
+dunce = "1"
+# debug build 才讀 repo 根 .env.local（gitignored）的 AICUT_TTLS_API_KEY。
+dotenvy = "0.15"
+rand = "0.8"
+# 內建 MCP server（loopback + bearer token），供 claude CLI 以 --mcp-config 連入操作剪輯決策。
+axum = "0.8"
+# EBU R128 響度（純 Rust）：本機分析 momentary/short-term LUFS 視窗。
+ebur128 = "0.1"
+# 串流剪接輸出 concat.wav。
+hound = "3"
+
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

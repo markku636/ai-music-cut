@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <title>AI Music Cut</title>
+    <script>
+      // React 掛載前先套用深/淺類別，避免主題閃爍（FOUC）。判準與 theme.ts 的 readStoredThemeId 一致。
+      (function () {
+        try {
+          var id = localStorage.getItem("aicut:themeId");
+          if (id === "moonstone") document.documentElement.classList.add("light");
+        } catch (e) {}
+        try {
+          document.documentElement.lang =
+            localStorage.getItem("aicut:lang") === "en" ? "en" : "zh-Hant";
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <!-- 靜態骨架屏：JS bundle 下載期間先給品牌深色畫面；視窗以 visible:false 啟動，
+         骨架屏首次繪製後才呼叫 show_main_window，徹底消除白屏。 -->
+    <div id="boot-splash">
+      <style>
+        #boot-splash {
+          position: fixed; inset: 0; z-index: 300;
+          display: flex; align-items: center; justify-content: center;
+          background: radial-gradient(120% 90% at 50% 38%, #3a3950 0%, #2f303b 58%, #22212c 100%);
+        }
+        #boot-splash .dot {
+          width: 40px; height: 40px; border-radius: 50%;
+          border: 3px solid rgba(149, 128, 255, 0.22); border-top-color: #9580ff;
+          animation: boot-spin 0.9s linear infinite;
+        }
+        @keyframes boot-spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { #boot-splash .dot { animation: none; } }
+      </style>
+      <div class="dot"></div>
+    </div>
+    <script>
+      window.addEventListener("DOMContentLoaded", function () {
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            try {
+              window.__TAURI__ && window.__TAURI__.core.invoke("show_main_window");
+            } catch (e) {}
+          });
+        });
+      });
+    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

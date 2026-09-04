@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+# build output
+dist/
+dist-ssr/
+# tauri / rust
+src-tauri/target/
+src-tauri/gen/schemas/
+release/
+# env & secrets（ttls API key 只在 OS keychain；dev 用 .env.local，永不進版控）
+.env
+.env.local
+.env.*.local
+*.local
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+# logs
+*.log
+npm-debug.log*
+# 使用者資料 / 樣本媒體 / 輸出
+samples/**
+!samples/README.md
+outputs/
+*.aicut.json
+.aicut-cache/

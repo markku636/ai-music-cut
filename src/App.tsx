@@ -71,6 +71,13 @@ function previewSelected() {
 
 let devAutoOpened = false;
 
+/** 最近專案（設定檔，最多 10 筆）。 */
+function rememberRecent(path: string) {
+  const st = useSettings.getState();
+  const next = [path, ...st.s.recent_projects.filter((p) => p !== path)].slice(0, 10);
+  void st.save({ recent_projects: next });
+}
+
 function isAudioPath(p: string): boolean {
   const ext = p.split(".").pop()?.toLowerCase() ?? "";
   return AUDIO_EXTENSIONS.includes(ext);
@@ -126,6 +133,7 @@ export default function App() {
       if (!p) return;
       if (p.endsWith(".aicut.json")) {
         await useProject.getState().loadFrom(p);
+        rememberRecent(p);
         toast.success(t("已載入專案"));
         return;
       }
@@ -145,11 +153,29 @@ export default function App() {
         if (!target) return;
       }
       await st.saveTo(target, enrichAnalysis);
+      rememberRecent(target);
       toast.success(t("已儲存"));
     } catch (e) {
       toast.error(errMessage(e));
     }
   };
+
+  // 自動儲存：專案已有路徑且 dirty → 2 秒後靜默存檔（含逐字稿 / 決策）。
+  useEffect(() => {
+    let timer: number | undefined;
+    const un = useProject.subscribe((s, prev) => {
+      if (!s.dirty || !s.path || (s.dirty === prev.dirty && s.path === prev.path)) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const st = useProject.getState();
+        if (st.dirty && st.path) void st.saveTo(st.path, enrichAnalysis).catch(() => {});
+      }, 2000);
+    });
+    return () => {
+      un();
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   // MCP 工具橋：登記工具目錄並接工具呼叫。
   useEffect(() => {

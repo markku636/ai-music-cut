@@ -33,9 +33,21 @@ pub struct RenderJoin {
     pub ms: f64,
 }
 
+/// 區段效果（來源時間）：mute / gain / fade_in / fade_out；與前端 analysis/effects.ts 同一套包絡定義。
+#[derive(Debug, Clone, Deserialize)]
+pub struct RenderEffect {
+    pub kind: String,
+    pub start_ms: f64,
+    pub end_ms: f64,
+    #[serde(default)]
+    pub db: f64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RenderPlan {
     pub segs: Vec<RenderSeg>,
+    #[serde(default)]
+    pub effects: Vec<RenderEffect>,
     /// len = segs.len() − 1
     pub joins: Vec<RenderJoin>,
     pub crossfade_ms: f64,
@@ -76,9 +88,40 @@ fn ms_to_frames(ms: f64) -> u64 {
 }
 
 /// 串流剪接器：frame 逐一進來，依 plan 決定寫 / 丟；接點做等功率 crossfade 或 room tone gap。
+/// 靜音 / 增益邊緣的平滑長度（5 ms），避免爆音。
+const EDGE_FRAMES: u64 = SR as u64 / 200;
+
+/// 已換算成 frame 的效果：(kind, start, end, gain_lin)
+#[derive(Clone)]
+struct Fx {
+    kind: u8, // 0 mute, 1 gain, 2 fade_in, 3 fade_out
+    s: u64,
+    e: u64,
+    lin: f32,
+}
+
+fn fx_gain(fx: &Fx, t: u64) -> f32 {
+    if t < fx.s || t >= fx.e {
+        return 1.0;
+    }
+    let len = (fx.e - fx.s).max(1) as f32;
+    match fx.kind {
+        2 => (t - fx.s) as f32 / len,
+        3 => 1.0 - (t - fx.s) as f32 / len,
+        _ => {
+            let edge = EDGE_FRAMES.min((fx.e - fx.s) / 2).max(1) as f32;
+            let d = (t - fx.s).min(fx.e - t) as f32;
+            let w = (d / edge).clamp(0.0, 1.0);
+            let target = if fx.kind == 0 { 0.0 } else { fx.lin };
+            1.0 + (target - 1.0) * w
+        }
+    }
+}
+
 struct Cutter<W: std::io::Write + std::io::Seek> {
     ch: usize,
     segs: Vec<(u64, u64, f32)>, // (start_frame, end_frame, gain_lin)
+    fx: Vec<Fx>,
     joins: Vec<(String, u64)>,  // (kind, frames)
     xf: u64,
     si: usize,
@@ -100,9 +143,26 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
             .map(|s| (ms_to_frames(s.src_start_ms), ms_to_frames(s.src_end_ms), 10f32.powf((s.gain_db / 20.0) as f32)))
             .collect();
         let joins = plan.joins.iter().map(|j| (j.kind.clone(), ms_to_frames(j.ms))).collect();
+        let fx = plan
+            .effects
+            .iter()
+            .map(|e| Fx {
+                kind: match e.kind.as_str() {
+                    "mute" => 0,
+                    "gain" => 1,
+                    "fade_in" => 2,
+                    "fade_out" => 3,
+                    _ => 1,
+                },
+                s: ms_to_frames(e.start_ms),
+                e: ms_to_frames(e.end_ms),
+                lin: if e.kind == "gain" { 10f32.powf((e.db / 20.0) as f32) } else { 1.0 },
+            })
+            .collect();
         Self {
             ch: plan.channels.max(1) as usize,
             segs,
+            fx,
             joins,
             xf: ms_to_frames(plan.crossfade_ms.max(1.0)),
             si: 0,
@@ -206,7 +266,8 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
         if t == s && self.tail.is_empty() && self.si > 0 {
             // begin_segment 尚未被呼叫（上一段結束於此段開始前，已在 while 內處理）→ no-op
         }
-        let mut cur: Vec<f32> = frame.iter().map(|v| v * g).collect();
+        let env: f32 = self.fx.iter().map(|f| fx_gain(f, t)).product();
+        let mut cur: Vec<f32> = frame.iter().map(|v| v * g * env).collect();
         // 本段最後 xf 個 frame 扣住當 tail（若段夠長）
         let len = e - s;
         let hold = self.xf.min(len / 2);
@@ -485,6 +546,7 @@ mod tests {
     fn plan(segs: &[(f64, f64, f64)], joins: &[(&str, f64)]) -> RenderPlan {
         RenderPlan {
             segs: segs.iter().map(|&(a, b, g)| RenderSeg { src_start_ms: a, src_end_ms: b, gain_db: g }).collect(),
+            effects: vec![],
             joins: joins.iter().map(|&(k, ms)| RenderJoin { kind: k.into(), ms }).collect(),
             crossfade_ms: 20.0,
             target_lufs: -16.0,
@@ -534,6 +596,30 @@ mod tests {
         let gap_start = ms_to_frames(100.0) as usize;
         let gap_mid = &out[gap_start + 1000..gap_start + 2000];
         assert!(gap_mid.iter().all(|v| v.abs() < 0.01));
+    }
+
+    #[test]
+    fn mute_effect_silences_range_with_soft_edges() {
+        let mut p = plan(&[(0.0, 300.0, 0.0)], &[]);
+        p.effects.push(RenderEffect { kind: "mute".into(), start_ms: 100.0, end_ms: 200.0, db: 0.0 });
+        let out = run_cutter(&p, ms_to_frames(300.0));
+        // +12 frame = 1 kHz 正弦的四分之一週期 → 取樣在波峰，避開零交越點
+        let mid = ms_to_frames(150.0) as usize + 12;
+        assert!(out[mid].abs() < 1e-6, "mute 中段應為 0");
+        let before = ms_to_frames(50.0) as usize + 12;
+        assert!(out[before].abs() > 0.4, "mute 範圍外不受影響");
+        let edge = (ms_to_frames(100.0) + EDGE_FRAMES / 2) as usize + 12;
+        assert!(out[edge].abs() > 0.05 && out[edge].abs() < out[before].abs(), "邊緣應平滑衰減");
+    }
+
+    #[test]
+    fn fade_in_ramps_linearly() {
+        let mut p = plan(&[(0.0, 1000.0, 0.0)], &[]);
+        p.effects.push(RenderEffect { kind: "fade_in".into(), start_ms: 0.0, end_ms: 1000.0, db: 0.0 });
+        let out = run_cutter(&p, ms_to_frames(1000.0));
+        let q1 = ms_to_frames(250.0) as usize + 12;
+        let q3 = ms_to_frames(750.0) as usize + 12;
+        assert!(out[q3].abs() > out[q1].abs() * 2.0, "後段音量應明顯大於前段");
     }
 
     #[test]

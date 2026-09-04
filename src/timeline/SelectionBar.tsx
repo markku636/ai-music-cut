@@ -1,15 +1,15 @@
-import { Play, Repeat, Scissors, Square, X, ZoomIn } from "lucide-react";
+import { Crop, Play, Repeat, Scissors, Square, TrendingDown, TrendingUp, VolumeX, X, ZoomIn } from "lucide-react";
 import { useT } from "../i18n";
 import { playRange, stopRange } from "../preview/playerRef";
 import { usePlayback } from "../store/playback";
 import { useTimeline } from "../store/timeline";
 import { formatMs } from "../time";
 import { IconButton } from "../ui/index";
-import { clearSelection, cutSelection, keepOnlySelection } from "./selectionActions";
+import { addEffectOnSelection, clearSelection, cutSelection, keepOnlySelection } from "./selectionActions";
 
 /**
- * 浮在時間軸右上的選取動作列：範圍 / 長度、播放（可循環）、剪掉、只保留、縮放到選取、清除。
- * 沒有選取時不渲染。所有動作也有快捷鍵（Space / L 循環 / Delete / Z / Esc）。
+ * 浮在時間軸右下的選取動作列：範圍 / 長度、播放（可循環）、剪掉、只保留、靜音、淡入 / 淡出、縮放到選取、清除。
+ * 沒有選取時不渲染。所有動作也在右鍵選單與快捷鍵（Space / Delete / Z / Esc）。
  */
 export default function SelectionBar() {
   const t = useT();
@@ -24,7 +24,7 @@ export default function SelectionBar() {
   const len = selection.endMs - selection.startMs;
 
   return (
-    <div className="absolute top-1 right-3 z-20 flex items-center gap-0.5 pl-2 pr-1 h-8 rounded-md bg-elevated/95 border border-fg/10 shadow-e2 text-xs">
+    <div className="absolute bottom-2 right-3 z-20 flex items-center gap-0.5 pl-2 pr-1 h-8 rounded-md bg-elevated/95 border border-fg/10 shadow-e2 text-xs whitespace-nowrap">
       <span className="mono text-fg/70 tabular-nums mr-1" title={t("選取範圍 · 長度")}>
         {formatMs(selection.startMs, { millis: false })}–{formatMs(selection.endMs, { millis: false })}
         <span className="text-accent ml-1.5">{(len / 1000).toFixed(2)}s</span>
@@ -37,13 +37,13 @@ export default function SelectionBar() {
       />
       <IconButton icon={Repeat} label={t("循環播放選取")} active={loop} onClick={toggleLoop} />
       <span className="w-px h-4 bg-fg/10 mx-0.5" aria-hidden />
-      <button type="button" onClick={() => void cutSelection()} className="h-6 px-2 rounded-sm text-[11px] bg-danger/15 text-danger hover:bg-danger/25 inline-flex items-center gap-1" title={t("把選取的這段剪掉（Delete）")}>
-        <Scissors size={12} />
-        {t("剪掉")}
-      </button>
-      <button type="button" onClick={() => void keepOnlySelection()} className="h-6 px-2 rounded-sm text-[11px] text-fg/75 hover:bg-fg/10" title={t("只保留這段，頭尾都剪掉")}>
-        {t("只保留")}
-      </button>
+      <IconButton icon={Scissors} label={t("剪掉這段（Delete）")} className="text-danger" onClick={() => void cutSelection()} />
+      <IconButton icon={Crop} label={t("只保留這段（頭尾剪掉）")} onClick={() => void keepOnlySelection()} />
+      <span className="w-px h-4 bg-fg/10 mx-0.5" aria-hidden />
+      <IconButton icon={VolumeX} label={t("靜音這段")} onClick={() => addEffectOnSelection("mute")} />
+      <IconButton icon={TrendingUp} label={t("淡入")} onClick={() => addEffectOnSelection("fade_in")} />
+      <IconButton icon={TrendingDown} label={t("淡出")} onClick={() => addEffectOnSelection("fade_out")} />
+      <span className="w-px h-4 bg-fg/10 mx-0.5" aria-hidden />
       <IconButton icon={ZoomIn} label={t("縮放到選取（Z）")} onClick={zoomToSelection} />
       <IconButton icon={X} label={t("清除選取（Esc）")} onClick={clearSelection} />
     </div>

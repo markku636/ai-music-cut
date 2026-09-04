@@ -181,3 +181,84 @@ pub async fn transcribe_cancel(http: &reqwest::Client, base: &str, job_id: &str)
     }
     Err(err_from(r).await)
 }
+
+// ---------------- 去人聲 / 分軌（POST /v1/separate，同步；各軌 base64 回傳） ----------------
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SeparateStem {
+    pub name: String,
+    pub label: String,
+    pub format: String,
+    pub path: String,
+    pub bytes: u64,
+}
+
+/// 上傳原檔給 demucs（htdemucs）分離，各軌寫到 `out_dir/{base}_{stem}.{fmt}`。
+/// 同步端點沒有進度；逾時 20 分鐘。cancel 旗標為真時放棄等待（伺服器端仍會跑完）。
+pub async fn separate(
+    http: &reqwest::Client,
+    base: &str,
+    src_path: &str,
+    stems: &str,
+    target_format: &str,
+    out_dir: &std::path::Path,
+    base_name: &str,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> AppResult<Vec<SeparateStem>> {
+    use base64::Engine as _;
+    let file = tokio::fs::File::open(src_path).await?;
+    let len = file.metadata().await?.len();
+    let file_name = std::path::Path::new(src_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("audio.bin")
+        .to_string();
+    let stream = ReaderStream::new(file);
+    let part = reqwest::multipart::Part::stream_with_length(reqwest::Body::wrap_stream(stream), len)
+        .file_name(file_name)
+        .mime_str("application/octet-stream")?;
+    let form = reqwest::multipart::Form::new()
+        .part("audio", part)
+        .text("stems", stems.to_string())
+        .text("target_format", target_format.to_string())
+        .text("device", "auto");
+    let req = authed(http, reqwest::Method::POST, format!("{}/v1/separate", base_url(base)))?
+        .multipart(form)
+        .timeout(Duration::from_secs(1200))
+        .send();
+    let cancel_wait = async {
+        loop {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(300)).await;
+        }
+    };
+    let r = tokio::select! {
+        r = req => r?,
+        _ = cancel_wait => return Err(AppError::Canceled),
+    };
+    if !r.status().is_success() {
+        return Err(err_from(r).await);
+    }
+    let v: serde_json::Value = r.json().await?;
+    let items = v["stems"].as_array().cloned().unwrap_or_default();
+    if items.is_empty() {
+        return Err(AppError::Ttls { status: 200, detail: "伺服器沒有回傳任何分軌".into() });
+    }
+    tokio::fs::create_dir_all(out_dir).await?;
+    let mut out = Vec::with_capacity(items.len());
+    for it in items {
+        let name = it["name"].as_str().unwrap_or("stem").to_string();
+        let label = it["label"].as_str().unwrap_or(&name).to_string();
+        let format = it["format"].as_str().unwrap_or("wav").to_string();
+        let b64 = it["audio_b64"].as_str().unwrap_or("");
+        let data = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| AppError::Ttls { status: 200, detail: format!("分軌 {name} 資料解碼失敗：{e}") })?;
+        let path = out_dir.join(format!("{base_name}_{name}.{format}"));
+        tokio::fs::write(&path, &data).await?;
+        out.push(SeparateStem { name, label, format, path: path.to_string_lossy().to_string(), bytes: data.len() as u64 });
+    }
+    Ok(out)
+}

@@ -5,6 +5,7 @@ import type { Edl } from "../analysis/edl/build";
 import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
 import { splitUnits } from "../analysis/loudness/units";
 import { t } from "../i18n";
+import { useDecisions } from "../store/decisions";
 import { newJobId, useJobs } from "../store/jobs";
 import { useProject, type MediaItem } from "../store/project";
 import { useTranscript } from "../store/transcript";
@@ -47,8 +48,8 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   const tr = useTranscript.getState().byMedia[mediaId];
   const local = useTranscript.getState().local[mediaId];
   const edl = edlFor(mediaId);
-  if (!media || !tr || !edl) return null;
-  const units = splitUnits(edl.keeps, tr.vad);
+  if (!media || !edl) return null;
+  const units = splitUnits(edl.keeps, tr?.vad ?? []);
   const measured = local ? measureUnits(units, local) : units.map((u) => ({ ...u, lufs: null, peakDb: 0 }));
   const gains = opts.leveling && local ? planGains(measured, { ...DEFAULT_GAIN_OPTIONS, targetLufs: opts.targetLufs }) : units.map((u) => ({ unitId: u.id, gainDb: 0 }));
   const segs: RenderSeg[] = units.map((u, i) => ({ src_start_ms: u.startMs, src_end_ms: u.endMs, gain_db: gains[i]?.gainDb ?? 0 }));
@@ -61,8 +62,9 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     }
   }
   const channels = Math.max(1, Math.min(2, media.probe?.audio?.channels ?? 1));
+  const effects = (useDecisions.getState().effects[mediaId] ?? []).map((e) => ({ kind: e.kind, start_ms: e.startMs, end_ms: e.endMs, db: e.db ?? 0 }));
   return {
-    plan: { segs, joins, crossfade_ms: 20, target_lufs: opts.targetLufs, true_peak_dbtp: -1.5, format: opts.format, out_path: opts.outPath, channels },
+    plan: { segs, effects, joins, crossfade_ms: 20, target_lufs: opts.targetLufs, true_peak_dbtp: -1.5, format: opts.format, out_path: opts.outPath, channels },
     edl,
     units: units.length,
     gains,
@@ -75,7 +77,7 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
   const media = proj.media.find((m) => m.id === mediaId);
   if (!media) throw new Error(t("找不到媒體"));
   const built = buildRenderPlan(mediaId, opts);
-  if (!built) throw new Error(t("尚未分析，無法輸出"));
+  if (!built) throw new Error(t("無法建立輸出計畫（媒體尚未探測）"));
   const jobs = useJobs.getState();
   const jobId = newJobId();
   jobs.upsert({ id: jobId, kind: "render", mediaId, step: t("剪接"), pct: 0, status: "running", message: opts.outPath, cancel: () => void api.renderCancel(jobId) });

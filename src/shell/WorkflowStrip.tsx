@@ -38,6 +38,7 @@ export default function WorkflowStrip(p: WorkflowStripProps) {
   const mediaId = active?.id ?? null;
   const candidates = useDecisions((s) => (mediaId ? s.candidates[mediaId] ?? EMPTY : EMPTY));
   const decisions = useDecisions((s) => (mediaId ? s.decisions[mediaId] : undefined));
+  const effectCount = useDecisions((s) => (mediaId ? (s.effects[mediaId]?.length ?? 0) : 0));
   const analyzeJob = useJobs((s) => s.jobs.find((j) => j.kind === "analyze" && j.mediaId === mediaId && (j.status === "running" || j.status === "queued")));
   const rendered = useJobs((s) => s.jobs.some((j) => j.kind === "render" && j.mediaId === mediaId && j.status === "done"));
   const cancelJob = useJobs((s) => s.cancel);
@@ -88,9 +89,24 @@ export default function WorkflowStrip(p: WorkflowStripProps) {
           </Button>
         ),
       };
+    } else if (candidates.length || effectCount) {
+      // 未分析就先手動剪 / 加效果：可以直接輸出，也可以再分析
+      caption = {
+        text: t("已手動編輯 {n} 處（未分析）· 可直接輸出，或分析找贅字", { n: candidates.length + effectCount }),
+        cta: (
+          <>
+            <Button size="sm" variant="primary" onClick={p.onAnalyze}>
+              {t("開始分析")}
+            </Button>
+            <Button size="sm" onClick={p.onRender}>
+              {t("輸出")}
+            </Button>
+          </>
+        ),
+      };
     } else {
       caption = {
-        text: t("上傳 ttls 轉寫逐字稿，找出贅字 / 口吃 / 停頓"),
+        text: t("上傳 ttls 轉寫逐字稿，找出贅字 / 口吃 / 停頓；或直接用「選取」工具手動剪"),
         cta: (
           <Button size="sm" variant="primary" onClick={p.onAnalyze}>
             {t("開始分析")}

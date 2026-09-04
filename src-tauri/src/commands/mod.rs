@@ -334,6 +334,28 @@ pub async fn ttls_transcribe_cancel(state: State<'_, AppState>, job_id: String) 
     ttls::transcribe_cancel(&state.http, &base, &job_id).await
 }
 
+#[tauri::command]
+pub async fn ttls_separate(
+    state: State<'_, AppState>,
+    job_id: String,
+    path: String,
+    stems: String,
+    target_format: String,
+    out_dir: Option<String>,
+) -> AppResult<Vec<ttls::SeparateStem>> {
+    let base = state.base_url();
+    let src = std::path::Path::new(&path);
+    let dir = match out_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(d) => std::path::PathBuf::from(d),
+        None => src.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")),
+    };
+    let base_name = src.file_stem().and_then(|s| s.to_str()).unwrap_or("audio").to_string();
+    let flag = state.cancel_flag(&job_id);
+    let r = ttls::separate(&state.http, &base, &path, &stems, &target_format, &dir, &base_name, flag).await;
+    state.cancel_flags.lock().remove(&job_id);
+    r
+}
+
 // ---------------- 輸出 ----------------
 
 #[tauri::command]

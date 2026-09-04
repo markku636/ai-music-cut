@@ -58,7 +58,7 @@ export default function Segmented<T extends string>({
             title={o.title}
             onClick={() => onChange(o.value)}
             className={
-              `inline-flex items-center justify-center gap-1.5 px-3 rounded ${h} ` +
+              `inline-flex items-center justify-center gap-1.5 ${o.label === "" ? "px-2" : "px-3"} rounded whitespace-nowrap ${h} ` +
               (full ? "flex-1 " : "") +
               `font-medium transition-colors disabled:opacity-40 disabled:pointer-events-none ` +
               `focus-visible:outline-2 focus-visible:outline-accent/60 ` +
@@ -68,7 +68,7 @@ export default function Segmented<T extends string>({
             }
           >
             {o.icon && <Icon icon={o.icon} size={14} />}
-            {o.label}
+            {o.label !== "" && o.label}
           </button>
         );
       })}

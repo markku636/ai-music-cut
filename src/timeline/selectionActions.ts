@@ -1,5 +1,6 @@
 // 時間選取（拖選波形 / 逐字稿 Shift+點）的動作：剪掉、只保留、預聽、清除。
 // 不經 React 樹直接操作 store，讓快捷鍵、浮動動作列、MCP 工具都能共用同一套語意。
+import { effectId, type EffectKind } from "../analysis/effects";
 import type { Transcript } from "../analysis/types";
 import { playRange } from "../preview/playerRef";
 import { useDecisions } from "../store/decisions";
@@ -72,6 +73,29 @@ export function previewSelection(): boolean {
 
 export function clearSelection(): void {
   useTimeline.getState().setSelection(null);
+}
+
+/** 對目前選取加效果（靜音 / 淡入 / 淡出 / 增益 dB）。 */
+export function addEffectOnSelection(kind: EffectKind, db?: number): string | null {
+  const c = ctx();
+  if (!c) return null;
+  const id = effectId(kind, c.sel.startMs, c.sel.endMs, db);
+  useDecisions.getState().addEffect(c.mediaId, { id, kind, startMs: c.sel.startMs, endMs: c.sel.endMs, ...(db != null ? { db } : {}) });
+  return id;
+}
+
+export function updateEffectRange(id: string, startMs: number, endMs: number): void {
+  const mediaId = useProject.getState().activeMediaId;
+  if (!mediaId) return;
+  const s = Math.round(Math.min(startMs, endMs));
+  const e = Math.round(Math.max(startMs, endMs));
+  if (e - s < 20) return;
+  useDecisions.getState().updateEffect(mediaId, id, { startMs: s, endMs: e });
+}
+
+export function removeEffect(id: string): void {
+  const mediaId = useProject.getState().activeMediaId;
+  if (mediaId) useDecisions.getState().removeEffect(mediaId, id);
 }
 
 /** 拉候選邊界後：更新時間範圍與覆蓋的字。 */

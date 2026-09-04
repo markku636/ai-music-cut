@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Crosshair, FastForward, Maximize2, MousePointer2, Pause, Play, Rewind, Scissors, SquareDashed, ZoomIn, ZoomOut } from "lucide-react";
 import { IconButton, Segmented } from "../ui/index";
 import { useT } from "../i18n";
@@ -26,9 +27,19 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
   const setTool = useTimeline((s) => s.setTool);
   const removedMs = cuts.reduce((s, c) => s + (c.endMs - c.startMs), 0);
   const editedNow = editedTimeAt(cuts, currentMs);
+  // 窄版（主區 < 620px）：工具切換只留圖示、縮放讀數收起，避免換行擠成兩三列
+  const barRef = useRef<HTMLDivElement>(null);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setNarrow(el.clientWidth < 620));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   return (
-    <div className="min-h-10 shrink-0 flex flex-wrap items-center gap-x-1 gap-y-0.5 px-2 py-1 border-b border-fg/10 bg-panel min-w-0">
+    <div ref={barRef} className="min-h-10 shrink-0 flex flex-wrap items-center gap-x-1 gap-y-0.5 px-2 py-1 border-b border-fg/10 bg-panel min-w-0">
       <IconButton icon={Rewind} label={t("倒退 5 秒")} onClick={() => seekBy(-5000)} />
       <IconButton icon={playing ? Pause : Play} label={playing ? t("暫停") : t("播放")} iconSize={18} box="w-8 h-8" onClick={togglePlay} />
       <IconButton icon={FastForward} label={t("前進 5 秒")} onClick={() => seekBy(5000)} />
@@ -45,25 +56,28 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
       ) : (
         durationMs > 0 && <span className="text-[11px] text-fg/35 ml-3 whitespace-nowrap">{t("原始（尚未剪）")}</span>
       )}
-      <div className="ml-auto flex items-center gap-1">
-        <Segmented<TimelineTool>
-          size="sm"
-          value={tool}
-          onChange={setTool}
-          ariaLabel={t("時間軸工具")}
-          options={[
-            { value: "seek", label: t("定位"), icon: MousePointer2, title: t("點擊 / 拖曳定位播放位置（V）") },
-            { value: "select", label: t("選取"), icon: SquareDashed, title: t("在波形上拖曳選取一段，再播放、剪掉或只保留（S）") },
-          ]}
-        />
-        <span className="w-px h-4 bg-fg/10 mx-1" aria-hidden />
+      <Segmented<TimelineTool>
+        size="sm"
+        className="ml-auto"
+        value={tool}
+        onChange={setTool}
+        ariaLabel={t("時間軸工具")}
+        options={[
+          { value: "seek", label: narrow ? "" : t("定位"), icon: MousePointer2, title: t("定位：點擊 / 拖曳定位播放位置（V）") },
+          { value: "select", label: narrow ? "" : t("選取"), icon: SquareDashed, title: t("選取：在波形上拖曳選取一段，再播放、剪掉或只保留（S）") },
+        ]}
+      />
+      <span className="flex items-center gap-0.5">
         <IconButton icon={ZoomOut} label={t("縮小（Ctrl+-）")} onClick={() => zoomBy(0.8)} disabled={pxPerSec === null} />
-        <button type="button" onClick={fit} title={t("目前縮放；點擊回到全長")} className="h-7 min-w-14 px-1.5 rounded-sm text-[11px] mono text-fg/60 hover:bg-fg/5 tabular-nums">
-          {pxPerSec === null ? t("全長") : `${Math.round(pxPerSec)} px/s`}
-        </button>
+        {!narrow && (
+          <button type="button" onClick={fit} title={t("目前縮放；點擊回到全長")} className="h-7 min-w-14 px-1.5 rounded-sm text-[11px] mono text-fg/60 hover:bg-fg/5 tabular-nums whitespace-nowrap">
+            {pxPerSec === null ? t("全長") : `${Math.round(pxPerSec)} px/s`}
+          </button>
+        )}
         <IconButton icon={ZoomIn} label={t("放大（Ctrl+=）")} onClick={() => zoomBy(1.25)} />
         <IconButton icon={Maximize2} label={t("整段適配（Ctrl+0）")} active={pxPerSec === null} onClick={fit} />
-        <span className="w-px h-4 bg-fg/10 mx-1" aria-hidden />
+      </span>
+      <span className="flex items-center gap-0.5">
         <IconButton
           icon={Scissors}
           label={cuts.length ? (skipEnabled ? t("跳過剪除區段（開）") : t("播放原始（跳過關）")) : t("有剪除區段後可切換跳播")}
@@ -72,7 +86,7 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
           onClick={toggleSkip}
         />
         <IconButton icon={Crosshair} label={t("跟隨播放位置")} active={follow} onClick={toggleFollow} />
-      </div>
+      </span>
     </div>
   );
 }

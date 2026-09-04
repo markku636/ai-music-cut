@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Music } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, Crop, Music, Play, Repeat, Scissors, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, X, ZoomIn } from "lucide-react";
+import type { AudioEffect } from "../analysis/effects";
 import { activeRanges } from "../analysis/edl/build";
 import { isActiveState, type Candidate, type DecisionMap } from "../analysis/types";
 import { EmptyState, Button } from "../ui/index";
@@ -7,6 +8,8 @@ import { useT } from "../i18n";
 import { restoreAnalysis } from "../pipeline/analyze";
 import { ensureLocalAnalysis } from "../pipeline/waveform";
 import AudioPlayer from "../preview/AudioPlayer";
+import { playRange } from "../preview/playerRef";
+import { useEffectPreview } from "../preview/useEffectPreview";
 import TransportBar from "../preview/TransportBar";
 import { useSkipPlayback } from "../preview/useSkipPlayback";
 import { useDecisions } from "../store/decisions";
@@ -15,8 +18,9 @@ import { selectActiveMedia, useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
 import { useTranscript } from "../store/transcript";
 import SelectionBar from "../timeline/SelectionBar";
-import { applyCandidateRange } from "../timeline/selectionActions";
-import Timeline from "../timeline/Timeline";
+import { addEffectOnSelection, applyCandidateRange, clearSelection, cutSelection, keepOnlySelection, removeEffect, updateEffectRange } from "../timeline/selectionActions";
+import Timeline, { type WaveMenuInfo } from "../timeline/Timeline";
+import WaveContextMenu, { type MenuItem } from "../timeline/WaveContextMenu";
 import TranscriptEditor from "../transcript/TranscriptEditor";
 import TranscriptPlaceholder from "../transcript/TranscriptPlaceholder";
 import Splitter from "./Splitter";
@@ -24,6 +28,8 @@ import { useResizable } from "./useResizable";
 
 const EMPTY_C: Candidate[] = [];
 const EMPTY_D: DecisionMap = {};
+const EMPTY_E: AudioEffect[] = [];
+const GAIN_STEPS = [6, 3, -3, -6, -12];
 
 export interface MainAreaProps {
   onOpen: () => void;
@@ -39,8 +45,15 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   const local = useTranscript((s) => (mediaId ? s.local[mediaId] ?? null : null));
   const candidates = useDecisions((s) => (mediaId ? s.candidates[mediaId] ?? EMPTY_C : EMPTY_C));
   const decisions = useDecisions((s) => (mediaId ? s.decisions[mediaId] ?? EMPTY_D : EMPTY_D));
+  const effects = useDecisions((s) => (mediaId ? s.effects[mediaId] ?? EMPTY_E : EMPTY_E));
   const selectedIds = useDecisions((s) => s.selectedIds);
   const select = useDecisions((s) => s.select);
+  const removeCandidate = useDecisions((s) => s.removeCandidate);
+  const [menu, setMenu] = useState<WaveMenuInfo | null>(null);
+  const loopSel = useTimeline((s) => s.loopSelection);
+  const toggleLoop = useTimeline((s) => s.toggleLoop);
+  const zoomToSelection = useTimeline((s) => s.zoomToSelection);
+  const fitZoom = useTimeline((s) => s.fit);
   const decide = useDecisions((s) => s.decide);
   const toggleWordCut = useDecisions((s) => s.toggleWordCut);
   const seek = usePlayback((s) => s.seek);
@@ -51,6 +64,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
 
   const cuts = useMemo(() => activeRanges(candidates, decisions), [candidates, decisions]);
   useSkipPlayback(cuts);
+  useEffectPreview(effects);
 
   // 開檔 / 切換媒體：波形立刻算（只需 ffmpeg；快取命中幾乎即時）。失敗留在 job 裡由 placeholder 顯示。
   useEffect(() => {
@@ -63,6 +77,58 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
     setSelection(null);
     anchorWord.current = null;
   }, [active?.id, active?.analysis]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** 右鍵選單內容：依游標下是候選 / 效果 / 有無選取決定。 */
+  const menuItems = (info: WaveMenuInfo): MenuItem[] => {
+    const dur = active?.probe?.duration_ms ?? 0;
+    const c = info.candidateId ? candidates.find((x) => x.id === info.candidateId) : undefined;
+    if (c && mediaId) {
+      const st = decisions[c.id]?.state;
+      return [
+        { label: `${c.reason}`, disabled: true },
+        { separator: true },
+        { label: t("預聽（前後各 1 秒）"), icon: Play, shortcut: "P", onClick: () => playRange(c.startMs - 1000, c.endMs + 1000, { skip: isActiveState(st) }) },
+        { label: t("剪掉"), icon: Check, shortcut: "A", checked: isActiveState(st), onClick: () => decide(mediaId, [c.id], "accepted") },
+        { label: t("不剪（保留）"), icon: X, shortcut: "R", checked: st === "rejected", onClick: () => decide(mediaId, [c.id], "rejected") },
+        { label: t("選取這段範圍"), icon: SquareDashed, onClick: () => setSelection({ startMs: c.startMs, endMs: c.endMs }) },
+        { separator: true },
+        { label: t("移除這個候選"), icon: Trash, danger: true, disabled: c.source !== "user", onClick: () => removeCandidate(mediaId, c.id) },
+      ];
+    }
+    const fx = info.effectId ? effects.find((x) => x.id === info.effectId) : undefined;
+    if (fx) {
+      return [
+        { label: t("選取這段範圍"), icon: SquareDashed, onClick: () => setSelection({ startMs: fx.startMs, endMs: fx.endMs }) },
+        { label: t("移除效果"), icon: Trash, danger: true, onClick: () => removeEffect(fx.id) },
+      ];
+    }
+    if (selection) {
+      return [
+        { label: t("播放選取"), icon: Play, shortcut: "Space", onClick: () => playRange(selection.startMs, selection.endMs, { skip: false, loop: loopSel }) },
+        { label: t("循環播放"), icon: Repeat, checked: loopSel, onClick: toggleLoop },
+        { separator: true },
+        { label: t("剪掉"), icon: Scissors, shortcut: "Delete", danger: true, onClick: () => void cutSelection() },
+        { label: t("只保留（頭尾剪掉）"), icon: Crop, onClick: () => void keepOnlySelection() },
+        { separator: true },
+        { label: t("靜音"), icon: VolumeX, onClick: () => addEffectOnSelection("mute") },
+        { label: t("淡入"), icon: TrendingUp, onClick: () => addEffectOnSelection("fade_in") },
+        { label: t("淡出"), icon: TrendingDown, onClick: () => addEffectOnSelection("fade_out") },
+        ...GAIN_STEPS.map<MenuItem>((db) => ({ label: t("增益 {db} dB", { db: db > 0 ? `+${db}` : db }), icon: Volume2, onClick: () => addEffectOnSelection("gain", db) })),
+        { separator: true },
+        { label: t("縮放到選取"), icon: ZoomIn, shortcut: "Z", onClick: zoomToSelection },
+        { label: t("清除選取"), icon: X, shortcut: "Esc", onClick: clearSelection },
+      ];
+    }
+    return [
+      { label: t("從這裡播放"), icon: Play, onClick: () => { seek(info.ms); playRange(info.ms, dur, { skip: true }); } },
+      { separator: true },
+      { label: t("從開頭選到這裡"), icon: SquareDashed, onClick: () => setSelection({ startMs: 0, endMs: info.ms }) },
+      { label: t("從這裡選到結尾"), icon: SquareDashed, onClick: () => setSelection({ startMs: info.ms, endMs: dur }) },
+      { label: t("全選"), icon: SquareDashed, shortcut: "Ctrl+A", onClick: () => setSelection({ startMs: 0, endMs: dur }) },
+      { separator: true },
+      { label: t("整段適配"), icon: ZoomIn, shortcut: "Ctrl+0", onClick: fitZoom },
+    ];
+  };
 
   const toggleCandidate = (id: string) => {
     if (!mediaId) return;
@@ -96,10 +162,14 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
               onSelect={(id) => select([id])}
               onToggle={toggleCandidate}
               onRangeChange={applyCandidateRange}
+              effects={effects}
+              onEffectChange={updateEffectRange}
+              onContextMenu={setMenu}
               onRetry={() => void ensureLocalAnalysis(active.id).catch(() => {})}
               onOpenSettings={onOpenSettings}
             />
             <SelectionBar />
+            {menu && <WaveContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
           </div>
           <Splitter axis="y" onPointerDown={timeline.onPointerDown} />
           {transcript ? (

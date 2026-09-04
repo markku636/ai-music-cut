@@ -7,6 +7,7 @@ import { installToolBridge } from "./assistant/tools";
 import DecisionPanel from "./decisions/DecisionPanel";
 import AboutDialog from "./dialogs/AboutDialog";
 import RenderDialog from "./dialogs/RenderDialog";
+import SeparateDialog from "./dialogs/SeparateDialog";
 import SettingsDialog, { type SettingsFocus } from "./dialogs/SettingsDialog";
 import ShortcutsHelp from "./dialogs/ShortcutsHelp";
 import { installHotkeys } from "./hotkeys";
@@ -115,6 +116,7 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [renderOpen, setRenderOpen] = useState(false);
+  const [separateOpen, setSeparateOpen] = useState(false);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
   const openSettings = (focus: SettingsFocus = null) => {
@@ -277,6 +279,10 @@ export default function App() {
         toolSeek: () => useTimeline.getState().setTool("seek"),
         toolSelect: () => useTimeline.getState().setTool("select"),
         escape: () => clearSelection(),
+        selectAll: () => {
+          const m = selectActiveMedia(useProject.getState());
+          if (m?.probe) useTimeline.getState().setSelection({ startMs: 0, endMs: m.probe.duration_ms });
+        },
       }),
     [],
   );
@@ -298,6 +304,8 @@ export default function App() {
         canJudge={!!active && active.analysis === "ready"}
         onRender={() => setRenderOpen(true)}
         canRender={!!active}
+        onSeparate={() => setSeparateOpen(true)}
+        canSeparate={!!active}
         onSave={() => void saveProject()}
         dirty={dirty}
         onHelp={() => setHelpOpen(true)}
@@ -318,6 +326,7 @@ export default function App() {
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {renderOpen && active && <RenderDialog mediaId={active.id} onClose={() => setRenderOpen(false)} />}
+      {separateOpen && active && <SeparateDialog mediaId={active.id} onClose={() => setSeparateOpen(false)} />}
       <UiHost />
     </div>
   );

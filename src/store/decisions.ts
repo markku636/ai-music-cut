@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { effectLabel, type AudioEffect } from "../analysis/effects";
 import { thresholdsFor } from "../analysis/thresholds";
 import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState } from "../analysis/types";
 import { useProject } from "./project";
@@ -7,8 +8,8 @@ import { useProject } from "./project";
 interface Patch {
   label: string;
   mediaId: string;
-  before: { candidates: Candidate[]; decisions: DecisionMap };
-  after: { candidates: Candidate[]; decisions: DecisionMap };
+  before: { candidates: Candidate[]; decisions: DecisionMap; effects: AudioEffect[] };
+  after: { candidates: Candidate[]; decisions: DecisionMap; effects: AudioEffect[] };
 }
 
 const MAX_HISTORY = 200;
@@ -21,6 +22,8 @@ export interface DecisionFilter {
 interface DecisionsStore {
   candidates: Record<string, Candidate[]>;
   decisions: Record<string, DecisionMap>;
+  /** 區段效果（靜音 / 增益 / 淡入淡出），與候選共用 undo 歷史。 */
+  effects: Record<string, AudioEffect[]>;
   selectedIds: string[];
   filter: DecisionFilter;
   past: Patch[];
@@ -36,6 +39,9 @@ interface DecisionsStore {
   /** 人工拉邊界：改候選的時間範圍（id 不變）；標記 meta.userRange 讓規則重跑時保留人工調整。 */
   updateCandidateRange: (mediaId: string, id: string, startMs: number, endMs: number, wordIds?: number[]) => void;
   removeCandidate: (mediaId: string, id: string) => void;
+  addEffect: (mediaId: string, e: AudioEffect) => void;
+  updateEffect: (mediaId: string, id: string, patch: Partial<Omit<AudioEffect, "id">>) => void;
+  removeEffect: (mediaId: string, id: string) => void;
   bulk: (mediaId: string, pred: (c: Candidate, d: Decision | undefined) => boolean, state: DecisionState, label?: string) => number;
   select: (ids: string[]) => void;
   setFilter: (f: Partial<DecisionFilter>) => void;
@@ -43,7 +49,7 @@ interface DecisionsStore {
   redo: () => void;
   clear: (mediaId: string) => void;
   /** 專案載入：直接放入（不記 undo）。 */
-  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap) => void;
+  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[]) => void;
 }
 
 function now(): string {
@@ -59,13 +65,18 @@ export function defaultStateFor(c: Candidate, aggressiveness: number): DecisionS
 }
 
 export const useDecisions = create<DecisionsStore>((set, get) => {
-  const snapshot = (mediaId: string) => ({ candidates: get().candidates[mediaId] ?? [], decisions: get().decisions[mediaId] ?? {} });
-  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions: DecisionMap }, record = true) => {
+  const snapshot = (mediaId: string) => ({
+    candidates: get().candidates[mediaId] ?? [],
+    decisions: get().decisions[mediaId] ?? {},
+    effects: get().effects[mediaId] ?? [],
+  });
+  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions: DecisionMap; effects?: AudioEffect[] }, record = true) => {
     const before = snapshot(mediaId);
-    const after = { candidates: next.candidates ?? before.candidates, decisions: next.decisions };
+    const after = { candidates: next.candidates ?? before.candidates, decisions: next.decisions, effects: next.effects ?? before.effects };
     set((s) => ({
       candidates: { ...s.candidates, [mediaId]: after.candidates },
       decisions: { ...s.decisions, [mediaId]: after.decisions },
+      effects: { ...s.effects, [mediaId]: after.effects },
       past: record ? [...s.past.slice(-(MAX_HISTORY - 1)), { label, mediaId, before, after }] : s.past,
       future: record ? [] : s.future,
     }));
@@ -75,6 +86,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
   return {
     candidates: {},
     decisions: {},
+    effects: {},
     selectedIds: [],
     filter: { kinds: null, states: null },
     past: [],
@@ -167,6 +179,22 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       set((s) => ({ selectedIds: s.selectedIds.filter((x) => x !== id) }));
     },
 
+    addEffect: (mediaId, e) => {
+      const list = (get().effects[mediaId] ?? []).filter((x) => x.id !== e.id);
+      commit(mediaId, `效果：${effectLabel(e)}`, { decisions: get().decisions[mediaId] ?? {}, effects: [...list, e].sort((a, b) => a.startMs - b.startMs) });
+    },
+    updateEffect: (mediaId, id, patch) => {
+      const list = get().effects[mediaId] ?? [];
+      if (!list.some((x) => x.id === id)) return;
+      const next = list.map((x) => (x.id === id ? { ...x, ...patch } : x)).sort((a, b) => a.startMs - b.startMs);
+      commit(mediaId, "調整效果", { decisions: get().decisions[mediaId] ?? {}, effects: next });
+    },
+    removeEffect: (mediaId, id) => {
+      const list = get().effects[mediaId] ?? [];
+      if (!list.some((x) => x.id === id)) return;
+      commit(mediaId, "移除效果", { decisions: get().decisions[mediaId] ?? {}, effects: list.filter((x) => x.id !== id) });
+    },
+
     bulk: (mediaId, pred, state, label) => {
       const cands = get().candidates[mediaId] ?? [];
       const dec = get().decisions[mediaId] ?? {};
@@ -184,6 +212,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       set((s) => ({
         candidates: { ...s.candidates, [p.mediaId]: p.before.candidates },
         decisions: { ...s.decisions, [p.mediaId]: p.before.decisions },
+        effects: { ...s.effects, [p.mediaId]: p.before.effects },
         past: s.past.slice(0, -1),
         future: [...s.future, p],
       }));
@@ -195,20 +224,27 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       set((s) => ({
         candidates: { ...s.candidates, [p.mediaId]: p.after.candidates },
         decisions: { ...s.decisions, [p.mediaId]: p.after.decisions },
+        effects: { ...s.effects, [p.mediaId]: p.after.effects },
         future: s.future.slice(0, -1),
         past: [...s.past, p],
       }));
       useProject.getState().markDirty();
     },
-    load: (mediaId, candidates, decisions) =>
-      set((s) => ({ candidates: { ...s.candidates, [mediaId]: candidates }, decisions: { ...s.decisions, [mediaId]: decisions } })),
+    load: (mediaId, candidates, decisions, effects = []) =>
+      set((s) => ({
+        candidates: { ...s.candidates, [mediaId]: candidates },
+        decisions: { ...s.decisions, [mediaId]: decisions },
+        effects: { ...s.effects, [mediaId]: effects },
+      })),
     clear: (mediaId) =>
       set((s) => {
         const candidates = { ...s.candidates };
         const decisions = { ...s.decisions };
+        const effects = { ...s.effects };
         delete candidates[mediaId];
         delete decisions[mediaId];
-        return { candidates, decisions, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
+        delete effects[mediaId];
+        return { candidates, decisions, effects, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
       }),
   };
 });

@@ -30,6 +30,7 @@ const KIND_LABEL: Record<JobKind, string> = {
   analyze: "分析",
   judge: "AI 判讀",
   render: "輸出",
+  separate: "去人聲",
 };
 
 export interface SidebarProps {
@@ -129,13 +130,9 @@ export default function Sidebar({ width, onOpen, onAnalyze, onOpenSettings }: Si
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-fg/90">{m.name}</div>
-                  <div className="text-[11px] text-fg/40 mono flex items-center gap-2">
-                    <span>{m.probe ? formatDuration(m.probe.duration_ms) : "—"}</span>
-                    {m.probe?.audio && (
-                      <span>
-                        {m.probe.audio.codec} · {Math.round(m.probe.audio.sample_rate / 1000)}k · {m.probe.audio.channels}ch
-                      </span>
-                    )}
+                  <div className="text-[11px] text-fg/40 mono truncate">
+                    {m.probe ? formatDuration(m.probe.duration_ms) : "—"}
+                    {m.probe?.audio && ` · ${m.probe.audio.codec} · ${Math.round(m.probe.audio.sample_rate / 1000)}k · ${m.probe.audio.channels}ch`}
                   </div>
                 </div>
                 {rowStatus(m, active)}

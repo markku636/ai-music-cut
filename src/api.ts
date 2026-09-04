@@ -142,8 +142,16 @@ export interface RenderJoin {
   kind: "crossfade" | "gap" | "seam";
   ms: number;
 }
+/** 區段效果（來源時間；Rust 逐 frame 乘上包絡）。 */
+export interface RenderEffect {
+  kind: "mute" | "gain" | "fade_in" | "fade_out";
+  start_ms: number;
+  end_ms: number;
+  db: number;
+}
 export interface RenderPlan {
   segs: RenderSeg[];
+  effects: RenderEffect[];
   joins: RenderJoin[];
   crossfade_ms: number;
   target_lufs: number;
@@ -166,6 +174,15 @@ export interface RenderDone {
   output_lufs: number | null;
   output_tp: number | null;
   elapsed_ms: number;
+}
+
+/** ttls /v1/separate 各軌落地結果。 */
+export interface SeparateStem {
+  name: string;
+  label: string;
+  format: string;
+  path: string;
+  bytes: number;
 }
 
 /** Rust `AppError` 序列化形狀。 */
@@ -225,6 +242,9 @@ export const api = {
   ttlsTranscribePoll: (jobId: string) => invoke<TranscribeJobInfo>("ttls_transcribe_poll", { jobId }),
   ttlsTranscribeResult: (jobId: string) => invoke<unknown>("ttls_transcribe_result", { jobId }),
   ttlsTranscribeCancel: (jobId: string) => invoke<void>("ttls_transcribe_cancel", { jobId }),
+  /** 去人聲 / 分軌（同步等待伺服器；用 mediaCancel(jobId) 放棄）。 */
+  ttlsSeparate: (jobId: string, path: string, stems: string, targetFormat: string, outDir: string | null) =>
+    invoke<SeparateStem[]>("ttls_separate", { jobId, path, stems, targetFormat, outDir }),
   renderStart: (jobId: string, src: string, plan: RenderPlan) => invoke<void>("render_start", { jobId, src, plan }),
   renderCancel: (jobId: string) => invoke<void>("render_cancel", { jobId }),
   projectSave: (path: string, doc: unknown) => invoke<void>("project_save", { path, doc }),

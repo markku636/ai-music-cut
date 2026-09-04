@@ -26,6 +26,29 @@ export interface HotkeyHandlers {
   /** Space：由 App 決定播選取或播放 / 暫停；未提供則播放 / 暫停。 */
   space?: () => void;
   zoomSelection?: () => void;
+  selectAll?: () => void;
+}
+
+/** 中文輸入法開著時 keydown 的 key 是 "Process"，改由實體鍵 code 推回字元，讓字母快捷鍵照常運作。 */
+const CODE_KEY: Record<string, string> = {
+  Space: " ",
+  Digit0: "0",
+  Equal: "=",
+  Minus: "-",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Escape: "Escape",
+  Delete: "Delete",
+  Backspace: "Backspace",
+  Home: "Home",
+  End: "End",
+  ArrowLeft: "ArrowLeft",
+  ArrowRight: "ArrowRight",
+};
+function effectiveKey(e: KeyboardEvent): string {
+  if (e.key !== "Process" && e.key !== "Unidentified" && !e.isComposing) return e.key;
+  if (e.code.startsWith("Key") && e.code.length === 4) return e.code.slice(3).toLowerCase();
+  return CODE_KEY[e.code] ?? e.key;
 }
 
 function typingTarget(e: KeyboardEvent): boolean {
@@ -48,7 +71,7 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
     if (document.body.dataset.modalCount) return;
     if (typingTarget(e)) return;
     const ctrl = e.ctrlKey || e.metaKey;
-    const k = e.key;
+    const k = effectiveKey(e);
     if (ctrl) {
       switch (k.toLowerCase()) {
         case "o":
@@ -80,6 +103,10 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
         case "0":
           e.preventDefault();
           h.zoomFit?.();
+          return;
+        case "a":
+          e.preventDefault();
+          h.selectAll?.();
           return;
         default:
           return;

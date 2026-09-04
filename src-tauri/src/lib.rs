@@ -74,6 +74,7 @@ pub fn run() {
             commands::ttls_key_clear,
             commands::ttls_key_verify,
             commands::ttls_transcribe_start,
+            commands::ttls_separate,
             commands::ttls_transcribe_poll,
             commands::ttls_transcribe_result,
             commands::ttls_transcribe_cancel,

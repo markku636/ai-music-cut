@@ -23,11 +23,12 @@ export function runRulesFor(mediaId: string, opts: { label?: string; record?: bo
 export function edlFor(mediaId: string): Edl | null {
   const ts = useTranscript.getState();
   const tr = ts.byMedia[mediaId];
-  if (!tr) return null;
+  const durationMs = tr?.durationMs ?? useProject.getState().media.find((m) => m.id === mediaId)?.probe?.duration_ms ?? 0;
+  if (!durationMs) return null;
   const local = ts.local[mediaId];
   const probe: EnergyProbe | undefined = local ? { minEnergyPointMs: (a, b) => minEnergyPointMs(local, a, b) } : undefined;
   const d = useDecisions.getState();
   const th = thresholdsFor(useProject.getState().aggressiveness);
   const opts = { ...DEFAULT_EDL_OPTIONS, pauseKeepMs: th.pauseKeepMs, maxSentenceRemovalRatio: th.maxSentenceRemovalRatio };
-  return buildEdl({ words: tr.words, sentences: tr.sentences, vad: tr.vad, durationMs: tr.durationMs }, d.candidates[mediaId] ?? [], d.decisions[mediaId] ?? {}, opts, probe);
+  return buildEdl({ words: tr?.words ?? [], sentences: tr?.sentences ?? [], vad: tr?.vad ?? [], durationMs }, d.candidates[mediaId] ?? [], d.decisions[mediaId] ?? {}, opts, probe);
 }

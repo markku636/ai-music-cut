@@ -10,7 +10,7 @@ function Dot({ ok, warn }: { ok: boolean; warn?: boolean }) {
   return <span className={`inline-block w-1.5 h-1.5 rounded-full ${ok ? (warn ? "bg-warning" : "bg-success") : "bg-danger"}`} aria-hidden />;
 }
 
-export default function StatusBar({ onOpenSettings }: { onOpenSettings: () => void }) {
+export default function StatusBar({ onOpenSettings }: { onOpenSettings: (focus?: "key" | "ffmpeg") => void }) {
   const t = useT();
   const ffmpeg = useSettings((s) => s.ffmpeg);
   const ttls = useSettings((s) => s.ttls);
@@ -39,7 +39,7 @@ export default function StatusBar({ onOpenSettings }: { onOpenSettings: () => vo
       </span>
       <button
         type="button"
-        onClick={onOpenSettings}
+        onClick={() => onOpenSettings("ffmpeg")}
         className="flex items-center gap-1.5 shrink-0 hover:text-fg/70"
         title={ffmpeg?.found ? `${ffmpeg.ffmpeg_path}` : t("找不到 ffmpeg，點擊到設定指定路徑")}
       >
@@ -48,11 +48,15 @@ export default function StatusBar({ onOpenSettings }: { onOpenSettings: () => vo
       </button>
       <button
         type="button"
-        onClick={onOpenSettings}
+        onClick={() => onOpenSettings("key")}
         className="flex items-center gap-1.5 shrink-0 hover:text-fg/70"
-        title={ttls?.ok ? `queue ${ttls.queue_pending ?? 0}/${ttls.max_pending ?? "?"}${ttls.degraded ? " · degraded" : ""}` : ttls?.error ?? ""}
+        title={
+          ttls?.ok
+            ? `${!key?.present ? t("分析需要金鑰；點擊設定") + " · " : ""}queue ${ttls.queue_pending ?? 0}/${ttls.max_pending ?? "?"}${ttls.degraded ? " · degraded" : ""}`
+            : ttls?.error ?? ""
+        }
       >
-        <Dot ok={!!ttls?.ok} warn={ttlsWarn} />
+        <Dot ok={!!ttls?.ok} warn={ttlsWarn || (!!ttls?.ok && !key?.present)} />
         ttls {ttls?.ok ? `${ttls.latency_ms ?? "?"}ms` : t("離線")}
         {ttls?.ok && !key?.present && <span className="text-warning">· {t("未設金鑰")}</span>}
       </button>

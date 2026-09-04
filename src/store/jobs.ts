@@ -1,6 +1,8 @@
 import { create } from "zustand";
 
-export type JobKind = "prepare" | "analyze" | "judge" | "render";
+export type JobKind = "prepare" | "waveform" | "analyze" | "judge" | "render";
+/** 分析 job 的穩定階段（UI 的 4 步小清單靠它，不比對 step 字串）。 */
+export type JobPhase = "prepare" | "transcribe" | "normalize" | "rules";
 export type JobStatus = "queued" | "running" | "done" | "error" | "canceled";
 
 export interface Job {
@@ -12,6 +14,7 @@ export interface Job {
   /** 0–100；null = 不確定進度。 */
   pct: number | null;
   message: string;
+  phase?: JobPhase;
   status: JobStatus;
   error?: string;
   startedAt: number;

@@ -7,27 +7,31 @@ import { installToolBridge } from "./assistant/tools";
 import DecisionPanel from "./decisions/DecisionPanel";
 import AboutDialog from "./dialogs/AboutDialog";
 import RenderDialog from "./dialogs/RenderDialog";
-import SettingsDialog from "./dialogs/SettingsDialog";
+import SettingsDialog, { type SettingsFocus } from "./dialogs/SettingsDialog";
 import ShortcutsHelp from "./dialogs/ShortcutsHelp";
 import { installHotkeys } from "./hotkeys";
 import { runAnalyze } from "./pipeline/analyze";
 import { runJudge } from "./pipeline/judge";
 import { enrichAnalysis } from "./pipeline/persist";
 import { runRulesFor } from "./pipeline/rules";
-import { playRange } from "./preview/playerRef";
+import { getPlayer, playRange, seekTo, togglePlay } from "./preview/playerRef";
 import { useDecisions } from "./store/decisions";
 import { useAssistant } from "./store/assistant";
 import { useAssistantChat } from "./store/assistantChat";
 import { usePlayback } from "./store/playback";
+import { useTimeline } from "./store/timeline";
 import { isActiveState } from "./analysis/types";
 import { t } from "./i18n";
 import { defaultProjectFileName } from "./project/format";
 import MainArea from "./shell/MainArea";
+import SetupBanner from "./shell/SetupBanner";
 import Sidebar from "./shell/Sidebar";
 import Splitter from "./shell/Splitter";
 import StatusBar from "./shell/StatusBar";
 import Toolbar from "./shell/Toolbar";
+import WorkflowStrip from "./shell/WorkflowStrip";
 import { useResizable } from "./shell/useResizable";
+import { clearSelection, cutSelection } from "./timeline/selectionActions";
 import { selectActiveMedia, useProject } from "./store/project";
 import { useSettings } from "./store/settings";
 import { applyAppTheme, useTheme } from "./theme";
@@ -69,6 +73,26 @@ function previewSelected() {
   playRange(c.startMs - 1000, c.endMs + 1000, { skip: isActiveState(d.decisions[id]?.[c.id]?.state) });
 }
 
+/** Space：有時間選取且沒在播 → 播選取（可循環）；否則播放 / 暫停。 */
+function spaceKey() {
+  const tl = useTimeline.getState();
+  const p = getPlayer();
+  if (tl.selection && p && p.paused) {
+    playRange(tl.selection.startMs, tl.selection.endMs, { skip: false, loop: tl.loopSelection });
+    return;
+  }
+  togglePlay();
+}
+
+/** Delete：有時間選取 → 剪掉選取；否則拒絕選取的候選。 */
+function deleteKey() {
+  if (useTimeline.getState().selection) {
+    cutSelection();
+    return;
+  }
+  decideSelected("rejected");
+}
+
 let devAutoOpened = false;
 
 /** 最近專案（設定檔，最多 10 筆）。 */
@@ -87,10 +111,34 @@ export default function App() {
   const active = useProject(selectActiveMedia);
   const dirty = useProject((s) => s.dirty);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsFocus, setSettingsFocus] = useState<SettingsFocus>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [renderOpen, setRenderOpen] = useState(false);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
+
+  const openSettings = (focus: SettingsFocus = null) => {
+    setSettingsFocus(focus);
+    setSettingsOpen(true);
+  };
+
+  /** 所有「分析」入口共用的前置檢查：缺 ffmpeg / 金鑰時不轉檔不上傳，直接帶到該設定欄位。 */
+  const analyzeWithPreflight = (mediaId?: string) => {
+    const id = mediaId ?? useProject.getState().activeMediaId;
+    if (!id) return;
+    const st = useSettings.getState();
+    if (st.ffmpeg && !st.ffmpeg.found) {
+      toast.error(t("找不到 ffmpeg，先到設定指定路徑"));
+      openSettings("ffmpeg");
+      return;
+    }
+    if (st.key && !st.key.present) {
+      toast.info(t("分析需要 ttls 金鑰，先貼上金鑰再開始"));
+      openSettings("key");
+      return;
+    }
+    void runAnalyze(id).catch(() => {});
+  };
 
   // 啟動：套主題、載設定並探測工具狀態。
   useEffect(() => {
@@ -211,14 +259,24 @@ export default function App() {
         openMedia: () => void openMedia(),
         save: () => void saveProject(),
         help: () => setHelpOpen((v) => !v),
+        space: spaceKey,
         prevCandidate: () => stepCandidate(-1),
         nextCandidate: () => stepCandidate(1),
         accept: () => decideSelected("accepted"),
         reject: () => decideSelected("rejected"),
-        deleteSelection: () => decideSelected("rejected"),
+        deleteSelection: deleteKey,
         previewCandidate: () => previewSelected(),
         undo: () => useDecisions.getState().undo(),
         redo: () => useDecisions.getState().redo(),
+        zoomIn: () => useTimeline.getState().zoomBy(1.25),
+        zoomOut: () => useTimeline.getState().zoomBy(0.8),
+        zoomFit: () => useTimeline.getState().fit(),
+        zoomSelection: () => useTimeline.getState().zoomToSelection(),
+        home: () => seekTo(0),
+        end: () => seekTo(Number.MAX_SAFE_INTEGER),
+        toolSeek: () => useTimeline.getState().setTool("seek"),
+        toolSelect: () => useTimeline.getState().setTool("select"),
+        escape: () => clearSelection(),
       }),
     [],
   );
@@ -228,31 +286,35 @@ export default function App() {
     if (id) runRulesFor(id, { label: t("調整激進度"), record: true });
   };
 
+  const onJudge = () => active && void runJudge(active.id).catch((e) => toast.error(errMessage(e)));
+
   return (
     <div className="h-full flex flex-col">
       <Toolbar
         onOpen={() => void openMedia()}
-        onAnalyze={() => active && void runAnalyze(active.id).catch(() => {})}
+        onAnalyze={() => analyzeWithPreflight()}
         canAnalyze={!!active && active.analysis !== "analyzing"}
-        onJudge={() => active && void runJudge(active.id).catch((e) => toast.error(errMessage(e)))}
+        onJudge={onJudge}
         canJudge={!!active && active.analysis === "ready"}
         onRender={() => setRenderOpen(true)}
-        canRender={!!active && active.analysis === "ready"}
+        canRender={!!active}
         onSave={() => void saveProject()}
         dirty={dirty}
         onHelp={() => setHelpOpen(true)}
         onAbout={() => setAboutOpen(true)}
-        onSettings={() => setSettingsOpen(true)}
+        onSettings={() => openSettings()}
       />
+      <WorkflowStrip onOpen={() => void openMedia()} onAnalyze={() => analyzeWithPreflight()} onJudge={onJudge} onRender={() => setRenderOpen(true)} onOpenSettings={openSettings} />
+      <SetupBanner onOpenSettings={openSettings} />
       <div className="flex-1 flex min-h-0">
-        <Sidebar width={sidebar.size} onOpen={() => void openMedia()} />
+        <Sidebar width={sidebar.size} onOpen={() => void openMedia()} onAnalyze={(id) => analyzeWithPreflight(id)} onOpenSettings={openSettings} />
         <Splitter axis="x" onPointerDown={sidebar.onPointerDown} />
-        <MainArea onOpen={() => void openMedia()} />
-        <DecisionPanel mediaId={active?.id ?? null} onRerunRules={rerunRules} />
+        <MainArea onOpen={() => void openMedia()} onAnalyze={() => analyzeWithPreflight()} onOpenSettings={openSettings} />
+        <DecisionPanel mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} onRerunRules={rerunRules} />
         <AssistantPanel />
       </div>
-      <StatusBar onOpenSettings={() => setSettingsOpen(true)} />
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <StatusBar onOpenSettings={openSettings} />
+      <SettingsDialog open={settingsOpen} focus={settingsFocus} onClose={() => setSettingsOpen(false)} />
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {renderOpen && active && <RenderDialog mediaId={active.id} onClose={() => setRenderOpen(false)} />}

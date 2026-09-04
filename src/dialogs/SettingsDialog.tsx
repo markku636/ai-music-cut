@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Cog } from "lucide-react";
 import { api, errMessage, type AppSettings } from "../api";
 import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
@@ -15,8 +15,29 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export default function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+export type SettingsFocus = "key" | "ffmpeg" | null;
+
+export default function SettingsDialog({ open, focus = null, onClose }: { open: boolean; focus?: SettingsFocus; onClose: () => void }) {
   const t = useT();
+  const keyInputRef = useRef<HTMLInputElement>(null);
+  const ffmpegInputRef = useRef<HTMLInputElement>(null);
+  const [highlight, setHighlight] = useState<SettingsFocus>(null);
+
+  // 從 banner / 流程列 / 狀態列進來：等 modal 進場後捲到該欄位、聚焦並高亮 1.5 秒
+  useEffect(() => {
+    if (!open || !focus) return;
+    const el = focus === "key" ? keyInputRef.current : ffmpegInputRef.current;
+    const id = window.setTimeout(() => {
+      el?.scrollIntoView({ block: "center" });
+      el?.focus();
+      setHighlight(focus);
+    }, 200);
+    const off = window.setTimeout(() => setHighlight(null), 1900);
+    return () => {
+      window.clearTimeout(id);
+      window.clearTimeout(off);
+    };
+  }, [open, focus]);
   const s = useSettings((x) => x.s);
   const save = useSettings((x) => x.save);
   const ffmpeg = useSettings((x) => x.ffmpeg);
@@ -46,7 +67,10 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
       await api.ttlsKeySet(apiKey.trim());
       setApiKey(""); // 不留在 React state
       await refreshKey();
-      toast.success(t("金鑰已存入 OS 鑰匙圈"));
+      const ok = await api.ttlsKeyVerify().catch(() => null);
+      if (ok === true) toast.success(t("金鑰有效，已存入 OS 鑰匙圈"));
+      else if (ok === false) toast.error(t("金鑰已存入，但被伺服器拒絕（401）"));
+      else toast.success(t("金鑰已存入 OS 鑰匙圈"));
     } catch (e) {
       toast.error(errMessage(e));
     } finally {
@@ -107,7 +131,15 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
             hint={key?.present ? t("已儲存於 OS 鑰匙圈（••••{hint}）；不會寫入任何檔案", { hint: key.hint ?? "" }) : t("尚未設定；金鑰只存 OS 鑰匙圈，不進專案檔或設定檔")}
           >
             <div className="flex gap-2">
-              <Input type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={key?.present ? "••••••••" : ""} className="flex-1" />
+              <Input
+                ref={keyInputRef}
+                type="password"
+                autoComplete="off"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={key?.present ? "••••••••" : t("貼上 ttls 的 X-API-Key")}
+                className={`flex-1 transition-shadow ${highlight === "key" ? "ring-2 ring-accent" : ""}`}
+              />
               <Button onClick={() => void saveKey()} disabled={!apiKey.trim()} loading={busy === "key"}>
                 {t("儲存至鑰匙圈")}
               </Button>
@@ -131,7 +163,14 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
         <Section title={t("工具")}>
           <Field label="ffmpeg" hint={ffmpeg?.found ? `${ffmpeg.version} · ${ffmpeg.ffmpeg_path}` : t("找不到 ffmpeg；請安裝或指定 ffmpeg.exe / 其所在資料夾")}>
             <div className="flex gap-2">
-              <Input value={draft.ffmpeg_path ?? ""} onChange={(e) => patch({ ffmpeg_path: e.target.value })} placeholder={t("留空＝自動偵測（PATH）")} className="flex-1" spellCheck={false} />
+              <Input
+                ref={ffmpegInputRef}
+                value={draft.ffmpeg_path ?? ""}
+                onChange={(e) => patch({ ffmpeg_path: e.target.value })}
+                placeholder={t("留空＝自動偵測（PATH）")}
+                className={`flex-1 transition-shadow ${highlight === "ffmpeg" ? "ring-2 ring-accent" : ""}`}
+                spellCheck={false}
+              />
               <Button
                 variant="ghost"
                 onClick={async () => {

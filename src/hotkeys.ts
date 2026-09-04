@@ -17,6 +17,15 @@ export interface HotkeyHandlers {
   zoomIn?: () => void;
   zoomOut?: () => void;
   zoomFit?: () => void;
+  home?: () => void;
+  end?: () => void;
+  /** 時間軸工具：V 定位、S 選取；Esc 清除選取。 */
+  toolSeek?: () => void;
+  toolSelect?: () => void;
+  escape?: () => void;
+  /** Space：由 App 決定播選取或播放 / 暫停；未提供則播放 / 暫停。 */
+  space?: () => void;
+  zoomSelection?: () => void;
 }
 
 function typingTarget(e: KeyboardEvent): boolean {
@@ -77,9 +86,33 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
       }
     }
     switch (k) {
+      case "Home":
+        e.preventDefault();
+        h.home?.();
+        return;
+      case "End":
+        e.preventDefault();
+        h.end?.();
+        return;
+      case "Escape":
+        h.escape?.();
+        return;
+      case "v":
+      case "V":
+        h.toolSeek?.();
+        return;
+      case "s":
+      case "S":
+        h.toolSelect?.();
+        return;
       case " ":
         e.preventDefault();
-        togglePlay();
+        if (h.space) h.space();
+        else togglePlay();
+        return;
+      case "z":
+      case "Z":
+        h.zoomSelection?.();
         return;
       case "j":
       case "J":

@@ -26,11 +26,28 @@ export function seekBy(deltaMs: number) {
   p.currentTime = Math.max(0, Math.min(dur, p.currentTime * 1000 + deltaMs)) / 1000;
 }
 
+export function seekTo(ms: number) {
+  const p = el;
+  if (!p) return;
+  const dur = Number.isFinite(p.duration) ? p.duration * 1000 : Number.POSITIVE_INFINITY;
+  p.currentTime = Math.max(0, Math.min(dur, ms)) / 1000;
+}
+
+/** 目前是否在播放某個範圍（預聽 / 選取播放）。 */
+export function isRangePlaying(): boolean {
+  return rangeStop !== null;
+}
+
+/** 停止範圍播放（沒有在播範圍則不動作）。 */
+export function stopRange() {
+  rangeStop?.();
+}
+
 /**
- * 預聽一段：從 startMs 播到 endMs 自動停。skip=false → 播原始（聽建議段落本身）；
+ * 播一段：從 startMs 播到 endMs 自動停（loop=true 則回頭重播）。skip=false → 播原始（聽建議段落本身）；
  * skip=true → 沿用跳播（聽剪掉後的接法）。期間 playback.preview 記錄狀態供 useSkipPlayback 判斷。
  */
-export function playRange(startMs: number, endMs: number, opts: { skip: boolean }) {
+export function playRange(startMs: number, endMs: number, opts: { skip: boolean; loop?: boolean }) {
   const p = el;
   if (!p || !p.src) return;
   rangeStop?.();
@@ -38,7 +55,10 @@ export function playRange(startMs: number, endMs: number, opts: { skip: boolean 
   pb.setPreview({ startMs, endMs, skip: opts.skip });
   p.currentTime = Math.max(0, startMs) / 1000;
   const onTime = () => {
-    if (p.currentTime * 1000 >= endMs) stop();
+    if (p.currentTime * 1000 >= endMs) {
+      if (opts.loop) p.currentTime = Math.max(0, startMs) / 1000;
+      else stop();
+    }
   };
   const stop = () => {
     p.removeEventListener("timeupdate", onTime);

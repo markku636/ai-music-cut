@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { thresholdsFor } from "../analysis/thresholds";
-import { SUGGEST_ONLY_KINDS, candidateId, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState } from "../analysis/types";
+import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState } from "../analysis/types";
 import { useProject } from "./project";
 
 /** 一筆可復原的變更：某媒體的候選 + 決策整份快照（幾千筆內複製成本可忽略）。 */
@@ -33,6 +33,8 @@ interface DecisionsStore {
   decide: (mediaId: string, ids: string[], state: DecisionState, opts?: { origin?: Decision["origin"]; label?: string; reason?: string }) => void;
   toggleWordCut: (mediaId: string, wordId: number, word: { startMs: number; endMs: number; text: string }, sentenceId: number) => void;
   addManualCut: (mediaId: string, startMs: number, endMs: number, wordIds: number[], reason?: string, sentenceId?: number) => string;
+  /** 人工拉邊界：改候選的時間範圍（id 不變）；標記 meta.userRange 讓規則重跑時保留人工調整。 */
+  updateCandidateRange: (mediaId: string, id: string, startMs: number, endMs: number, wordIds?: number[]) => void;
   removeCandidate: (mediaId: string, id: string) => void;
   bulk: (mediaId: string, pred: (c: Candidate, d: Decision | undefined) => boolean, state: DecisionState, label?: string) => number;
   select: (ids: string[]) => void;
@@ -78,9 +80,12 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     past: [],
     future: [],
 
-    setCandidates: (mediaId, cands, opts) => {
+    setCandidates: (mediaId, incoming, opts) => {
       const prev = get().decisions[mediaId] ?? {};
       const next: DecisionMap = {};
+      // 人工拉過邊界的候選：時間範圍以使用者版本為準
+      const adjusted = new Map((get().candidates[mediaId] ?? []).filter((c) => c.meta?.userRange).map((c) => [c.id, c] as const));
+      const cands = incoming.map((c) => adjusted.get(c.id) ?? c);
       for (const c of cands) {
         const old = prev[c.id];
         if (old && (old.origin === "user" || (opts.keepLlm !== false && old.origin === "llm"))) next[c.id] = old;
@@ -137,6 +142,21 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       const dec: DecisionMap = { ...(get().decisions[mediaId] ?? {}), [id]: { state: "accepted", origin: "user", at: now() } };
       commit(mediaId, "手動剪除", { candidates: [...cands, c].sort((a, b) => a.startMs - b.startMs), decisions: dec });
       return id;
+    },
+
+    updateCandidateRange: (mediaId, id, startMs, endMs, wordIds) => {
+      const s0 = Math.round(Math.min(startMs, endMs));
+      const e0 = Math.round(Math.max(startMs, endMs));
+      if (e0 - s0 < 20) return;
+      const list = get().candidates[mediaId] ?? [];
+      if (!list.some((c) => c.id === id)) return;
+      const cands = list.map((c) =>
+        c.id === id ? { ...c, startMs: s0, endMs: e0, wordIds: wordIds ?? c.wordIds, meta: { ...(c.meta ?? {}), userRange: true } } : c,
+      );
+      const old = get().decisions[mediaId]?.[id];
+      const state = !old || isActiveState(old.state) ? "accepted" : old.state;
+      const dec: DecisionMap = { ...(get().decisions[mediaId] ?? {}), [id]: { state, origin: "user", reason: old?.reason, at: now() } };
+      commit(mediaId, "調整範圍", { candidates: cands.sort((a, b) => a.startMs - b.startMs), decisions: dec });
     },
 
     removeCandidate: (mediaId, id) => {

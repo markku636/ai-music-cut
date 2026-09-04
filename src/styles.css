@@ -203,3 +203,9 @@ body {
     animation: none;
   }
 }
+
+/* 逐字稿：落在時間選取內的字 */
+.word-chip--sel {
+  background-color: rgb(var(--c-accent) / 0.22);
+  box-shadow: inset 0 -2px 0 rgb(var(--c-accent) / 0.9);
+}

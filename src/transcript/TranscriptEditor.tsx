@@ -1,6 +1,5 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { isActiveState, type Candidate, type DecisionMap, type Sentence, type Transcript, type Word } from "../analysis/types";
-import { useT } from "../i18n";
 import { usePlayback } from "../store/playback";
 import { wordIndexAt } from "../store/transcript";
 import { formatMs } from "../time";
@@ -12,17 +11,20 @@ export interface TranscriptEditorProps {
   candidates: Candidate[];
   decisions: DecisionMap;
   selectedIds: string[];
-  /** 單擊字：seek + 選取覆蓋它的候選。 */
-  onWordClick: (wordId: number, candidateIds: string[]) => void;
+  /** 單擊字：seek + 選取覆蓋它的候選；shift = 從上次點的字選到這個字（時間選取）。 */
+  onWordClick: (wordId: number, candidateIds: string[], shift: boolean) => void;
   /** 雙擊字：切換剪 / 不剪（沒候選則新增手動剪除）。 */
   onWordToggle: (wordId: number) => void;
+  /** 目前的時間選取（高亮落在範圍內的字）。 */
+  selection?: { startMs: number; endMs: number } | null;
+  /** 右鍵句子時間戳：把整句變成時間選取。 */
+  onSentenceSelect?: (s: Sentence) => void;
 }
 
 /**
  * 逐字稿：句子列 + 字 chip。劃線＝會被剪；虛框＝待決建議；點字 seek；雙擊直接剪 / 還原。
  */
-export default function TranscriptEditor({ transcript, candidates, decisions, selectedIds, onWordClick, onWordToggle }: TranscriptEditorProps) {
-  const t = useT();
+export default function TranscriptEditor({ transcript, candidates, decisions, selectedIds, selection = null, onWordClick, onWordToggle, onSentenceSelect }: TranscriptEditorProps) {
   const currentMs = usePlayback((s) => s.currentMs);
   const follow = usePlayback((s) => s.follow);
   const seek = usePlayback((s) => s.seek);
@@ -75,9 +77,7 @@ export default function TranscriptEditor({ transcript, candidates, decisions, se
     el?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [follow, activeSentence]);
 
-  if (!transcript) {
-    return <div className="flex-1 min-h-0 overflow-auto p-4 text-sm text-fg/40 leading-relaxed">{t("逐字稿（分析後顯示）")}</div>;
-  }
+  if (!transcript) return null;
   return (
     <div ref={listRef} className="flex-1 min-h-0 overflow-auto px-4 py-3 text-[15px] leading-7 select-none">
       {transcript.sentences.map((s) => (
@@ -89,9 +89,11 @@ export default function TranscriptEditor({ transcript, candidates, decisions, se
           isActive={s.id === activeSentence}
           marks={marks}
           selectedWordIds={selectedWordIds}
+          selection={selection}
           onSeek={seek}
           onWordClick={onWordClick}
           onWordToggle={onWordToggle}
+          onSentenceSelect={onSentenceSelect}
         />
       ))}
     </div>
@@ -105,9 +107,11 @@ const SentenceRow = memo(function SentenceRow({
   isActive,
   marks,
   selectedWordIds,
+  selection,
   onSeek,
   onWordClick,
   onWordToggle,
+  onSentenceSelect,
 }: {
   sentence: Sentence;
   words: Word[];
@@ -115,13 +119,24 @@ const SentenceRow = memo(function SentenceRow({
   isActive: boolean;
   marks: { mark: Map<number, WordMark>; cov: Map<number, string[]>; reason: Map<number, string> };
   selectedWordIds: Set<number>;
+  selection: { startMs: number; endMs: number } | null;
   onSeek: (ms: number) => void;
-  onWordClick: (wordId: number, candidateIds: string[]) => void;
+  onWordClick: (wordId: number, candidateIds: string[], shift: boolean) => void;
   onWordToggle: (wordId: number) => void;
+  onSentenceSelect?: (s: Sentence) => void;
 }) {
   return (
     <div data-sid={sentence.id} className={`flex gap-3 rounded-md px-2 py-1 ${isActive ? "bg-accent/8" : ""}`}>
-      <button type="button" onClick={() => onSeek(sentence.startMs)} className="mono text-[11px] text-fg/35 hover:text-accent shrink-0 pt-1.5 tabular-nums" title="跳到這句">
+      <button
+        type="button"
+        onClick={() => onSeek(sentence.startMs)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onSentenceSelect?.(sentence);
+        }}
+        className="mono text-[11px] text-fg/35 hover:text-accent shrink-0 pt-1.5 tabular-nums"
+        title="點：跳到這句 · 右鍵：選取整句"
+      >
         {formatMs(sentence.startMs, { millis: false })}
       </button>
       <div className="min-w-0 flex-1 flex flex-wrap">
@@ -134,6 +149,7 @@ const SentenceRow = memo(function SentenceRow({
             id === activeWordId ? "word-chip--active" : "",
             m === "cut" ? "word-chip--cut" : m === "pending" ? "word-chip--pending" : "",
             selectedWordIds.has(id) ? "ring-1 ring-accent" : "",
+            selection && w.startMs < selection.endMs && w.endMs > selection.startMs ? "word-chip--sel" : "",
             w.prob < 0.4 ? "word-chip--lowconf" : "",
           ]
             .filter(Boolean)
@@ -143,7 +159,7 @@ const SentenceRow = memo(function SentenceRow({
             <span
               key={id}
               className={cls}
-              onClick={() => onWordClick(id, marks.cov.get(id) ?? [])}
+              onClick={(e) => onWordClick(id, marks.cov.get(id) ?? [], e.shiftKey)}
               onDoubleClick={(e) => {
                 e.preventDefault();
                 onWordToggle(id);

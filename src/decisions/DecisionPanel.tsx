@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronLeft, ChevronRight, Play, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, ListChecks, Play, X } from "lucide-react";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState } from "../analysis/types";
 import { useT } from "../i18n";
 import { playRange } from "../preview/playerRef";
@@ -7,7 +7,8 @@ import { decisionCounts, useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
 import { useProject } from "../store/project";
 import { formatMs } from "../time";
-import { Badge, IconButton, Segmented } from "../ui/index";
+import { Badge, EmptyState, IconButton, Segmented, Spinner } from "../ui/index";
+import type { AnalysisState } from "../store/project";
 
 const PANEL_KEY = "aicut:decisionsOpen";
 const WIDTH_KEY = "aicut:decisionsWidth";
@@ -31,7 +32,7 @@ const KIND_CLASS: Record<CandidateKind, string> = {
 
 type StateFilter = "all" | "active" | "pending" | "rejected";
 
-export default function DecisionPanel({ mediaId, onRerunRules }: { mediaId: string | null; onRerunRules: () => void }) {
+export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: { mediaId: string | null; analysisState: AnalysisState | null; onRerunRules: () => void }) {
   const t = useT();
   const [open, setOpen] = useState(() => {
     try {
@@ -153,7 +154,8 @@ export default function DecisionPanel({ mediaId, onRerunRules }: { mediaId: stri
           min={0}
           max={100}
           value={aggrDraft}
-          disabled={!mediaId}
+          disabled={!mediaId || analysisState !== "ready"}
+          title={analysisState !== "ready" ? t("分析後可調") : undefined}
           onChange={(e) => setAggrDraft(Number(e.target.value))}
           onPointerUp={() => {
             if (aggrDraft !== aggressiveness) {
@@ -223,7 +225,27 @@ export default function DecisionPanel({ mediaId, onRerunRules }: { mediaId: stri
 
       <div className="flex-1 min-h-0 overflow-auto">
         {!mediaId || !candidates.length ? (
-          <div className="p-4 text-xs text-fg/35 leading-relaxed">{t("分析後這裡會列出贅字 / 口吃 / 停頓 / 含糊等候選，逐一接受或拒絕；也可以在逐字稿雙擊字直接剪。")}</div>
+          analysisState === "analyzing" ? (
+            <EmptyState compact icon={ListChecks} title={<span className="inline-flex items-center gap-2"><Spinner size={12} />{t("分析中…")}</span>} hint={t("逐字稿與候選會在轉寫完成後出現")} />
+          ) : analysisState === "ready" ? (
+            <EmptyState compact icon={ListChecks} title={t("沒有找到可剪的段落")} hint={t("調高激進度會放寬門檻；也可以在波形上用「選取」工具拖選一段手動剪。")} />
+          ) : (
+            <EmptyState
+              compact
+              icon={ListChecks}
+              title={t("分析後這裡列出候選")}
+              hint={
+                <span className="inline-flex flex-wrap justify-center gap-1">
+                  {(["filler", "stutter", "long_pause", "unclear", "noise", "manual"] as CandidateKind[]).map((k) => (
+                    <span key={k} className={`text-[10px] px-1.5 py-0.5 rounded-xs ${KIND_CLASS[k]}`}>
+                      {t(KIND_LABEL[k])}
+                    </span>
+                  ))}
+                  <span className="basis-full text-fg/35 mt-1">{t("逐一接受或拒絕；波形上拖選一段也能手動剪。")}</span>
+                </span>
+              }
+            />
+          )
         ) : (
           visible.map((c) => {
             const d = decisions[c.id];

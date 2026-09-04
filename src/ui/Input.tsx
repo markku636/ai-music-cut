@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, TextareaHTMLAttributes } from "react";
+import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
 
 export type ControlSize = "sm" | "md";
 
@@ -23,9 +23,9 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   inputSize?: ControlSize;
 }
 
-export function Input({ invalid, inputSize = "sm", className = "", ...rest }: InputProps) {
-  return <input className={`${fieldBase} ${heights[inputSize]} ${stateCls(invalid)} ${className}`} {...rest} />;
-}
+export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({ invalid, inputSize = "sm", className = "", ...rest }, ref) {
+  return <input ref={ref} className={`${fieldBase} ${heights[inputSize]} ${stateCls(invalid)} ${className}`} {...rest} />;
+});
 
 export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
   invalid?: boolean;

@@ -1,17 +1,16 @@
-// 分析流程狀態機：probe → cache → prepare → [本機波形/響度 ∥ ttls 轉寫（202+輪詢）] → normalize → 存 store / 專案。
+// 分析流程狀態機：probe → [本機波形/響度（waveform.ts，開檔時多半已好）∥ prepare → ttls 轉寫（202+輪詢）] → normalize → 存 store / 專案。
 // 規則層 / LLM 判讀 / EDL 在 M3+ 接在 `afterTranscript` 之後。
-import { listen } from "@tauri-apps/api/event";
-import { api, errMessage, errKind, type MediaProgress, type TranscribeJobInfo } from "../api";
+import { api, errMessage, errKind, type TranscribeJobInfo } from "../api";
 import { normalizeTranscript, type ServerTranscript } from "../analysis/normalize";
-import { parseAnalysis } from "../analysis/peaks";
 import type { Transcript } from "../analysis/types";
 import { t } from "../i18n";
-import { newJobId, useJobs } from "../store/jobs";
+import { newJobId, useJobs, type JobPhase } from "../store/jobs";
 import { useProject } from "../store/project";
 import { useSettings } from "../store/settings";
 import { useTranscript } from "../store/transcript";
 import { toast } from "../ui";
 import { restoreDecisions, type StoredAnalysis } from "./persist";
+import { ensureLocalAnalysis } from "./waveform";
 import { runRulesFor } from "./rules";
 import { isAbort, sleep, withBackoff } from "./retry";
 
@@ -66,13 +65,8 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
   });
   proj.updateMedia(mediaId, { analysis: "analyzing", error: undefined });
 
-  const step = (label: string, pct: number | null = null, message = "") => jobs.upsert({ id: jobId, step: label, pct, message });
-
-  const unlisten = await listen<MediaProgress>("media-progress", (ev) => {
-    if (ev.payload.job_id !== jobId) return;
-    const cur = useJobs.getState().jobs.find((j) => j.id === jobId);
-    if (cur && cur.step === t("本機波形 / 響度")) step(cur.step, ev.payload.pct);
-  });
+  const step = (label: string, pct: number | null = null, message = "", phase?: JobPhase) =>
+    jobs.upsert({ id: jobId, step: label, pct, message, ...(phase ? { phase } : {}) });
 
   try {
     const probe = media.probe ?? (await api.mediaProbe(media.path));
@@ -80,18 +74,11 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
     const fp = probe.fingerprint;
     checkAbort(ac.signal);
 
-    // 1) 上傳用 opus（快取）
-    step(t("轉檔（上傳用）"));
+    // 1) 本機波形 + 響度（開檔時通常已算好；這裡只是確保）∥ 2) 上傳用 opus（快取）→ 3) ttls 轉寫
+    const localTask = ensureLocalAnalysis(mediaId);
+    step(t("轉檔（上傳用）"), null, "", "prepare");
     const prep = await api.mediaPrepare(media.path, fp);
     checkAbort(ac.signal);
-
-    // 2) 本機波形 + 響度 ∥ 3) ttls 轉寫
-    const localTask = (async () => {
-      const buf = await api.mediaAnalyzeLocal(jobId, media.path, fp, probe.duration_ms);
-      const a = parseAnalysis(buf);
-      useTranscript.getState().setLocal(mediaId, a);
-      return a;
-    })();
 
     const transcribeTask = (async (): Promise<ServerTranscript> => {
       if (!opts.forceTranscribe) {
@@ -100,14 +87,14 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
           return cached as ServerTranscript;
         }
       }
-      step(t("本機波形 / 響度"), 0, t("同時上傳到 ttls 轉寫…"));
+      step(t("上傳到 ttls 轉寫…"), null, "", "transcribe");
       ttlsJobId = await withBackoff(
         () => api.ttlsTranscribeStart(prep.upload_path, settings.asr_language, settings.asr_model, settings.hotwords),
         {
           signal: ac.signal,
           onRetry: (n, d, e) => {
             toast.info(t("伺服器忙碌（{msg}），{sec} 秒後重試（{n}/6）", { msg: errMessage(e), sec: Math.round(d / 1000), n }));
-            step(t("等待 ttls"), null, errMessage(e));
+            step(t("等待 ttls"), null, errMessage(e), "transcribe");
           },
         },
       );
@@ -119,8 +106,8 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
         await sleep(elapsed < 60_000 ? 2000 : 5000, ac.signal);
         info = await withBackoff(() => api.ttlsTranscribePoll(ttlsJobId!), { signal: ac.signal, delaysMs: [3000, 5000, 10000, 20000] });
         const prog = info.progress ? `（${info.progress}）` : "";
-        if (info.status === "queued") step(t("ttls 排隊中"), null, `${Math.round((info.waiting_sec ?? 0))}s`);
-        else if (info.status === "running" || info.status === "post") step(t("ttls 轉寫中"), pctOf(info.progress), prog);
+        if (info.status === "queued") step(t("ttls 排隊中"), null, `${Math.round(info.waiting_sec ?? 0)}s`, "transcribe");
+        else if (info.status === "running" || info.status === "post") step(t("ttls 轉寫中"), pctOf(info.progress), prog, "transcribe");
         else if (info.status === "done") break;
         else if (info.status === "failed") throw new Error(info.error ?? t("轉寫失敗"));
         else if (info.status === "cancelled") throw new Canceled();
@@ -133,12 +120,12 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
     const [, server] = await Promise.all([localTask, transcribeTask]);
     checkAbort(ac.signal);
 
-    step(t("整理逐字稿"));
+    step(t("整理逐字稿"), null, "", "normalize");
     const transcript = normalizeTranscript(server);
     useTranscript.getState().setTranscript(mediaId, transcript);
     const record: MediaAnalysisRecord = { transcript, serverJobId: ttlsJobId ?? undefined, transcribedAt: new Date().toISOString() };
     useProject.getState().setAnalysis(mediaId, record);
-    step(t("規則分析"));
+    step(t("規則分析"), null, "", "rules");
     const nCands = runRulesFor(mediaId, { label: t("規則分析") });
     await opts.afterTranscript?.(mediaId, transcript);
 
@@ -156,8 +143,6 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
     if (errKind(e) === "auth") toast.error(t("ttls 金鑰缺少或錯誤，請到設定輸入"));
     else toast.error(msg);
     throw e;
-  } finally {
-    unlisten();
   }
 }
 
@@ -170,7 +155,7 @@ function pctOf(progress: string | null): number | null {
   return total > 0 ? Math.round((done / total) * 100) : null;
 }
 
-/** 開專案 / 重開同檔時：從專案檔的 analysis 記錄還原 store，並嘗試載入磁碟快取的波形。 */
+/** 開專案 / 重開同檔時：從專案檔的 analysis 記錄還原 store（波形由 waveform.ts 在開檔時獨立處理）。 */
 export async function restoreAnalysis(mediaId: string): Promise<void> {
   const proj = useProject.getState();
   const media = proj.media.find((m) => m.id === mediaId);
@@ -179,16 +164,5 @@ export async function restoreAnalysis(mediaId: string): Promise<void> {
   if (rec?.transcript && Array.isArray(rec.transcript.words) && !useTranscript.getState().byMedia[mediaId]) {
     useTranscript.getState().setTranscript(mediaId, rec.transcript);
     if (!restoreDecisions(mediaId, rec)) runRulesFor(mediaId, { record: false });
-  }
-  if (media.fingerprint && !useTranscript.getState().local[mediaId]) {
-    try {
-      const st = await api.mediaCacheStatus(media.fingerprint);
-      if (st.analysis && media.probe) {
-        const buf = await api.mediaAnalyzeLocal(newJobId(), media.path, media.fingerprint, media.probe.duration_ms);
-        useTranscript.getState().setLocal(mediaId, parseAnalysis(buf));
-      }
-    } catch {
-      /* 波形快取缺失不影響逐字稿 */
-    }
   }
 }

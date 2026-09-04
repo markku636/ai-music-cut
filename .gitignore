@@ -26,3 +26,5 @@ samples/**
 outputs/
 *.aicut.json
 .aicut-cache/
+# CLI bundle（npm run cli:build 產生）
+dist-cli/

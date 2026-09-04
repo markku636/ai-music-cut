@@ -48,6 +48,14 @@ export function nextZoom(cur: number | null, fit: number, factor: number): numbe
   return next <= fit * 1.001 ? null : next;
 }
 
+function readTool(): TimelineTool {
+  try {
+    return localStorage.getItem("aicut:tool") === "seek" ? "seek" : "select";
+  } catch {
+    return "select";
+  }
+}
+
 function readBool(key: string, fallback: boolean): boolean {
   try {
     const v = localStorage.getItem(key);
@@ -70,7 +78,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   fitPxPerSec: 1,
   viewWidth: 800,
   showLoudness: readBool("aicut:showLoudness", false),
-  tool: "seek",
+  tool: readTool(),
   selection: null,
   loopSelection: readBool("aicut:loopSelection", false),
   scrollReq: null,
@@ -92,7 +100,14 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
       writeBool("aicut:showLoudness", !s.showLoudness);
       return { showLoudness: !s.showLoudness };
     }),
-  setTool: (tool) => set({ tool }),
+  setTool: (tool) => {
+    try {
+      localStorage.setItem("aicut:tool", tool);
+    } catch {
+      /* ignore */
+    }
+    set({ tool });
+  },
   setSelection: (sel) => {
     if (!sel) {
       set({ selection: null });

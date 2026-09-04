@@ -443,12 +443,19 @@ export default function Timeline(props: TimelineProps) {
     styleSelection(r);
   }, [selection, analysis]);
 
+  const hint = tool === "select" && !selection && candidates.length === 0;
+
   if (!analysis) {
     return <TimelinePlaceholder mediaId={props.mediaId} height={height} onRetry={props.onRetry} onOpenSettings={props.onOpenSettings} />;
   }
   return (
-    <div className="h-full px-2 py-2 overflow-hidden" style={{ height }}>
+    <div className="relative h-full px-2 py-2 overflow-hidden" style={{ height }}>
       <div ref={boxRef} className="w-full h-full" onContextMenu={onContextMenu} />
+      {hint && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+          <span className="text-[11px] text-fg/45 bg-well/85 px-2 py-1 rounded">在波形上拖曳選一段 → 播放 / 剪掉 / 只保留（右鍵有更多）</span>
+        </div>
+      )}
     </div>
   );
 }

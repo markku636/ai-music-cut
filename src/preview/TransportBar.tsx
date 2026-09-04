@@ -63,8 +63,8 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
         onChange={setTool}
         ariaLabel={t("時間軸工具")}
         options={[
-          { value: "seek", label: narrow ? "" : t("定位"), icon: MousePointer2, title: t("定位：點擊 / 拖曳定位播放位置（V）") },
-          { value: "select", label: narrow ? "" : t("選取"), icon: SquareDashed, title: t("選取：在波形上拖曳選取一段，再播放、剪掉或只保留（S）") },
+          { value: "seek", label: narrow ? "" : t("定位"), icon: MousePointer2, title: t("定位：拖曳也是移動播放位置（V）") },
+          { value: "select", label: narrow ? "" : t("選取"), icon: SquareDashed, title: t("選取（預設）：點一下定位、拖曳選一段，再播放 / 剪掉 / 只保留（S）") },
         ]}
       />
       <span className="flex items-center gap-0.5">

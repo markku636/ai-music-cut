@@ -1,0 +1,245 @@
+//! 內建 MCP server（Streamable HTTP，JSON-RPC 2.0）：讓 claude CLI 以 `--mcp-config` 連進來操作剪輯決策。
+//!
+//! - 只綁 127.0.0.1 隨機 port；每次啟動隨機 bearer token（寫進 agent workspace 的 mcp.json，只給自家 claude 子程序）。
+//! - 工具目錄由前端登記（`mcp_set_tools`），呼叫時發 `mcp-tool-call` 事件給前端執行，
+//!   前端以 `mcp_tool_result` 回寫 → oneshot 喚醒 HTTP 回應（60 s 逾時）。
+//! - 手刻協定（initialize / notifications/initialized / tools/list / tools/call / ping）；
+//!   單一 POST 端點回 application/json，GET 回 405，DELETE 回 204。
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::Arc;
+
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use axum::routing::post;
+use axum::{Json, Router};
+use parking_lot::{Mutex, RwLock};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use tauri::{AppHandle, Emitter};
+use tokio::sync::oneshot;
+
+pub const SERVER_NAME: &str = "aicut";
+const PROTOCOL_VERSION: &str = "2025-06-18";
+const TOOL_TIMEOUT_SECS: u64 = 60;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolDef {
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "inputSchema")]
+    pub input_schema: Value,
+}
+
+pub struct McpBridge {
+    port: AtomicU16,
+    pub token: String,
+    pub tools: RwLock<Vec<ToolDef>>,
+    pending: Mutex<HashMap<String, oneshot::Sender<Result<Value, String>>>>,
+}
+
+impl McpBridge {
+    pub fn new() -> Self {
+        Self { port: AtomicU16::new(0), token: random_token(), tools: RwLock::new(Vec::new()), pending: Mutex::new(HashMap::new()) }
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port.load(Ordering::Relaxed)
+    }
+
+    pub fn url(&self) -> String {
+        format!("http://127.0.0.1:{}/mcp", self.port())
+    }
+
+    /// 前端回寫工具結果。
+    pub fn resolve(&self, id: &str, result: Result<Value, String>) -> bool {
+        match self.pending.lock().remove(id) {
+            Some(tx) => tx.send(result).is_ok(),
+            None => false,
+        }
+    }
+}
+
+impl Default for McpBridge {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn random_token() -> String {
+    use rand::RngCore;
+    let mut b = [0u8; 24];
+    rand::thread_rng().fill_bytes(&mut b);
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+#[derive(Clone)]
+struct Ctx {
+    app: AppHandle,
+    bridge: Arc<McpBridge>,
+}
+
+#[derive(Serialize, Clone)]
+struct ToolCallEvent {
+    id: String,
+    name: String,
+    args: Value,
+}
+
+/// 綁定並啟動；回實際 port。
+pub async fn start(app: AppHandle, bridge: Arc<McpBridge>) -> std::io::Result<u16> {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
+    let port = listener.local_addr()?.port();
+    bridge.port.store(port, Ordering::Relaxed);
+    let ctx = Ctx { app, bridge };
+    let router = Router::new()
+        .route("/mcp", post(handle).get(method_not_allowed).delete(|| async { StatusCode::NO_CONTENT }))
+        .with_state(ctx);
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = axum::serve(listener, router).await {
+            eprintln!("[mcp] server stopped: {e}");
+        }
+    });
+    Ok(port)
+}
+
+async fn method_not_allowed() -> StatusCode {
+    StatusCode::METHOD_NOT_ALLOWED
+}
+
+fn rpc_result(id: Value, result: Value) -> Response {
+    let mut r = Json(json!({ "jsonrpc": "2.0", "id": id, "result": result })).into_response();
+    r.headers_mut().insert("Mcp-Session-Id", axum::http::HeaderValue::from_static("aicut-1"));
+    r
+}
+
+fn rpc_error(id: Value, code: i64, message: String) -> Response {
+    Json(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } })).into_response()
+}
+
+async fn handle(State(ctx): State<Ctx>, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    let auth = headers.get("authorization").and_then(|v| v.to_str().ok()).unwrap_or("");
+    if auth != format!("Bearer {}", ctx.bridge.token) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let req: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => return rpc_error(Value::Null, -32700, format!("parse error: {e}")),
+    };
+    // 批次請求：逐一處理（罕見）
+    if let Some(arr) = req.as_array() {
+        let mut out = Vec::new();
+        for r in arr {
+            if let Some(resp) = dispatch(&ctx, r).await {
+                out.push(resp);
+            }
+        }
+        return Json(Value::Array(out)).into_response();
+    }
+    match dispatch(&ctx, &req).await {
+        Some(v) => {
+            if v.get("error").is_some() {
+                return Json(v).into_response();
+            }
+            let id = v.get("id").cloned().unwrap_or(Value::Null);
+            rpc_result(id, v.get("result").cloned().unwrap_or(Value::Null))
+        }
+        None => StatusCode::ACCEPTED.into_response(), // notification
+    }
+}
+
+/// 回 Some(JSON-RPC 回應物件) 或 None（通知，不回應）。
+async fn dispatch(ctx: &Ctx, req: &Value) -> Option<Value> {
+    let method = req.get("method").and_then(|m| m.as_str()).unwrap_or("");
+    let id = req.get("id").cloned();
+    if id.is_none() || method.starts_with("notifications/") {
+        return None;
+    }
+    let id = id.unwrap();
+    let result = match method {
+        "initialize" => {
+            let requested = req.pointer("/params/protocolVersion").and_then(|v| v.as_str()).unwrap_or(PROTOCOL_VERSION);
+            json!({
+                "protocolVersion": requested,
+                "capabilities": { "tools": { "listChanged": false } },
+                "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
+                "instructions": "你正在操作 AI Music Cut（podcast 自動粗剪）。以自然順暢為最高原則：先用 get_project_summary / list_candidates 看狀態，再用 set_decisions 接受或拒絕；unclear/rambling 類只建議不自動剪。"
+            })
+        }
+        "ping" => json!({}),
+        "tools/list" => {
+            let tools = ctx.bridge.tools.read().clone();
+            json!({ "tools": tools })
+        }
+        "tools/call" => {
+            let name = req.pointer("/params/name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+            let args = req.pointer("/params/arguments").cloned().unwrap_or(json!({}));
+            if !ctx.bridge.tools.read().iter().any(|t| t.name == name) {
+                return Some(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32602, "message": format!("unknown tool {name}") } }));
+            }
+            let call_id = uuid::Uuid::new_v4().to_string();
+            let (tx, rx) = oneshot::channel();
+            ctx.bridge.pending.lock().insert(call_id.clone(), tx);
+            let _ = ctx.app.emit("mcp-tool-call", ToolCallEvent { id: call_id.clone(), name: name.clone(), args });
+            match tokio::time::timeout(std::time::Duration::from_secs(TOOL_TIMEOUT_SECS), rx).await {
+                Ok(Ok(Ok(v))) => {
+                    let text = match v {
+                        Value::String(s) => s,
+                        other => serde_json::to_string(&other).unwrap_or_default(),
+                    };
+                    json!({ "content": [{ "type": "text", "text": text }], "isError": false })
+                }
+                Ok(Ok(Err(msg))) => json!({ "content": [{ "type": "text", "text": msg }], "isError": true }),
+                Ok(Err(_)) => json!({ "content": [{ "type": "text", "text": "tool handler dropped" }], "isError": true }),
+                Err(_) => {
+                    ctx.bridge.pending.lock().remove(&call_id);
+                    json!({ "content": [{ "type": "text", "text": format!("tool {name} timed out after {TOOL_TIMEOUT_SECS}s") }], "isError": true })
+                }
+            }
+        }
+        _ => return Some(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": format!("method not found: {method}") } })),
+    };
+    Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
+}
+
+// ---------------- commands ----------------
+
+#[tauri::command]
+pub fn mcp_set_tools(state: tauri::State<'_, crate::commands::AppState>, tools: Vec<ToolDef>) -> usize {
+    let n = tools.len();
+    *state.mcp.tools.write() = tools;
+    n
+}
+
+#[tauri::command]
+pub fn mcp_tool_result(state: tauri::State<'_, crate::commands::AppState>, id: String, result: Option<Value>, error: Option<String>) -> bool {
+    match error {
+        Some(e) => state.mcp.resolve(&id, Err(e)),
+        None => state.mcp.resolve(&id, Ok(result.unwrap_or(Value::Null))),
+    }
+}
+
+#[derive(Serialize)]
+pub struct McpInfo {
+    pub port: u16,
+    pub url: String,
+    pub tools: usize,
+}
+
+#[tauri::command]
+pub fn mcp_info(state: tauri::State<'_, crate::commands::AppState>) -> McpInfo {
+    McpInfo { port: state.mcp.port(), url: state.mcp.url(), tools: state.mcp.tools.read().len() }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_is_hex_48() {
+        let t = random_token();
+        assert_eq!(t.len(), 48);
+        assert!(t.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+}

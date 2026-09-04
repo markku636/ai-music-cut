@@ -15,6 +15,7 @@ export default function StatusBar({ onOpenSettings }: { onOpenSettings: () => vo
   const ffmpeg = useSettings((s) => s.ffmpeg);
   const ttls = useSettings((s) => s.ttls);
   const key = useSettings((s) => s.key);
+  const claude = useSettings((s) => s.claude);
   const probeAll = useSettings((s) => s.probeAll);
   const currentMs = usePlayback((s) => s.currentMs);
   const dirty = useProject((s) => s.dirty);
@@ -55,6 +56,10 @@ export default function StatusBar({ onOpenSettings }: { onOpenSettings: () => vo
         ttls {ttls?.ok ? `${ttls.latency_ms ?? "?"}ms` : t("離線")}
         {ttls?.ok && !key?.present && <span className="text-warning">· {t("未設金鑰")}</span>}
       </button>
+      <span className="flex items-center gap-1.5 shrink-0" title={claude?.path ?? ""}>
+        <Dot ok={!!claude?.installed} warn={!!claude?.installed && !claude?.logged_in} />
+        claude {claude?.installed ? (claude.version?.split(" ")[0] ?? "") : t("未安裝")}
+      </span>
       <span className="mono shrink-0 text-fg/60">{formatMs(currentMs)}</span>
       <span className="ml-auto flex items-center gap-1.5 min-w-0">
         <Dot ok={!dirty} warn={false} />

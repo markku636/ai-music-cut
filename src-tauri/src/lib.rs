@@ -1,9 +1,12 @@
+mod agent;
 mod commands;
 mod error;
 mod ffmpeg;
+mod mcp;
 mod media;
 mod proc;
 mod project;
+mod render;
 mod store;
 mod ttls;
 
@@ -28,6 +31,14 @@ pub fn run() {
                 tauri::async_runtime::block_on(store::read_json(&handle, store::SETTINGS_FILE))
                     .unwrap_or_default();
             *handle.state::<AppState>().settings.write() = loaded;
+            // 內建 MCP server（loopback + 隨機 token）；綁不到 port 只影響 AI 助手，不擋 App 啟動。
+            {
+                let bridge = handle.state::<AppState>().mcp.clone();
+                match tauri::async_runtime::block_on(mcp::start(handle.clone(), bridge)) {
+                    Ok(port) => eprintln!("[mcp] listening on 127.0.0.1:{port}"),
+                    Err(e) => eprintln!("[mcp] failed to start: {e}"),
+                }
+            }
             // 保險絲：視窗以 visible:false 啟動，正常由前端骨架屏呼叫 show_main_window；
             // 若前端 4 秒內沒呼叫（bundle 載入失敗 / JS 錯誤），強制顯示以免看起來像沒啟動。
             if let Some(w) = app.get_webview_window("main") {
@@ -66,10 +77,19 @@ pub fn run() {
             commands::ttls_transcribe_poll,
             commands::ttls_transcribe_result,
             commands::ttls_transcribe_cancel,
+            commands::render_start,
+            commands::render_cancel,
             commands::project_save,
             commands::project_load,
             commands::open_path,
             commands::open_external,
+            agent::claude_detect,
+            agent::claude_send,
+            agent::claude_cancel,
+            agent::claude_structured,
+            mcp::mcp_set_tools,
+            mcp::mcp_tool_result,
+            mcp::mcp_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

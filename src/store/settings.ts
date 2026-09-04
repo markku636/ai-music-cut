@@ -1,10 +1,10 @@
 import { create } from "zustand";
-import { api, type AppPaths, type AppSettings, type FfmpegStatus, type KeyStatus, type TtlsHealth } from "../api";
+import { api, type AppPaths, type AppSettings, type ClaudeStatus, type FfmpegStatus, type KeyStatus, type TtlsHealth } from "../api";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   ttls_base_url: "https://ttls.markkulab.net",
   ffmpeg_path: null,
-  claude_model: "",
+  claude_model: "sonnet",
   default_aggressiveness: 50,
   target_lufs: -16,
   output_dir: null,
@@ -22,6 +22,7 @@ interface SettingsStore {
   ffmpeg: FfmpegStatus | null;
   ttls: TtlsHealth | null;
   key: KeyStatus | null;
+  claude: ClaudeStatus | null;
   paths: AppPaths | null;
   probing: boolean;
   load: () => Promise<void>;
@@ -36,6 +37,7 @@ export const useSettings = create<SettingsStore>((set, get) => ({
   ffmpeg: null,
   ttls: null,
   key: null,
+  claude: null,
   paths: null,
   probing: false,
   load: async () => {
@@ -65,12 +67,13 @@ export const useSettings = create<SettingsStore>((set, get) => ({
   probeAll: async () => {
     if (get().probing) return;
     set({ probing: true });
-    const [ffmpeg, ttls, key] = await Promise.all([
+    const [ffmpeg, ttls, key, claude] = await Promise.all([
       api.ffmpegDetect().catch(() => null),
       api.ttlsHealth().catch(() => null),
       api.ttlsKeyStatus().catch(() => null),
+      api.claudeDetect().catch(() => null),
     ]);
-    set({ ffmpeg, ttls, key, probing: false });
+    set({ ffmpeg, ttls, key, claude, probing: false });
   },
   refreshKey: async () => {
     set({ key: await api.ttlsKeyStatus().catch(() => null) });

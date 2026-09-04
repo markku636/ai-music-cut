@@ -2,16 +2,22 @@ import { useEffect, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, errMessage } from "./api";
 import { AUDIO_EXTENSIONS } from "./brand";
+import AssistantPanel from "./assistant/AssistantPanel";
+import { installToolBridge } from "./assistant/tools";
 import DecisionPanel from "./decisions/DecisionPanel";
 import AboutDialog from "./dialogs/AboutDialog";
+import RenderDialog from "./dialogs/RenderDialog";
 import SettingsDialog from "./dialogs/SettingsDialog";
 import ShortcutsHelp from "./dialogs/ShortcutsHelp";
 import { installHotkeys } from "./hotkeys";
 import { runAnalyze } from "./pipeline/analyze";
+import { runJudge } from "./pipeline/judge";
 import { enrichAnalysis } from "./pipeline/persist";
 import { runRulesFor } from "./pipeline/rules";
 import { playRange } from "./preview/playerRef";
 import { useDecisions } from "./store/decisions";
+import { useAssistant } from "./store/assistant";
+import { useAssistantChat } from "./store/assistantChat";
 import { usePlayback } from "./store/playback";
 import { isActiveState } from "./analysis/types";
 import { t } from "./i18n";
@@ -76,6 +82,7 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [renderOpen, setRenderOpen] = useState(false);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
   // 啟動：套主題、載設定並探測工具狀態。
@@ -93,7 +100,22 @@ export default function App() {
       await openMedia(p);
       if (await api.devEnv("AICUT_DEV_ANALYZE").catch(() => null)) {
         const id = useProject.getState().activeMediaId;
-        if (id) void runAnalyze(id).catch(() => {});
+        if (!id) return;
+        const log = (tag: string) => (e: unknown) => void api.clientLog(`[dev ${tag}] ${errMessage(e)}`).catch(() => {});
+        await runAnalyze(id).catch(log("analyze"));
+        if (await api.devEnv("AICUT_DEV_JUDGE").catch(() => null)) await runJudge(id).catch(log("judge"));
+        if (await api.devEnv("AICUT_DEV_RENDER").catch(() => null)) {
+          const m = selectActiveMedia(useProject.getState());
+          if (m) {
+            const { defaultOutPath, runRender } = await import("./pipeline/render");
+            await runRender(id, { format: "mp3", outPath: defaultOutPath(m, "mp3", null), leveling: true, targetLufs: -16 }).catch(log("render"));
+          }
+        }
+        const ask = await api.devEnv("AICUT_DEV_ASK").catch(() => null);
+        if (ask) {
+          useAssistant.getState().setOpen(true);
+          void useAssistantChat.getState().send(ask);
+        }
       }
     })();
   }, []);
@@ -128,6 +150,17 @@ export default function App() {
       toast.error(errMessage(e));
     }
   };
+
+  // MCP 工具橋：登記工具目錄並接工具呼叫。
+  useEffect(() => {
+    let un: (() => void) | undefined;
+    installToolBridge()
+      .then((f) => {
+        un = f;
+      })
+      .catch(() => {});
+    return () => un?.();
+  }, []);
 
   // 拖放音檔 / 專案檔。
   useEffect(() => {
@@ -169,17 +202,15 @@ export default function App() {
     if (id) runRulesFor(id, { label: t("調整激進度"), record: true });
   };
 
-  const notYet = (what: string) => () => toast.info(t("{what}：下一階段實作", { what }));
-
   return (
     <div className="h-full flex flex-col">
       <Toolbar
         onOpen={() => void openMedia()}
         onAnalyze={() => active && void runAnalyze(active.id).catch(() => {})}
         canAnalyze={!!active && active.analysis !== "analyzing"}
-        onJudge={notYet(t("AI 判讀"))}
+        onJudge={() => active && void runJudge(active.id).catch((e) => toast.error(errMessage(e)))}
         canJudge={!!active && active.analysis === "ready"}
-        onRender={notYet(t("輸出"))}
+        onRender={() => setRenderOpen(true)}
         canRender={!!active && active.analysis === "ready"}
         onSave={() => void saveProject()}
         dirty={dirty}
@@ -192,11 +223,13 @@ export default function App() {
         <Splitter axis="x" onPointerDown={sidebar.onPointerDown} />
         <MainArea onOpen={() => void openMedia()} />
         <DecisionPanel mediaId={active?.id ?? null} onRerunRules={rerunRules} />
+        <AssistantPanel />
       </div>
       <StatusBar onOpenSettings={() => setSettingsOpen(true)} />
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
+      {renderOpen && active && <RenderDialog mediaId={active.id} onClose={() => setRenderOpen(false)} />}
       <UiHost />
     </div>
   );

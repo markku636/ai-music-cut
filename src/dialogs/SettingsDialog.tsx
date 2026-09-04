@@ -146,9 +146,8 @@ export default function SettingsDialog({ open, onClose }: { open: boolean; onClo
               </Button>
             </div>
           </Field>
-          <Field label={t("Claude 模型（claude CLI --model）")} hint={t("留空用 CLI 預設；AI 判讀與助手都用本機 claude 登入身分")}>
-            <Select value={draft.claude_model} onChange={(e) => void commit({ claude_model: e.target.value })}>
-              <option value="">{t("預設")}</option>
+          <Field label={t("Claude 模型（claude CLI --model）")} hint={t("AI 判讀與助手都用本機 claude 登入身分；sonnet 速度與品質均衡")}>
+            <Select value={draft.claude_model || "sonnet"} onChange={(e) => void commit({ claude_model: e.target.value })}>
               <option value="opus">opus</option>
               <option value="sonnet">sonnet</option>
               <option value="haiku">haiku</option>

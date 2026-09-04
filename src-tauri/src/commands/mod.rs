@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 
 use crate::error::{AppError, AppResult};
 use crate::{ffmpeg, media, project, store, ttls};
@@ -17,6 +17,10 @@ pub struct AppState {
     pub settings: Arc<RwLock<store::AppSettings>>,
     /// 可取消工作的旗標（key = job_id）：分析 / 輸出等長跑 ffmpeg 迴圈定期檢查。
     pub cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
+    /// AI 助手進行中的問答背景任務（key = req_id）。取消時 abort 即終止 claude 子程序。
+    pub agent_jobs: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
+    /// 內建 MCP server 橋接（port / token / 工具目錄 / 等待中的工具呼叫）。
+    pub mcp: Arc<crate::mcp::McpBridge>,
 }
 
 impl AppState {
@@ -29,6 +33,8 @@ impl AppState {
             ffmpeg: Arc::new(Mutex::new(None)),
             settings: Arc::new(RwLock::new(store::AppSettings::default())),
             cancel_flags: Arc::new(Mutex::new(HashMap::new())),
+            agent_jobs: Arc::new(Mutex::new(HashMap::new())),
+            mcp: Arc::new(crate::mcp::McpBridge::new()),
         }
     }
 
@@ -326,6 +332,31 @@ pub async fn ttls_transcribe_result(state: State<'_, AppState>, job_id: String) 
 pub async fn ttls_transcribe_cancel(state: State<'_, AppState>, job_id: String) -> AppResult<()> {
     let base = state.base_url();
     ttls::transcribe_cancel(&state.http, &base, &job_id).await
+}
+
+// ---------------- 輸出 ----------------
+
+#[tauri::command]
+pub async fn render_start(app: AppHandle, state: State<'_, AppState>, job_id: String, src: String, plan: crate::render::RenderPlan) -> AppResult<()> {
+    let bins = state.ffmpeg_bins().await?;
+    let work_dir = store::app_cache_dir(&app)?.join("render");
+    tokio::fs::create_dir_all(&work_dir).await?;
+    let flag = state.cancel_flag(&job_id);
+    let flags = state.cancel_flags.clone();
+    let app2 = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let done = crate::render::run(app2.clone(), bins, src, plan, work_dir, job_id.clone(), flag).await;
+        flags.lock().remove(&job_id);
+        let _ = app2.emit("render-done", done);
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn render_cancel(state: State<'_, AppState>, job_id: String) {
+    if let Some(f) = state.cancel_flags.lock().get(&job_id) {
+        f.store(true, Ordering::Relaxed);
+    }
 }
 
 // ---------------- 專案 ----------------

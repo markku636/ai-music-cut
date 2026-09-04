@@ -94,6 +94,80 @@ export interface MediaProgress {
   pct: number;
 }
 
+export interface ClaudeStatus {
+  installed: boolean;
+  version: string | null;
+  logged_in: boolean;
+  path: string | null;
+}
+
+/** `claude-stream` 事件 payload。 */
+export interface ClaudeStreamEvent {
+  req_id: string;
+  kind: "system" | "text" | "tool" | "tool_result" | "result" | "error" | "done";
+  text?: string;
+  session_id?: string;
+  model?: string;
+  tool?: string;
+  is_error?: boolean;
+  duration_ms?: number;
+  code?: number;
+}
+
+/** `mcp-tool-call` 事件 payload。 */
+export interface McpToolCall {
+  id: string;
+  name: string;
+  args: unknown;
+}
+
+export interface McpToolDef {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+}
+
+export interface McpInfo {
+  port: number;
+  url: string;
+  tools: number;
+}
+
+export interface RenderSeg {
+  src_start_ms: number;
+  src_end_ms: number;
+  gain_db: number;
+}
+export interface RenderJoin {
+  kind: "crossfade" | "gap" | "seam";
+  ms: number;
+}
+export interface RenderPlan {
+  segs: RenderSeg[];
+  joins: RenderJoin[];
+  crossfade_ms: number;
+  target_lufs: number;
+  true_peak_dbtp: number;
+  format: "mp3" | "m4a" | "wav";
+  out_path: string;
+  channels: number;
+}
+export interface RenderProgress {
+  job_id: string;
+  stage: "cut" | "measure" | "encode";
+  pct: number;
+}
+export interface RenderDone {
+  job_id: string;
+  ok: boolean;
+  out_path: string | null;
+  error: string | null;
+  input_lufs: number | null;
+  output_lufs: number | null;
+  output_tp: number | null;
+  elapsed_ms: number;
+}
+
 /** Rust `AppError` 序列化形狀。 */
 export interface AppErrorShape {
   kind: string;
@@ -151,8 +225,19 @@ export const api = {
   ttlsTranscribePoll: (jobId: string) => invoke<TranscribeJobInfo>("ttls_transcribe_poll", { jobId }),
   ttlsTranscribeResult: (jobId: string) => invoke<unknown>("ttls_transcribe_result", { jobId }),
   ttlsTranscribeCancel: (jobId: string) => invoke<void>("ttls_transcribe_cancel", { jobId }),
+  renderStart: (jobId: string, src: string, plan: RenderPlan) => invoke<void>("render_start", { jobId, src, plan }),
+  renderCancel: (jobId: string) => invoke<void>("render_cancel", { jobId }),
   projectSave: (path: string, doc: unknown) => invoke<void>("project_save", { path, doc }),
   projectLoad: (path: string) => invoke<unknown>("project_load", { path }),
   openPath: (path: string) => invoke<void>("open_path", { path }),
   openExternal: (url: string) => invoke<void>("open_external", { url }),
+  claudeDetect: () => invoke<ClaudeStatus>("claude_detect"),
+  claudeSend: (reqId: string, prompt: string, sessionId: string | null, model: string | null, mode: "agent" | "advise", systemPrompt: string | null) =>
+    invoke<void>("claude_send", { reqId, prompt, sessionId, model, mode, systemPrompt }),
+  claudeCancel: (reqId: string) => invoke<void>("claude_cancel", { reqId }),
+  claudeStructured: (prompt: string, schema: unknown, model: string | null, systemPrompt: string | null, timeoutMs?: number) =>
+    invoke<unknown>("claude_structured", { prompt, schema, model, systemPrompt, timeoutMs: timeoutMs ?? null }),
+  mcpSetTools: (tools: McpToolDef[]) => invoke<number>("mcp_set_tools", { tools }),
+  mcpToolResult: (id: string, result: unknown, error: string | null) => invoke<boolean>("mcp_tool_result", { id, result, error }),
+  mcpInfo: () => invoke<McpInfo>("mcp_info"),
 };

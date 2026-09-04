@@ -40,7 +40,7 @@ impl Default for AppSettings {
         Self {
             ttls_base_url: "https://ttls.markkulab.net".to_string(),
             ffmpeg_path: None,
-            claude_model: String::new(),
+            claude_model: "sonnet".to_string(),
             default_aggressiveness: 50,
             target_lufs: -16.0,
             output_dir: None,

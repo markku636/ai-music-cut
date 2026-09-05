@@ -18,6 +18,7 @@ import { normalizeTranscript, type ServerTranscript } from "../src/analysis/norm
 import { runRulesAt } from "../src/analysis/rules";
 import { thresholdsFor } from "../src/analysis/thresholds";
 import { SUGGEST_ONLY_KINDS, isActiveState, KIND_LABEL, type Candidate, type DecisionMap, type DecisionState, type Transcript } from "../src/analysis/types";
+import { actualWords, expectedWords, verifyEdit, type VerifyReport } from "../src/analysis/verify";
 import { Ffmpeg } from "./lib/ffmpeg";
 import { judgeAll } from "./lib/judge";
 import { health, keyFromEnvFile, resolveKey, separate, transcribe, type TtlsClient } from "./lib/ttls";
@@ -77,15 +78,18 @@ function help(): void {
   aicut cut        <音檔> [-o out.mp3] [--format mp3|m4a|wav] [--lufs -16] [--aggressiveness 50] [--judge]
                           [--project p.aicut.json]   沿用 App 存的決策 / 手動剪輯 / 效果（不重跑規則）
   aicut separate   <音檔> [--stems vocals_accom|all] [--format wav|mp3|flac] [--out-dir DIR]
+  aicut verify     <原始音檔> <剪好的成品> [--project p.aicut.json]   用 ASR 重新轉寫成品，逐字比對該留的字
 
 共用選項：
   --server URL      ttls 伺服器（預設 https://ttls.markkulab.net）
   --key KEY         ttls API 金鑰（或環境變數 AICUT_TTLS_API_KEY / .env.local；不會印出）
   --ffmpeg PATH     ffmpeg 執行檔（預設 PATH 裡的 ffmpeg；ffprobe 取同資料夾）
   --no-cache        不用逐字稿快取（預設同一檔案的轉寫結果快取在暫存目錄）
+  --verify          cut 完成後用 ASR 重新轉寫成品並比對（人工驗收用）
 
 範例：
-  aicut cut ep12.m4a --judge -o ep12_cut.mp3
+  aicut cut ep12.m4a --judge -o ep12_cut.mp3 --verify
+  aicut verify ep12.m4a ep12_cut.mp3
   aicut separate song.mp3 --format wav
 `);
 }
@@ -324,6 +328,54 @@ async function cmdCut(args: Args): Promise<void> {
   const outProbe = await ff.probe(out);
   process.stdout.write(`${out}\n`);
   log(`完成：${(outProbe.durationMs / 1000).toFixed(1)} 秒（原 ${(probe.durationMs / 1000).toFixed(1)}）· 輸出 ${r.outputLufs?.toFixed(1) ?? "?"} LUFS`);
+  if (args.flags.verify) await verifyOutput(a, edl, out, ff, args.flags);
+}
+
+/** 用 ASR 重新轉寫成品，與 EDL 預期保留的字逐字比對。 */
+async function verifyOutput(a: Analysis, edl: Edl, outFile: string, ff: Ffmpeg, flags: Record<string, string | true>): Promise<VerifyReport> {
+  if (!a.transcript.words.length) throw new Error("沒有逐字稿可比對（純人工剪輯無法用 ASR 驗證）");
+  log("驗證：把成品送回 ttls 重新轉寫…");
+  const { transcript: outTr } = await getTranscript(outFile, ff, { ...flags, "no-cache": true });
+  const probe = await ff.probe(outFile);
+  const r = verifyEdit(expectedWords(a.transcript, edl), actualWords(outTr), edl, {
+    outDurationMs: probe.durationMs,
+    expectedDurationMs: edl.stats.keptMs,
+  });
+  printVerify(r);
+  return r;
+}
+
+function printVerify(r: VerifyReport): void {
+  process.stdout.write(`\n${r.summary}\n`);
+  if (r.durationDeltaMs != null) process.stdout.write(`  時長差：${(r.durationDeltaMs / 1000).toFixed(2)} 秒（成品 vs EDL 預估）\n`);
+  const hard = r.findings.filter((f) => (f.kind === "missing" || f.kind === "extra") && !f.lowConfidence);
+  for (const f of hard.slice(0, 20)) {
+    const tag = f.kind === "missing" ? "漏字" : "該剪沒剪";
+    process.stdout.write(`  ${tag} 原始 ${fmtMs(f.srcMs)} / 成品 ${fmtMs(f.outMs)}  「${f.expected ?? f.actual}」${f.nearSeam ? "（接縫附近）" : ""}\n`);
+  }
+  if (hard.length > 20) process.stdout.write(`  …還有 ${hard.length - 20} 筆\n`);
+  for (const s of r.seams.filter((x) => !x.ok).slice(0, 10)) {
+    process.stdout.write(`  可疑接縫 成品 ${fmtMs(s.outMs)}（原始 ${fmtMs(s.srcBeforeMs)} → ${fmtMs(s.srcAfterMs)}）：${s.note}\n`);
+  }
+}
+
+async function cmdVerify(args: Args): Promise<void> {
+  const [src, out] = args.positional;
+  if (!src || !out) throw new Error("用法：aicut verify <原始音檔> <剪好的成品> [--project p.aicut.json]");
+  const ff = ffmpegOf(args.flags);
+  let a: Analysis;
+  let aggr = num(args.flags, "aggressiveness", 50);
+  if (typeof args.flags.project === "string") {
+    const p = await loadProject(args.flags.project);
+    a = p;
+    if (!args.flags.aggressiveness) aggr = p.aggressiveness;
+  } else {
+    a = await analyze(src, ff, args.flags);
+  }
+  const probe = await ff.probe(src);
+  const edl = edlOf(a, probe.durationMs, aggr);
+  const r = await verifyOutput(a, edl, out, ff, args.flags);
+  process.exitCode = r.findings.some((f) => (f.kind === "missing" || f.kind === "extra") && !f.lowConfidence) ? 2 : 0;
 }
 
 async function cmdSeparate(args: Args): Promise<void> {
@@ -357,6 +409,8 @@ async function main(): Promise<void> {
       return cmdCut(args);
     case "separate":
       return cmdSeparate(args);
+    case "verify":
+      return cmdVerify(args);
     case "--version":
     case "version":
       process.stdout.write(`${VERSION}\n`);

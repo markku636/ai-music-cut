@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileMusic, FolderOpen } from "lucide-react";
+import { BadgeCheck, FileMusic, FolderOpen } from "lucide-react";
 import { api, errMessage, type RenderDone, type RenderProgress } from "../api";
 import { KIND_LABEL, type CandidateKind } from "../analysis/types";
 import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
@@ -7,10 +7,11 @@ import { pickSaveFile, toast } from "../ui";
 import { useT } from "../i18n";
 import { buildRenderPlan, defaultOutPath, runRender, type RenderFormat } from "../pipeline/render";
 import { useProject } from "../store/project";
+import { useVerify } from "../store/verify";
 import { useSettings } from "../store/settings";
 import { formatMs } from "../time";
 
-export default function RenderDialog({ mediaId, onClose }: { mediaId: string; onClose: () => void }) {
+export default function RenderDialog({ mediaId, onClose, onVerify }: { mediaId: string; onClose: () => void; onVerify?: (outPath: string, durationMs: number | null) => void }) {
   const t = useT();
   const media = useProject((s) => s.media.find((m) => m.id === mediaId) ?? null);
   const projTarget = useProject((s) => s.targetLufs);
@@ -42,6 +43,7 @@ export default function RenderDialog({ mediaId, onClose }: { mediaId: string; on
     try {
       const r = await runRender(mediaId, { format, outPath: outPath.trim(), leveling, targetLufs: target }, setProgress);
       setDone(r);
+      useVerify.getState().clear(mediaId); // 換了成品，舊的驗收報告就不算數
       if (r.ok) toast.success(t("輸出完成：{lufs} LUFS", { lufs: r.output_lufs?.toFixed(1) ?? "?" }));
       else if (r.error !== "已取消") toast.error(r.error ?? t("輸出失敗"));
     } catch (e) {
@@ -67,9 +69,23 @@ export default function RenderDialog({ mediaId, onClose }: { mediaId: string; on
             {t("關閉")}
           </Button>
           {done?.ok && done.out_path && (
-            <Button icon={FolderOpen} onClick={() => void api.openPath(done.out_path!)}>
-              {t("開啟資料夾")}
-            </Button>
+            <>
+              <Button icon={FolderOpen} onClick={() => void api.openPath(done.out_path!)}>
+                {t("開啟資料夾")}
+              </Button>
+              {onVerify && (
+                <Button
+                  icon={BadgeCheck}
+                  onClick={() => {
+                    onVerify(done.out_path!, built?.edl.stats.keptMs ?? null);
+                    onClose();
+                  }}
+                  title={t("把成品送回 ttls 重新轉寫，檢查有沒有剪掉不該剪的字")}
+                >
+                  {t("用 ASR 驗收")}
+                </Button>
+              )}
+            </>
           )}
           <Button variant="primary" onClick={() => void start()} loading={busy} disabled={!built || !outPath.trim()}>
             {t("開始輸出")}

@@ -31,6 +31,7 @@ const KIND_LABEL: Record<JobKind, string> = {
   judge: "AI 判讀",
   render: "輸出",
   separate: "去人聲",
+  verify: "ASR 驗收",
 };
 
 export interface SidebarProps {

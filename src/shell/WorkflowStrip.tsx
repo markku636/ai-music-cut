@@ -7,12 +7,14 @@ import { decisionCounts, useDecisions } from "../store/decisions";
 import { useJobs } from "../store/jobs";
 import { selectActiveMedia, useProject } from "../store/project";
 import { useSettings } from "../store/settings";
+import { useVerify } from "../store/verify";
 
 export interface WorkflowStripProps {
   onOpen: () => void;
   onAnalyze: () => void;
   onJudge: () => void;
   onRender: () => void;
+  onVerify: () => void;
   onOpenSettings: (focus?: "key" | "ffmpeg") => void;
 }
 
@@ -42,6 +44,8 @@ export default function WorkflowStrip(p: WorkflowStripProps) {
   const analyzeJob = useJobs((s) => s.jobs.find((j) => j.kind === "analyze" && j.mediaId === mediaId && (j.status === "running" || j.status === "queued")));
   const rendered = useJobs((s) => s.jobs.some((j) => j.kind === "render" && j.mediaId === mediaId && j.status === "done"));
   const cancelJob = useJobs((s) => s.cancel);
+  const lastOutput = useVerify((s) => (mediaId ? s.lastOutput[mediaId] ?? null : null));
+  const verifyReport = useVerify((s) => (mediaId ? s.byMedia[mediaId] ?? null : null));
 
   const counts = decisionCounts(candidates, decisions ?? {});
   const step = !active ? 1 : active.analysis !== "ready" ? 2 : rendered ? 4 : 3;
@@ -131,13 +135,36 @@ export default function WorkflowStrip(p: WorkflowStripProps) {
         </>
       ),
     };
+  } else if (verifyReport) {
+    const hard = verifyReport.findings.filter((f) => (f.kind === "missing" || f.kind === "extra") && !f.lowConfidence).length;
+    caption = {
+      text: verifyReport.summary,
+      badge: <Badge tone={hard === 0 ? "success" : "warning"}>{hard === 0 ? t("驗收通過") : t("有 {n} 處要聽", { n: hard })}</Badge>,
+      cta: (
+        <>
+          <Button size="sm" variant={hard === 0 ? "secondary" : "primary"} onClick={p.onVerify}>
+            {t("看報告")}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={p.onRender}>
+            {t("再次輸出")}
+          </Button>
+        </>
+      ),
+    };
   } else {
     caption = {
-      text: t("已輸出"),
+      text: lastOutput ? t("已輸出 · 可以用 ASR 驗收，確認沒有剪掉不該剪的字") : t("已輸出"),
       cta: (
-        <Button size="sm" variant="ghost" onClick={p.onRender}>
-          {t("再次輸出")}
-        </Button>
+        <>
+          {lastOutput && (
+            <Button size="sm" variant="primary" onClick={p.onVerify}>
+              {t("ASR 驗收")}
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={p.onRender}>
+            {t("再次輸出")}
+          </Button>
+        </>
       ),
     };
   }

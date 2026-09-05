@@ -9,10 +9,12 @@ import AboutDialog from "./dialogs/AboutDialog";
 import RenderDialog from "./dialogs/RenderDialog";
 import SeparateDialog from "./dialogs/SeparateDialog";
 import SettingsDialog, { type SettingsFocus } from "./dialogs/SettingsDialog";
+import VerifyDialog from "./dialogs/VerifyDialog";
 import ShortcutsHelp from "./dialogs/ShortcutsHelp";
 import { installHotkeys } from "./hotkeys";
 import { runAnalyze } from "./pipeline/analyze";
 import { runJudge } from "./pipeline/judge";
+import { runVerify } from "./pipeline/verify";
 import { enrichAnalysis } from "./pipeline/persist";
 import { runRulesFor } from "./pipeline/rules";
 import { getPlayer, playRange, seekTo, togglePlay } from "./preview/playerRef";
@@ -21,6 +23,7 @@ import { useAssistant } from "./store/assistant";
 import { useAssistantChat } from "./store/assistantChat";
 import { usePlayback } from "./store/playback";
 import { useTimeline } from "./store/timeline";
+import { useVerify } from "./store/verify";
 import { isActiveState } from "./analysis/types";
 import { t } from "./i18n";
 import { defaultProjectFileName } from "./project/format";
@@ -117,6 +120,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renderOpen, setRenderOpen] = useState(false);
   const [separateOpen, setSeparateOpen] = useState(false);
+  const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
   const openSettings = (focus: SettingsFocus = null) => {
@@ -294,6 +298,24 @@ export default function App() {
 
   const onJudge = () => active && void runJudge(active.id).catch((e) => toast.error(errMessage(e)));
 
+  /** 開驗收報告：已有報告就直接看，否則對最近一次輸出跑一次。 */
+  const openVerify = () => {
+    const id = useProject.getState().activeMediaId;
+    if (!id) return;
+    const v = useVerify.getState();
+    const last = v.lastOutput[id] ?? null;
+    setVerifyFor({ outPath: last?.path ?? v.byMedia[id]?.outPath ?? null, durationMs: last?.keptMs ?? null });
+    if (!v.byMedia[id] && last) void runVerify(id, { outPath: last.path, outDurationMs: last.keptMs }).catch(() => {});
+  };
+
+  /** 輸出完成 → 直接跑 ASR 驗收並開報告（人只要聽機器標出來的可疑處）。 */
+  const startVerify = (outPath: string, durationMs: number | null) => {
+    const id = useProject.getState().activeMediaId;
+    if (!id) return;
+    setVerifyFor({ outPath, durationMs });
+    void runVerify(id, { outPath, outDurationMs: durationMs }).catch(() => {});
+  };
+
   return (
     <div className="h-full flex flex-col">
       <Toolbar
@@ -312,7 +334,14 @@ export default function App() {
         onAbout={() => setAboutOpen(true)}
         onSettings={() => openSettings()}
       />
-      <WorkflowStrip onOpen={() => void openMedia()} onAnalyze={() => analyzeWithPreflight()} onJudge={onJudge} onRender={() => setRenderOpen(true)} onOpenSettings={openSettings} />
+      <WorkflowStrip
+        onOpen={() => void openMedia()}
+        onAnalyze={() => analyzeWithPreflight()}
+        onJudge={onJudge}
+        onRender={() => setRenderOpen(true)}
+        onVerify={openVerify}
+        onOpenSettings={openSettings}
+      />
       <SetupBanner onOpenSettings={openSettings} />
       <div className="flex-1 flex min-h-0">
         <Sidebar width={sidebar.size} onOpen={() => void openMedia()} onAnalyze={(id) => analyzeWithPreflight(id)} onOpenSettings={openSettings} />
@@ -325,7 +354,8 @@ export default function App() {
       <SettingsDialog open={settingsOpen} focus={settingsFocus} onClose={() => setSettingsOpen(false)} />
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
-      {renderOpen && active && <RenderDialog mediaId={active.id} onClose={() => setRenderOpen(false)} />}
+      {renderOpen && active && <RenderDialog mediaId={active.id} onClose={() => setRenderOpen(false)} onVerify={startVerify} />}
+      {verifyFor && active && <VerifyDialog mediaId={active.id} outPath={verifyFor.outPath} outDurationMs={verifyFor.durationMs} onClose={() => setVerifyFor(null)} />}
       {separateOpen && active && <SeparateDialog mediaId={active.id} onClose={() => setSeparateOpen(false)} />}
       <UiHost />
     </div>

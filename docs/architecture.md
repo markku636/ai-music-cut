@@ -33,6 +33,7 @@
 4. **AI 判讀**（`pipeline/judge.ts`）：候選句切視窗（前後 3 句語境）→ `claude -p --json-schema` → 驗證（代號→id、文字→字範圍）→ `applyJudge`。視窗雜湊快取進專案檔。
 5. **AI 助手**（`assistant/`）：`claude -p --output-format stream-json --mcp-config … --allowedTools mcp__aicut --permission-mode dontAsk`；Rust 內建 MCP server 把 `tools/call` 轉成 `mcp-tool-call` 事件，前端 handler 操作 store 後以 `mcp_tool_result` 回寫。
 6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
+7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。
 7. **去人聲**（`pipeline/separate.ts` → `ttls::separate`）：上傳原檔到 `/v1/separate`（demucs htdemucs，同步、各軌 base64）→ 寫 `<來源>_vocals` / `_accompaniment` → 加入媒體清單。
 8. **ASR 驗收**（`pipeline/verify.ts` + `analysis/verify.ts`）：成品 → `media_prepare` → ttls 轉寫 → `expectedWords(EDL)` × 成品逐字稿做帶狀 Levenshtein 對齊 → 漏字 / 該剪沒剪 / 接縫 ±600 ms 標記；報告存在 `store/verify.ts`（不進專案檔），UI 可逐筆試聽或跳去修。

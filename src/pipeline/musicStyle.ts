@@ -1,17 +1,27 @@
-// AI 配樂（ttls /v1/music，ACE-Step）：送單 → 輪詢 → 下載候選 → 直接加進媒體清單，
-// 生出來的曲子就能用同一套剪輯 / 節拍 / 驗收流程處理。
-import { api, errKind, errMessage, type MusicJobInfo, type MusicOpts } from "../api";
+// 曲風轉換（ttls /v1/music/style，ACE-Step audio2audio）：
+// 把「編輯器裡選取的那一段」切出來當參考，配上目標風格描述，生成同結構但換一種曲風的新曲。
+import { api, errKind, errMessage, type MusicJobInfo } from "../api";
 import { t } from "../i18n";
 import { newJobId, useJobs } from "../store/jobs";
 import { useProject } from "../store/project";
 import { useSettings } from "../store/settings";
 import { toast } from "../ui";
+import { friendlyMusicError, slugify } from "./music";
 import { sleep } from "./retry";
 
-export interface GenerateMusicOptions extends MusicOpts {
-  /** 寫到哪個資料夾（空 = 設定的輸出資料夾 → 目前媒體同資料夾）。 */
+export interface StyleTransferOptions {
+  mediaId: string;
+  /** 參考範圍（來源時間軸）。 */
+  startMs: number;
+  endMs: number;
+  prompt: string;
+  /** 0–1，越高越貼近原曲的旋律 / 結構。 */
+  coverStrength: number;
+  nCandidates: number;
+  format: string;
+  /** 0 = 跟隨參考長度。 */
+  durationSec?: number;
   outDir?: string | null;
-  /** 完成後把候選加進媒體清單並切過去。 */
   addToProject?: boolean;
 }
 
@@ -20,38 +30,15 @@ function dirOf(p: string): string {
   return i >= 0 ? p.slice(0, i) : p;
 }
 
-/**
- * 伺服器端的音樂生成錯誤常常是一大段 Python traceback；挑出使用者真正能處理的情況翻成人話。
- * 目前最常見的是共卡 OOM（同一張 GPU 同時跑 TTS 聲音池與 ACE-Step）。
- */
-export function friendlyMusicError(raw: string): string {
-  const s = raw ?? "";
-  if (/out of memory|CUDA out of memory|OutOfMemoryError/i.test(s)) {
-    return t("GPU 記憶體不足：音樂生成與語音合成共用同一張卡，請等 TTS / 其他任務結束（或請管理者重啟 tts-service 釋放）再試。曲風轉換比純生成多吃一顆編碼器，最容易卡在這裡。");
-  }
-  if (/models_initialized|模型尚未載入|首次載入/i.test(s)) return t("伺服器正在載入音樂模型（首次生成要幾分鐘），請稍後再試。");
-  if (/佇列已滿|queue/i.test(s) && /full|滿/i.test(s)) return t("伺服器音樂佇列已滿，請等現有任務跑完再送。");
-  if (s.length > 300) return `${s.slice(0, 300)}…`;
-  return s;
-}
-
-/** prompt → 檔名用的短 slug（英數與 -，最多 40 字）。 */
-export function slugify(prompt: string): string {
-  const s = prompt
-    .toLowerCase()
-    .replace(/[^a-z0-9一-鿿]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40);
-  return s || "bgm";
-}
-
-/** 生成音樂；回寫下來的檔案路徑。 */
-export async function runGenerateMusic(opts: GenerateMusicOptions): Promise<string[]> {
+/** 對選取範圍做曲風轉換；回下載下來的檔案路徑。 */
+export async function runStyleTransfer(opts: StyleTransferOptions): Promise<string[]> {
   const proj = useProject.getState();
-  const active = proj.media.find((m) => m.id === proj.activeMediaId) ?? null;
+  const media = proj.media.find((m) => m.id === opts.mediaId);
+  if (!media) throw new Error(t("找不到媒體"));
+  const lenMs = Math.max(0, opts.endMs - opts.startMs);
+  if (lenMs < 2000) throw new Error(t("選取太短（至少 2 秒）才有足夠的參考"));
   const settings = useSettings.getState().s;
-  const outDir = opts.outDir?.trim() || settings.output_dir?.trim() || (active ? dirOf(active.path) : "");
-  if (!outDir) throw new Error(t("請先選一個輸出資料夾（設定 → 輸出）"));
+  const outDir = opts.outDir?.trim() || settings.output_dir?.trim() || dirOf(media.path);
 
   const jobs = useJobs.getState();
   const jobId = newJobId();
@@ -60,8 +47,8 @@ export async function runGenerateMusic(opts: GenerateMusicOptions): Promise<stri
   jobs.upsert({
     id: jobId,
     kind: "music",
-    mediaId: active?.id ?? "",
-    step: t("送單給 ACE-Step…"),
+    mediaId: opts.mediaId,
+    step: t("切出參考片段…"),
     pct: null,
     status: "running",
     message: opts.prompt,
@@ -73,7 +60,20 @@ export async function runGenerateMusic(opts: GenerateMusicOptions): Promise<stri
   const step = (label: string, message = "") => jobs.upsert({ id: jobId, step: label, message });
 
   try {
-    serverJobId = await api.ttlsMusicStart(opts);
+    const clip = await api.mediaClip(media.path, media.fingerprint, opts.startMs, opts.endMs);
+    if (canceled) throw new Error("canceled");
+
+    step(t("上傳參考並送單…"));
+    serverJobId = await api.ttlsMusicStyleStart({
+      prompt: opts.prompt,
+      audio_path: clip,
+      cover_strength: opts.coverStrength,
+      duration_sec: opts.durationSec ?? 0,
+      n_candidates: opts.nCandidates,
+      format: opts.format,
+      seed: -1,
+    });
+
     const startedAt = Date.now();
     let info: MusicJobInfo;
     for (;;) {
@@ -82,15 +82,15 @@ export async function runGenerateMusic(opts: GenerateMusicOptions): Promise<stri
       info = await api.ttlsMusicPoll(serverJobId);
       const secs = Math.round((Date.now() - startedAt) / 1000);
       if (info.status === "queued") step(t("排隊中"), `${Math.round(info.waiting_sec ?? 0)}s`);
-      else if (info.status === "running") step(t("生成中"), t("已 {s} 秒（{n} 首候選）", { s: secs, n: opts.n_candidates }));
+      else if (info.status === "running") step(t("轉換曲風中"), t("已 {s} 秒（{n} 首候選）", { s: secs, n: opts.nCandidates }));
       else if (info.status === "post") step(t("母帶後處理"), `${secs}s`);
       else if (info.status === "done") break;
-      else if (info.status === "failed") throw new Error(info.error ?? t("音樂生成失敗"));
+      else if (info.status === "failed") throw new Error(info.error ?? t("曲風轉換失敗"));
       else if (info.status === "cancelled") throw new Error("canceled");
     }
 
     step(t("下載"));
-    const stem = slugify(opts.prompt);
+    const stem = `${media.name.replace(/\.[^.]+$/, "")}-${slugify(opts.prompt)}`;
     const count = Math.max(1, info.outputs?.length ?? 1);
     const files: string[] = [];
     for (let i = 0; i < count; i++) {
@@ -108,7 +108,7 @@ export async function runGenerateMusic(opts: GenerateMusicOptions): Promise<stri
       if (first) useProject.getState().setActive(first);
     }
     jobs.upsert({ id: jobId, status: "done", step: t("完成"), pct: 100, message: files.join(" · "), endedAt: Date.now() });
-    toast.success(t("配樂完成：{n} 首", { n: files.length }));
+    toast.success(t("曲風轉換完成：{n} 首", { n: files.length }));
     return files;
   } catch (e) {
     const msg = errMessage(e);

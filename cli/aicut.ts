@@ -23,7 +23,7 @@ import type { LocalAnalysis } from "../src/analysis/peaks";
 import { actualWords, expectedWords, verifyEdit, type VerifyReport } from "../src/analysis/verify";
 import { Ffmpeg } from "./lib/ffmpeg";
 import { judgeAll } from "./lib/judge";
-import { generateMusic, health, keyFromEnvFile, resolveKey, separate, transcribe, type TtlsClient } from "./lib/ttls";
+import { generateMusic, health, keyFromEnvFile, resolveKey, separate, styleTransfer, transcribe, type TtlsClient } from "./lib/ttls";
 
 const VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 declare const __APP_VERSION__: string | undefined;
@@ -83,6 +83,7 @@ function help(): void {
   aicut verify     <原始音檔> <剪好的成品> [--project p.aicut.json]   用 ASR 重新轉寫成品，逐字比對該留的字
   aicut beats      <音檔> [--bars]                                    偵測 BPM / 拍點（剪音樂用；--bars 列出小節時間）
   aicut music      "<風格描述>" [--duration 30] [--bpm 0] [--quality fast|fine|max] [--n 1] [--format mp3] [--out-dir DIR]
+  aicut style      <音檔> "<目標曲風>" [--from 0] [--to 30] [--strength 0.7] [--n 1] [--format mp3]   把一段改成另一種曲風
 
 共用選項：
   --server URL      ttls 伺服器（預設 https://ttls.markkulab.net）
@@ -95,6 +96,7 @@ function help(): void {
   aicut cut ep12.m4a --judge -o ep12_cut.mp3 --verify
   aicut verify ep12.m4a ep12_cut.mp3
   aicut music "lofi hip hop, warm, mellow" --duration 30 --bpm 90
+  aicut style song.mp3 "acoustic guitar arrangement" --from 30 --to 60
   aicut separate song.mp3 --format wav
 `);
 }
@@ -453,6 +455,59 @@ async function cmdMusic(args: Args): Promise<void> {
   }
 }
 
+async function cmdStyle(args: Args): Promise<void> {
+  const [file, ...rest] = args.positional;
+  const prompt = rest.join(" ").trim();
+  if (!file || !prompt) throw new Error('用法：aicut style <音檔> "<目標曲風>" [--from 0] [--to 30] [--strength 0.7]');
+  const ff = ffmpegOf(args.flags);
+  const probe = await ff.probe(file);
+  const fromMs = Math.max(0, num(args.flags, "from", 0) * 1000);
+  const toMs = Math.min(probe.durationMs, num(args.flags, "to", 0) * 1000 || probe.durationMs);
+  if (toMs - fromMs < 2000) throw new Error("參考片段至少要 2 秒");
+  const strength = Math.max(0, Math.min(1, num(args.flags, "strength", 0.7)));
+  const nCandidates = Math.max(1, Math.min(4, num(args.flags, "n", 1)));
+  const format = str(args.flags, "format", "mp3");
+  const dir = str(args.flags, "out-dir", path.dirname(file));
+  const c = await client(args.flags);
+
+  const tmp = await mkdtemp(path.join(os.tmpdir(), "aicut-style-"));
+  try {
+    const clip = path.join(tmp, "source.wav");
+    log(`切出參考片段 ${fmtMs(fromMs)}–${fmtMs(toMs)}…`);
+    await ff.clip(file, fromMs, toMs, clip);
+    log(`上傳並轉換曲風（貼近度 ${(strength * 100).toFixed(0)}% · ${nCandidates} 首）…`);
+    let last = "";
+    const outs = await styleTransfer(c, {
+      prompt,
+      audioPath: clip,
+      coverStrength: strength,
+      durationSec: num(args.flags, "duration", (toMs - fromMs) / 1000),
+      nCandidates,
+      format,
+      onProgress: (status, sec) => {
+        const line = `  ${status} ${sec}s`;
+        if (line !== last) {
+          log(line);
+          last = line;
+        }
+      },
+    });
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(dir, { recursive: true });
+    const base = path.basename(file).replace(/\.[^.]+$/, "");
+    const stem = `${base}-${prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "style"}`;
+    for (const o of outs) {
+      const name = outs.length > 1 ? `${stem}-${o.index + 1}` : stem;
+      const p = path.join(dir, `${name}.${o.format}`);
+      await writeFile(p, o.data);
+      process.stdout.write(`${p}\n`);
+      log(`  ${(o.data.length / 1048576).toFixed(1)} MB${o.seed != null ? ` · seed ${o.seed}` : ""}`);
+    }
+  } finally {
+    await rm(tmp, { recursive: true, force: true });
+  }
+}
+
 async function cmdSeparate(args: Args): Promise<void> {
   const file = args.positional[0];
   if (!file) throw new Error("請給音檔路徑");
@@ -490,6 +545,8 @@ async function main(): Promise<void> {
       return cmdBeats(args);
     case "music":
       return cmdMusic(args);
+    case "style":
+      return cmdStyle(args);
     case "--version":
     case "version":
       process.stdout.write(`${VERSION}\n`);
@@ -500,6 +557,12 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
-  log(`錯誤：${e instanceof Error ? e.message : String(e)}`);
+  const raw = e instanceof Error ? e.message : String(e);
+  const msg = /out of memory|OutOfMemoryError/i.test(raw)
+    ? "GPU 記憶體不足：音樂生成與語音合成共用同一張卡，請等其他任務結束或重啟 tts-service 後再試（曲風轉換比純生成更吃記憶體）。"
+    : raw.length > 400
+      ? `${raw.slice(0, 400)}…`
+      : raw;
+  log(`錯誤：${msg}`);
   process.exit(1);
 });

@@ -10,15 +10,7 @@ import { useSettings } from "../store/settings";
 import { useTimeline } from "../store/timeline";
 import { formatDuration } from "../time";
 
-/** 常用風格（英文 tag 式對 ACE-Step 效果最好）。 */
-const PRESETS: { label: string; prompt: string }[] = [
-  { label: "Lo-fi", prompt: "lofi hip hop, warm, mellow, vinyl crackle, soft drums" },
-  { label: "Podcast 開場", prompt: "upbeat corporate intro, light percussion, bright synth, clean, energetic" },
-  { label: "抒情鋼琴", prompt: "emotional piano ballad, soft strings, cinematic, gentle" },
-  { label: "電子", prompt: "electronic dance, punchy kick, arpeggio synth, driving bassline" },
-  { label: "爵士咖啡", prompt: "jazz cafe, brushed drums, upright bass, warm rhodes, relaxed swing" },
-  { label: "環境", prompt: "ambient pad, airy texture, slow evolving, calm, no drums" },
-];
+import { MUSIC_PRESETS as PRESETS } from "./musicPresets";
 
 type Quality = "fast" | "fine" | "max";
 

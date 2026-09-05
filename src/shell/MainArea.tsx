@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Crop, Music, Play, Repeat, Scissors, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, X, ZoomIn } from "lucide-react";
+import { Check, Crop, Music, Palette, Play, Repeat, Scissors, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, X, ZoomIn } from "lucide-react";
 import type { AudioEffect } from "../analysis/effects";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
 import { activeRanges } from "../analysis/edl/build";
@@ -24,6 +24,7 @@ import Timeline, { type WaveMenuInfo } from "../timeline/Timeline";
 import WaveContextMenu, { type MenuItem } from "../timeline/WaveContextMenu";
 import TranscriptEditor from "../transcript/TranscriptEditor";
 import TranscriptPlaceholder from "../transcript/TranscriptPlaceholder";
+import StyleDialog from "../dialogs/StyleDialog";
 import Splitter from "./Splitter";
 import { useResizable } from "./useResizable";
 
@@ -51,6 +52,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   const select = useDecisions((s) => s.select);
   const removeCandidate = useDecisions((s) => s.removeCandidate);
   const [menu, setMenu] = useState<WaveMenuInfo | null>(null);
+  const [styleFor, setStyleFor] = useState<{ startMs: number; endMs: number } | null>(null);
   const loopSel = useTimeline((s) => s.loopSelection);
   const toggleLoop = useTimeline((s) => s.toggleLoop);
   const zoomToSelection = useTimeline((s) => s.zoomToSelection);
@@ -121,6 +123,8 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
         { label: t("剪掉"), icon: Scissors, shortcut: "Delete", danger: true, onClick: () => void cutSelection() },
         { label: t("只保留（頭尾剪掉）"), icon: Crop, onClick: () => void keepOnlySelection() },
         { separator: true },
+        { label: t("改成另一種曲風…"), icon: Palette, onClick: () => setStyleFor({ startMs: selection.startMs, endMs: selection.endMs }) },
+        { separator: true },
         { label: t("靜音"), icon: VolumeX, onClick: () => addEffectOnSelection("mute") },
         { label: t("淡入"), icon: TrendingUp, onClick: () => addEffectOnSelection("fade_in") },
         { label: t("淡出"), icon: TrendingDown, onClick: () => addEffectOnSelection("fade_out") },
@@ -179,8 +183,9 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
               onRetry={() => void ensureLocalAnalysis(active.id).catch(() => {})}
               onOpenSettings={onOpenSettings}
             />
-            <SelectionBar />
+            <SelectionBar onStyle={(s, e) => setStyleFor({ startMs: s, endMs: e })} />
             {menu && <WaveContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
+            {styleFor && mediaId && <StyleDialog mediaId={mediaId} startMs={styleFor.startMs} endMs={styleFor.endMs} onClose={() => setStyleFor(null)} />}
           </div>
           <Splitter axis="y" onPointerDown={timeline.onPointerDown} />
           {transcript ? (

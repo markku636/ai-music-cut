@@ -356,12 +356,35 @@ pub async fn ttls_separate(
     r
 }
 
+/// 把選取的一段切成 wav（放媒體快取目錄），給曲風轉換上傳用。
+#[tauri::command]
+pub async fn media_clip(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    fingerprint: String,
+    start_ms: f64,
+    end_ms: f64,
+) -> AppResult<String> {
+    let bins = state.ffmpeg_bins().await?;
+    let dir = media::media_dir(&app, &fingerprint)?;
+    let out = dir.join(format!("clip-{}-{}.wav", start_ms.round() as i64, end_ms.round() as i64));
+    media::clip_wav(&bins, &path, start_ms, end_ms, &out).await?;
+    Ok(out.to_string_lossy().into_owned())
+}
+
 // ---------------- ACE-Step 音樂生成 ----------------
 
 #[tauri::command]
 pub async fn ttls_music_start(state: State<'_, AppState>, opts: ttls::MusicOpts) -> AppResult<String> {
     let base = state.base_url();
     ttls::music_start(&state.http, &base, &opts).await
+}
+
+#[tauri::command]
+pub async fn ttls_music_style_start(state: State<'_, AppState>, opts: ttls::MusicStyleOpts) -> AppResult<String> {
+    let base = state.base_url();
+    ttls::music_style_start(&state.http, &base, &opts).await
 }
 
 #[tauri::command]

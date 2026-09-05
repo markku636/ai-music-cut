@@ -9,9 +9,10 @@ AI Podcast / 音訊粗剪桌面工具（Tauri 2 + React 18），也有 CLI。丟
 5. **剪音樂：節拍格線與貼齊**：開檔就從波形能量自動抓 BPM（自相關），時間軸畫出拍線與小節線，選取自動吸附到拍點——剪在拍子上，接起來才不會破。**AI 抓錯也能一鍵修**：÷2 / ×2 換半拍倍拍、把播放位置設成小節首拍、跟著音樂敲 3 下抓速度。
 6. **自動精華片段**：工具列「精華片段」→ 選 15 / 30 / 60 / 90 秒，AI 依能量與律動挑出最像副歌的一段（有拍網格時起訖貼齊小節），可試聽後「只選起來」自己微調或「只保留這段」（自動加淡入淡出）。
 7. **AI 配樂（ACE-Step）**：描述風格就生出純器樂 BGM，長度自動帶入目前選取、BPM 帶入偵測到的拍速，生好直接加進媒體清單就能剪、貼齊拍點、輸出。
-8. **去人聲 / 分軌**：一鍵把人聲與伴奏（或 4 軌）分開，伴奏軌就是去人聲版本，可以接著剪。
-9. **輸出驗收（人機協作的最後一關）**：**音訊比對**（純本機、音樂也能驗）把成品每一段的波形包絡跟來源做正規化互相關，抓出接錯段或位置偏移；有逐字稿時再加上 **ASR 逐字比對**（重新轉寫成品，標出漏字、該剪沒剪、可疑接縫），每筆都能「聽」或「去修」。
-10. **AI 助手（Claude Code 式工具迴圈）**：本機 `claude` CLI 透過 App 內建的 MCP server 直接操作剪輯決策——「把 10 分鐘後的『就是』都剪掉，但句首的留著」。
+8. **曲風轉換**：在波形上選一段 → 右鍵「改成另一種曲風…」或選取列的調色盤鈕 → 描述目標曲風（Lo-fi 化 / 原聲吉他 / 電影感 / 8-bit…），用選取那段當參考做 audio2audio；貼近度滑桿決定「保留原旋律」還是「自由發揮」。
+9. **去人聲 / 分軌**：一鍵把人聲與伴奏（或 4 軌）分開，伴奏軌就是去人聲版本，可以接著剪。
+10. **輸出驗收（人機協作的最後一關）**：**音訊比對**（純本機、音樂也能驗）把成品每一段的波形包絡跟來源做正規化互相關，抓出接錯段或位置偏移；有逐字稿時再加上 **ASR 逐字比對**（重新轉寫成品，標出漏字、該剪沒剪、可疑接縫），每筆都能「聽」或「去修」。
+11. **AI 助手（Claude Code 式工具迴圈）**：本機 `claude` CLI 透過 App 內建的 MCP server 直接操作剪輯決策——「把 10 分鐘後的『就是』都剪掉，但句首的留著」。
 
 語音辨識、人聲分離與音樂生成由自架的 [ttls](https://ttls.markkulab.net/)（Seal-TTS REST；`/v1/transcribe` = faster-whisper large-v3 逐字時間戳、`/v1/separate` = demucs htdemucs、`/v1/music` = ACE-Step）提供。
 
@@ -53,6 +54,7 @@ node dist-cli/aicut.mjs cut --project ep12.aicut.json                      # 沿
 node dist-cli/aicut.mjs separate song.mp3 --format wav                     # 去人聲：song_vocals.wav / song_accompaniment.wav
 node dist-cli/aicut.mjs beats song.mp3                                     # BPM / 拍點（--bars 列小節線）
 node dist-cli/aicut.mjs music "lofi hip hop, warm" --duration 30 --bpm 90  # AI 配樂（ACE-Step，--quality fast|fine|max）
+node dist-cli/aicut.mjs style song.mp3 "acoustic guitar" --from 30 --to 60   # 曲風轉換（--strength 貼近度 0–1）
 node dist-cli/aicut.mjs verify ep12.m4a ep12_cut.mp3                       # ASR 驗收（有漏字 / 該剪沒剪 → exit code 2，可接 CI）
 ```
 

@@ -358,3 +358,54 @@ pub async fn music_cancel(http: &reqwest::Client, base: &str, job_id: &str) -> A
     }
     Err(err_from(r).await)
 }
+
+/// 曲風轉換送單參數（POST /v1/music/style，audio2audio）。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct MusicStyleOpts {
+    pub prompt: String,
+    /// 參考音檔（通常是編輯器裡選取那段切出來的 wav）
+    pub audio_path: String,
+    /// 0–1：越高越貼近參考的旋律 / 結構
+    pub cover_strength: f64,
+    /// 0 = 跟隨參考長度
+    pub duration_sec: f64,
+    pub n_candidates: i64,
+    pub format: String,
+    pub seed: i64,
+}
+
+/// POST /v1/music/style：上傳參考音檔 + 目標風格，回 job_id（與 /v1/music 共用任務列表）。
+pub async fn music_style_start(http: &reqwest::Client, base: &str, opts: &MusicStyleOpts) -> AppResult<String> {
+    let file = tokio::fs::File::open(&opts.audio_path).await?;
+    let len = file.metadata().await?.len();
+    let name = std::path::Path::new(&opts.audio_path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("source.wav")
+        .to_string();
+    let stream = ReaderStream::new(file);
+    let part = reqwest::multipart::Part::stream_with_length(reqwest::Body::wrap_stream(stream), len)
+        .file_name(name)
+        .mime_str("audio/wav")?;
+    let form = reqwest::multipart::Form::new()
+        .part("audio", part)
+        .text("prompt", opts.prompt.clone())
+        .text("cover_strength", opts.cover_strength.clamp(0.0, 1.0).to_string())
+        .text("duration_sec", opts.duration_sec.max(0.0).to_string())
+        .text("n_candidates", opts.n_candidates.clamp(1, 4).to_string())
+        .text("target_format", opts.format.clone())
+        .text("seed", opts.seed.to_string());
+    let r = authed(http, reqwest::Method::POST, format!("{}/v1/music/style", base_url(base)))?
+        .multipart(form)
+        .timeout(Duration::from_secs(300))
+        .send()
+        .await?;
+    if r.status().as_u16() != 202 {
+        return Err(err_from(r).await);
+    }
+    let v: serde_json::Value = r.json().await?;
+    v["job_id"]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| AppError::Ttls { status: 202, detail: "回應缺少 job_id".into() })
+}

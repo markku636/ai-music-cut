@@ -90,6 +90,27 @@ pub async fn prepare_upload(bins: &FfmpegBins, src: &str, dir: &Path) -> AppResu
     Ok((out, false))
 }
 
+/// 把來源的 [start, end] 切成 44.1k 立體聲 wav（曲風轉換 / 上傳參考用）。回輸出路徑。
+pub async fn clip_wav(bins: &FfmpegBins, src: &str, start_ms: f64, end_ms: f64, out: &Path) -> AppResult<()> {
+    let start = (start_ms.max(0.0)) / 1000.0;
+    let dur = ((end_ms - start_ms).max(50.0)) / 1000.0;
+    if let Some(parent) = out.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let mut c = proc::cmd(&bins.ffmpeg);
+    c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y"]);
+    // -ss 放 -i 前是 fast seek，精度靠 -accurate_seek（預設開）；再用 -t 限長度
+    c.args(["-ss", &format!("{start:.3}"), "-t", &format!("{dur:.3}"), "-i"]);
+    c.arg(src);
+    c.args(["-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", "-f", "wav"]);
+    c.arg(out);
+    let o = c.output().await.map_err(|e| AppError::Ffmpeg(format!("ffmpeg 啟動失敗：{e}")))?;
+    if !o.status.success() {
+        return Err(AppError::Ffmpeg(format!("切片失敗：{}", String::from_utf8_lossy(&o.stderr).trim())));
+    }
+    Ok(())
+}
+
 /// 串流分析器：每個樣本更新 5 ms 桶（min/max/平方和），每 100 ms 餵 ebur128 一次。
 struct Analyzer {
     bucket_len: usize,

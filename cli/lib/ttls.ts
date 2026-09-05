@@ -179,3 +179,55 @@ export async function generateMusic(c: TtlsClient, p: MusicParams): Promise<Musi
   }
   return files;
 }
+
+export interface StyleParams {
+  prompt: string;
+  /** 參考片段檔案路徑。 */
+  audioPath: string;
+  coverStrength: number;
+  durationSec: number;
+  nCandidates: number;
+  format: string;
+  onProgress?: (status: string, sec: number) => void;
+}
+
+/** 曲風轉換：POST /v1/music/style（multipart）→ 輪詢 → 下載候選。 */
+export async function styleTransfer(c: TtlsClient, p: StyleParams): Promise<MusicOut[]> {
+  const buf = await readFile(p.audioPath);
+  const form = new FormData();
+  form.append("audio", new Blob([buf], { type: "audio/wav" }), path.basename(p.audioPath));
+  form.append("prompt", p.prompt);
+  form.append("cover_strength", String(Math.max(0, Math.min(1, p.coverStrength))));
+  form.append("duration_sec", String(Math.max(0, p.durationSec)));
+  form.append("n_candidates", String(Math.max(1, Math.min(4, p.nCandidates))));
+  form.append("target_format", p.format);
+  form.append("seed", "-1");
+  const r = await fetch(`${c.base}/v1/music/style`, { method: "POST", headers: headers(c), body: form, signal: AbortSignal.timeout(300_000) });
+  if (r.status !== 202) await fail(r);
+  const { job_id: jobId } = (await r.json()) as { job_id: string };
+  return pollAndFetch(c, jobId, p.format, p.onProgress);
+}
+
+/** 輪詢音樂任務直到完成，下載所有候選（/v1/music 與 /v1/music/style 共用）。 */
+async function pollAndFetch(c: TtlsClient, jobId: string, fallbackFormat: string, onProgress?: (status: string, sec: number) => void): Promise<MusicOut[]> {
+  const started = Date.now();
+  let info: { status: string; error?: string | null; audio_format?: string | null; outputs?: { index: number; audio_format?: string; seed?: number }[] };
+  for (;;) {
+    await new Promise((res) => setTimeout(res, 3000));
+    const s = await fetch(`${c.base}/v1/music/jobs/${jobId}`, { headers: headers(c), signal: AbortSignal.timeout(30_000) });
+    if (!s.ok) await fail(s);
+    info = (await s.json()) as typeof info;
+    onProgress?.(info.status, Math.round((Date.now() - started) / 1000));
+    if (info.status === "done") break;
+    if (info.status === "failed") throw new Error(info.error ?? "生成失敗");
+    if (info.status === "cancelled") throw new Error("任務已取消");
+  }
+  const outs = info.outputs?.length ? info.outputs : [{ index: 0, audio_format: info.audio_format ?? fallbackFormat }];
+  const files: MusicOut[] = [];
+  for (const o of outs) {
+    const a = await fetch(`${c.base}/v1/music/jobs/${jobId}/audio?i=${o.index}`, { headers: headers(c), signal: AbortSignal.timeout(300_000) });
+    if (!a.ok) await fail(a);
+    files.push({ index: o.index, format: o.audio_format || info.audio_format || fallbackFormat, data: Buffer.from(await a.arrayBuffer()), seed: o.seed });
+  }
+  return files;
+}

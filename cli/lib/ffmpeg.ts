@@ -85,6 +85,14 @@ export class Ffmpeg {
     });
   }
 
+  /** 切出 [startMs, endMs] 成 44.1k 立體聲 wav（曲風轉換的參考片段）。 */
+  async clip(file: string, startMs: number, endMs: number, out: string): Promise<void> {
+    const ss = Math.max(0, startMs) / 1000;
+    const dur = Math.max(0.05, (endMs - startMs) / 1000);
+    const r = await run(this.ffmpeg, ["-y", "-v", "error", "-ss", ss.toFixed(3), "-t", dur.toFixed(3), "-i", file, "-vn", "-ac", "2", "-ar", "44100", "-c:a", "pcm_s16le", "-f", "wav", out]);
+    if (r.code !== 0) throw new Error(`切片失敗：${r.stderr.trim().slice(-300)}`);
+  }
+
   /** 上傳用 16k mono opus（與 App 相同）。 */
   async toUploadOpus(file: string, out: string): Promise<void> {
     const r = await run(this.ffmpeg, ["-y", "-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "48k", "-f", "ogg", out]);

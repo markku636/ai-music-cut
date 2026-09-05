@@ -199,6 +199,20 @@ export interface MusicOpts {
   seed: number;
 }
 
+/** 曲風轉換送單參數（POST /v1/music/style，audio2audio）。 */
+export interface MusicStyleOpts {
+  prompt: string;
+  /** 參考音檔路徑（通常是選取範圍切出來的 wav）。 */
+  audio_path: string;
+  /** 0–1，越高越貼近原曲。 */
+  cover_strength: number;
+  /** 0 = 跟隨參考長度。 */
+  duration_sec: number;
+  n_candidates: number;
+  format: string;
+  seed: number;
+}
+
 export interface MusicJobInfo {
   job_id: string;
   kind: string;
@@ -255,6 +269,9 @@ export const api = {
   mediaAnalyzeLocal: (jobId: string, path: string, fingerprint: string, durationMs: number) =>
     invoke<ArrayBuffer>("media_analyze_local", { jobId, path, fingerprint, durationMs }),
   mediaCancel: (jobId: string) => invoke<void>("media_cancel", { jobId }),
+  /** 把 [startMs, endMs] 切成 wav（曲風轉換的參考片段）；回輸出路徑。 */
+  mediaClip: (path: string, fingerprint: string, startMs: number, endMs: number) =>
+    invoke<string>("media_clip", { path, fingerprint, startMs, endMs }),
   mediaCacheWriteTranscript: (fingerprint: string, doc: unknown) => invoke<void>("media_cache_write_transcript", { fingerprint, doc }),
   mediaCacheReadTranscript: (fingerprint: string) => invoke<unknown | null>("media_cache_read_transcript", { fingerprint }),
   mediaCacheClear: (fingerprint?: string) => invoke<void>("media_cache_clear", { fingerprint: fingerprint ?? null }),
@@ -273,6 +290,7 @@ export const api = {
     invoke<SeparateStem[]>("ttls_separate", { jobId, path, stems, targetFormat, outDir }),
   /** ACE-Step 配樂：送單 → 輪詢 → 下載候選（非同步，30 秒～數分鐘）。 */
   ttlsMusicStart: (opts: MusicOpts) => invoke<string>("ttls_music_start", { opts }),
+  ttlsMusicStyleStart: (opts: MusicStyleOpts) => invoke<string>("ttls_music_style_start", { opts }),
   ttlsMusicPoll: (jobId: string) => invoke<MusicJobInfo>("ttls_music_poll", { jobId }),
   ttlsMusicFetch: (jobId: string, index: number, outDir: string, fileStem: string, ext: string) =>
     invoke<string>("ttls_music_fetch", { jobId, index, outDir, fileStem, ext }),

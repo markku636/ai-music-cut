@@ -1,6 +1,7 @@
 // 規則層 / EDL 與 store 的接線（分析完成、滑桿變動、專案還原時呼叫）。
-import { buildEdl, DEFAULT_EDL_OPTIONS, type Edl, type EnergyProbe } from "../analysis/edl/build";
-import { loudnessWindows, minEnergyPointMs } from "../analysis/peaks";
+import { buildEdl, DEFAULT_EDL_OPTIONS, type Edl, type EdlOptions, type EnergyProbe } from "../analysis/edl/build";
+import { breathFor } from "../analysis/edl/breath";
+import { loudnessWindows, minEnergyPointMs, rmsDbRange } from "../analysis/peaks";
 import { runRulesAt } from "../analysis/rules";
 import { thresholdsFor } from "../analysis/thresholds";
 import { useDecisions } from "../store/decisions";
@@ -26,9 +27,17 @@ export function edlFor(mediaId: string): Edl | null {
   const durationMs = tr?.durationMs ?? useProject.getState().media.find((m) => m.id === mediaId)?.probe?.duration_ms ?? 0;
   if (!durationMs) return null;
   const local = ts.local[mediaId];
-  const probe: EnergyProbe | undefined = local ? { minEnergyPointMs: (a, b) => minEnergyPointMs(local, a, b) } : undefined;
+  const probe: EnergyProbe | undefined = local
+    ? { minEnergyPointMs: (a, b) => minEnergyPointMs(local, a, b), rmsDbAt: (a, b) => rmsDbRange(local, a, b) }
+    : undefined;
   const d = useDecisions.getState();
   const th = thresholdsFor(useProject.getState().aggressiveness);
-  const opts = { ...DEFAULT_EDL_OPTIONS, pauseKeepMs: th.pauseKeepMs, maxSentenceRemovalRatio: th.maxSentenceRemovalRatio };
+  // pauseKeepMs 以前傳在這裡，但 EdlOptions 根本沒有這個欄位 —— 是個從來沒生效過的死參數。
+  // 呼吸感現在走 breath（句中 / 句尾 / 段落三級，隨激進度縮放）。
+  const opts: EdlOptions = {
+    ...DEFAULT_EDL_OPTIONS,
+    breath: breathFor(useProject.getState().aggressiveness),
+    maxSentenceRemovalRatio: th.maxSentenceRemovalRatio,
+  };
   return buildEdl({ words: tr?.words ?? [], sentences: tr?.sentences ?? [], vad: tr?.vad ?? [], durationMs }, d.candidates[mediaId] ?? [], d.decisions[mediaId] ?? {}, opts, probe);
 }

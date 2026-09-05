@@ -72,7 +72,8 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     }
     const j = edl.joins.find((x) => x.afterKeepId === units[i].keepId);
     if (j?.kind === "gap") {
-      joins.push({ kind: "gap", ms: j.ms });
+      // per-join 的淡出 / 淡入（EDL 的 fade policy 決定）；沒有就讓 Rust 用預設值
+      joins.push({ kind: "gap", ms: j.ms, fade_out_ms: j.fadeOutMs, fade_in_ms: j.fadeInMs });
       continue;
     }
     // EDL 的 crossfade 是依「保留段」長度夾過的；送進 Rust 的是「單元」，

@@ -72,6 +72,27 @@ export function rmsDbAt(a: LocalAnalysis, ms: number): number {
   return rmsU8ToDb(a.rmsU8[i]);
 }
 
+/**
+ * [fromMs, toMs] 的平均 RMS（dBFS）；範圍無效回 −120。
+ * 在**功率域**平均而不是 dB 域 —— dB 域平均會被一個特別安靜的桶把整段拉低，
+ * 判成「這裡是靜音」然後用太短的交叉，接點就會有 click。
+ */
+export function rmsDbRange(a: LocalAnalysis, fromMs: number, toMs: number): number {
+  const lo = Math.max(0, Math.floor((fromMs / 1000) * a.pps));
+  const hi = Math.min(a.nBuckets - 1, Math.ceil((toMs / 1000) * a.pps));
+  if (hi < lo) return -120;
+  let sum = 0;
+  let n = 0;
+  for (let i = lo; i <= hi; i++) {
+    const db = rmsU8ToDb(a.rmsU8[i]);
+    sum += 10 ** (db / 10);
+    n += 1;
+  }
+  if (!n) return -120;
+  const p = sum / n;
+  return p <= 0 ? -120 : 10 * Math.log10(p);
+}
+
 /** [fromMs, toMs] 內能量最低的桶中點（EDL 貼邊用）；範圍無效回中點。 */
 export function minEnergyPointMs(a: LocalAnalysis, fromMs: number, toMs: number): number {
   const lo = Math.max(0, Math.floor((fromMs / 1000) * a.pps));

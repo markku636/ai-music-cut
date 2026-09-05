@@ -242,7 +242,7 @@ function edlOf(a: Analysis, durationMs: number, aggressiveness: number): Edl {
     { words: tr.words, sentences: tr.sentences, vad: tr.vad, durationMs: tr.durationMs || durationMs },
     a.candidates,
     a.decisions,
-    { ...DEFAULT_EDL_OPTIONS, pauseKeepMs: th.pauseKeepMs, maxSentenceRemovalRatio: th.maxSentenceRemovalRatio },
+    { ...DEFAULT_EDL_OPTIONS, maxSentenceRemovalRatio: th.maxSentenceRemovalRatio },
   );
 }
 

@@ -272,11 +272,15 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
     }
 
     /// 把 tail 以淡出寫出（gap / 結尾用）。
+    ///
+    /// 曲線用 raised cosine 而不是線性：線性淡到真靜音時，前半段掉得太慢、
+    /// 最後幾個 frame 又突然沒了，聽起來像「拖了一下才斷掉」。
     fn flush_tail_fade_out(&mut self) -> AppResult<()> {
         let n = self.tail.len() / self.ch;
         let tail = std::mem::take(&mut self.tail);
         for k in 0..n {
-            let w = 1.0 - (k as f32 + 1.0) / (n as f32 + 1.0);
+            let p = (k as f32 + 1.0) / (n as f32 + 1.0);
+            let w = 0.5 * (1.0 + (std::f32::consts::PI * p).cos());
             let frame: Vec<f32> = tail[k * self.ch..(k + 1) * self.ch].iter().map(|v| v * w).collect();
             self.write_frame(&frame)?;
         }

@@ -5,7 +5,7 @@ export interface Thresholds {
   fillerAutoScore: number;
   pauseMinBetweenSentencesMs: number;
   pauseMinWithinSentenceMs: number;
-  /** 長停頓縮短後保留的長度。 */
+  /** 長停頓縮短後保留的長度（規則層產生候選時用；EDL 的呼吸感走 edl/breath.ts）。 */
   pauseKeepMs: number;
   /** 開頭 / 結尾靜音保留。 */
   leadTrailKeepMs: number;

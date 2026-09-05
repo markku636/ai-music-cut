@@ -93,11 +93,22 @@ describe("buildEdl", () => {
     expect(activeRanges([a, b], dec)).toEqual([{ startMs: 300, endMs: 450 }]);
   });
 
-  it("speech-to-speech join without silence gets a room-tone gap when allowed", () => {
+  // R7 起：room tone 只補在句尾 / 段落交界。句子中間剪掉一個「嗯」之後再塞 170 ms
+  // 合成靜音，等於把剛拿掉的猶豫又放回去 —— 「呼吸感」要的是斷點的留白。
+  it("句中的語音接語音用 crossfade，不插 room tone", () => {
     const c = cand("filler", words, [1]);
     const edl = buildEdl({ ...input, vad: [{ startMs: 0, endMs: 1400 }] }, [c], auto([c.id]), { ...DEFAULT_EDL_OPTIONS, snapWindowMs: 0 }, MIDPOINT_PROBE);
+    expect(edl.joins[0].kind).toBe("crossfade");
+  });
+
+  it("句子交界處找不到靜音就補 room tone（allowGapInsert=false 則退回 crossfade）", () => {
+    // 兩句：S0=[0,1,2]、S1=[3,4,5]，剪掉 S0 最後一個字之後就是句尾接句首
+    const twoSentences = mkSentences(words, [[0, 1, 2], [3, 4, 5]]);
+    const c = cand("filler", words, [2], 0.9, 0);
+    const inp = { ...input, sentences: twoSentences, vad: [{ startMs: 0, endMs: 1400 }] };
+    const edl = buildEdl(inp, [c], auto([c.id]), { ...DEFAULT_EDL_OPTIONS, snapWindowMs: 0 }, MIDPOINT_PROBE);
     expect(edl.joins[0].kind).toBe("gap");
-    const edl2 = buildEdl(input, [c], auto([c.id]), { ...DEFAULT_EDL_OPTIONS, snapWindowMs: 0, allowGapInsert: false }, MIDPOINT_PROBE);
+    const edl2 = buildEdl(inp, [c], auto([c.id]), { ...DEFAULT_EDL_OPTIONS, snapWindowMs: 0, allowGapInsert: false }, MIDPOINT_PROBE);
     expect(edl2.joins[0].kind).toBe("crossfade");
   });
 });

@@ -2,6 +2,8 @@
 // 純函式、無 DOM；probe 提供能量最低點（Rust 波形桶）供邊界貼齊，測試可用 midpoint 假件。
 import type { Candidate, DecisionMap, Sentence, VadRegion, Word } from "../types";
 import { effectiveXfFrames, effectiveXfMs, framesToMs, msToFrames } from "./joins";
+import { DEFAULT_BREATH_OPTIONS, planBreath, type BreathContext, type BreathOptions } from "./breath";
+import { chooseJoin, DEFAULT_FADE_POLICY, type FadePolicy } from "./fade";
 import { isActiveState } from "../types";
 
 export interface EdlOptions {
@@ -14,8 +16,15 @@ export interface EdlOptions {
   mergeGapMs: number;
   /** 短於此且沒有字的保留段併入剪除。 */
   minKeepMs: number;
-  /** 語音接語音的接點至少留這麼多呼吸（從剪除區找回）。 */
+  /**
+   * 語音接語音的接點至少留這麼多呼吸（從剪除區找回）。
+   * @deprecated 由 `breath` 取代；仍保留是為了讀得懂舊專案檔存下來的選項。
+   */
   minBreathGapMs: number;
+  /** 呼吸感：句中 / 句尾 / 段落各自的目標留白。 */
+  breath: BreathOptions;
+  /** 剪點淡化長度策略。 */
+  fade: FadePolicy;
   crossfadeMs: number;
   /** 單句最多剪除比例（超過就把最低分的 auto 降級為 pending）。 */
   maxSentenceRemovalRatio: number;
@@ -30,6 +39,8 @@ export const DEFAULT_EDL_OPTIONS: EdlOptions = {
   mergeGapMs: 120,
   minKeepMs: 80,
   minBreathGapMs: 150,
+  breath: DEFAULT_BREATH_OPTIONS,
+  fade: DEFAULT_FADE_POLICY,
   crossfadeMs: 20,
   maxSentenceRemovalRatio: 0.475,
   allowGapInsert: true,
@@ -38,6 +49,8 @@ export const DEFAULT_EDL_OPTIONS: EdlOptions = {
 export interface EnergyProbe {
   /** [from,to] 內能量最低點（ms）。 */
   minEnergyPointMs(fromMs: number, toMs: number): number;
+  /** [from,to] 的 RMS（dBFS）。沒有實作時淡化策略一律當成語音接語音（最保守）。 */
+  rmsDbAt?(fromMs: number, toMs: number): number;
 }
 
 export const MIDPOINT_PROBE: EnergyProbe = { minEnergyPointMs: (a, b) => (a + b) / 2 };
@@ -63,7 +76,11 @@ export interface KeepSegment {
 export interface Join {
   afterKeepId: number;
   kind: "crossfade" | "gap";
+  /** crossfade：實際重疊長度（已夾過）；gap：room tone 長度。 */
   ms: number;
+  /** gap 接點的前段淡出 / 後段淡入（crossfade 不用）。 */
+  fadeOutMs?: number;
+  fadeInMs?: number;
   removedCandidateIds: string[];
 }
 
@@ -114,18 +131,6 @@ export function mergeRanges<T extends { startMs: number; endMs: number }>(rs: T[
     else out.push({ startMs: r.startMs, endMs: r.endMs });
   }
   return out;
-}
-
-function silenceFraction(vad: VadRegion[], fromMs: number, toMs: number): number {
-  if (toMs <= fromMs) return 1;
-  if (!vad.length) return 1;
-  let speech = 0;
-  for (const r of vad) {
-    if (r.endMs <= fromMs) continue;
-    if (r.startMs >= toMs) break;
-    speech += Math.min(toMs, r.endMs) - Math.max(fromMs, r.startMs);
-  }
-  return 1 - speech / (toMs - fromMs);
 }
 
 export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: DecisionMap, opts: EdlOptions = DEFAULT_EDL_OPTIONS, probe: EnergyProbe = MIDPOINT_PROBE): Edl {
@@ -224,20 +229,15 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
     return { ...rebuilt, downgrades };
   }
 
-  // 5) 呼吸回填：語音接語音的剪除區，兩端若有 VAD 靜音，各還最多 minBreathGap/2… 簡化：從剪除區頭尾找回靜音
-  const joinsMeta: { removal: Removal; gapInsert: boolean }[] = [];
+  // 5) 呼吸回填：依「句中 / 句尾 / 段落」給不同的目標留白，能還多少還多少。
+  //    先還尾端（靠近下一段語音，像講者開口前換氣），不足再還頭端，仍不足才插 room tone。
+  const joinsMeta: { removal: Removal; gapMs: number; context: BreathContext }[] = [];
+  const breathOpts: BreathOptions = { ...opts.breath, allowGapInsert: opts.allowGapInsert };
   for (const r of removals) {
-    if (!r.speech) {
-      joinsMeta.push({ removal: r, gapInsert: false });
-      continue;
-    }
-    const want = opts.minBreathGapMs;
-    // 尾端（靠後一段語音）先找：剪除區最後 want ms 是否靜音
-    const tailSilent = silenceFraction(vad, r.endMs - want, r.endMs) >= 0.8 && r.endMs - want > r.startMs;
-    const headSilent = silenceFraction(vad, r.startMs, r.startMs + want) >= 0.8 && r.startMs + want < r.endMs;
-    if (tailSilent) r.endMs -= want;
-    else if (headSilent) r.startMs += want;
-    joinsMeta.push({ removal: r, gapInsert: !tailSilent && !headSilent && opts.allowGapInsert });
+    const b = planBreath(vad, sentences, words, r, breathOpts);
+    r.startMs = b.startMs;
+    r.endMs = b.endMs;
+    joinsMeta.push({ removal: r, gapMs: b.gapMs, context: b.context });
   }
   removals = removals.filter((r) => r.endMs > r.startMs);
 
@@ -268,12 +268,14 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
     const next = keeps[i + 1];
     const between = joinsMeta.filter((m) => m.removal.startMs >= k.srcEndMs - 1 && m.removal.endMs <= next.srcStartMs + 1);
     const ids = between.flatMap((m) => m.removal.candidateIds);
-    if (between.some((m) => m.gapInsert)) {
-      joins.push({ afterKeepId: k.id, kind: "gap", ms: opts.minBreathGapMs, removedCandidateIds: ids });
+    const gapMs = Math.max(0, ...between.map((m) => m.gapMs));
+    const shape = chooseJoin(probe, k.srcEndMs, next.srcStartMs, opts.fade, gapMs);
+    if (shape.kind === "gap") {
+      joins.push({ afterKeepId: k.id, kind: "gap", ms: shape.ms, removedCandidateIds: ids, fadeOutMs: shape.fadeOutMs, fadeInMs: shape.fadeInMs });
     } else {
       // 存「實際生效」的長度而不是規格值：EDL 要能自我描述，讀 Join.ms 的人看到的就是真的。
       // Rust 端會用同一條公式再夾一次（冪等），舊 plan 也就自動安全。
-      const ms = effectiveXfMs(opts.crossfadeMs, k.srcEndMs - k.srcStartMs, next.srcEndMs - next.srcStartMs);
+      const ms = effectiveXfMs(shape.ms, k.srcEndMs - k.srcStartMs, next.srcEndMs - next.srcStartMs);
       joins.push({ afterKeepId: k.id, kind: "crossfade", ms, removedCandidateIds: ids });
     }
   }

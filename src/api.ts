@@ -144,6 +144,9 @@ export interface RenderSeg {
 export interface RenderJoin {
   kind: "crossfade" | "gap" | "seam";
   ms: number;
+  /** gap 接點的前段淡出 / 後段淡入（毫秒）；省略時 Rust 用預設值。 */
+  fade_out_ms?: number;
+  fade_in_ms?: number;
 }
 /** 區段效果（來源時間；Rust 逐 frame 乘上包絡）。 */
 export interface RenderEffect {

@@ -10,8 +10,9 @@ import { playRange } from "../preview/playerRef";
 import { usePlayback } from "../store/playback";
 import { useTimeline } from "../store/timeline";
 import { useVerify } from "../store/verify";
+import { checkCompliance } from "../analysis/loudness/compliance";
 import { formatMs } from "../time";
-import { AudioLines } from "lucide-react";
+import { AudioLines, Gauge } from "lucide-react";
 
 export interface VerifyDialogProps {
   mediaId: string;
@@ -29,6 +30,8 @@ export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose 
   const t = useT();
   const report = useVerify((s) => s.byMedia[mediaId] ?? null);
   const splice = useVerify((s) => s.spliceByMedia[mediaId] ?? null);
+  const lastOut = useVerify((s) => s.lastOutput[mediaId] ?? null);
+  const compliance = lastOut && lastOut.outputLufs != null ? checkCompliance({ outputLufs: lastOut.outputLufs, outputTp: lastOut.outputTp ?? null, targetLufs: lastOut.targetLufs ?? -16 }) : null;
   const running = useVerify((s) => !!s.running[mediaId]);
   const seek = usePlayback((s) => s.seek);
   const setSelection = useTimeline((s) => s.setSelection);
@@ -68,7 +71,7 @@ export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose 
     <Modal
       open
       onClose={onClose}
-      title={t("ASR 驗收")}
+      title={t("輸出驗收")}
       icon={BadgeCheck}
       size="md"
       footer={
@@ -85,17 +88,33 @@ export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose 
       {running || busy ? (
         <div className="flex items-center gap-2 text-sm text-fg/70 p-4">
           <Spinner size={16} className="text-accent" />
-          {t("把成品送回 ttls 重新轉寫，再逐字比對…（與轉寫同樣需要一點時間）")}
+          {t("比對成品與來源…（有逐字稿時還會送回 ttls 重新轉寫，需要一點時間）")}
         </div>
       ) : !report && !splice ? (
         <EmptyState
           compact
           icon={BadgeCheck}
           title={t("還沒驗證過這個成品")}
-          hint={t("驗證會把輸出的音檔重新轉寫一次，比對「該留的字有沒有被剪掉」「該剪的字有沒有留著」，並標出可疑的接縫。")}
+          hint={t("驗收會先用波形逐段比對成品跟來源（音樂也適用），有逐字稿時再重新轉寫一次逐字比對，並標出可疑的接縫。")}
         />
       ) : (
         <div className="space-y-4 text-sm">
+          {compliance && (
+            <div className={`rounded-md border px-3 py-2 text-xs ${compliance.level === "ok" ? "border-success/30 bg-success/10 text-success" : compliance.level === "warn" ? "border-warning/30 bg-warning/10 text-warning" : "border-danger/30 bg-danger/10 text-danger"}`}>
+              <div className="flex items-center gap-2">
+                <Gauge size={14} />
+                <span className="font-medium">{t("交付檢查")}</span>
+                <span className="flex-1 min-w-0 truncate">{compliance.summary}</span>
+              </div>
+              <ul className="mt-1 space-y-0.5 text-[11px] opacity-90">
+                {compliance.checks.map((c, i) => (
+                  <li key={i}>
+                    {c.level === "ok" ? "✓" : c.level === "warn" ? "!" : "✕"} {t(c.label)}：{c.detail}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {splice && (
             <div className={`rounded-md border px-3 py-2 text-xs ${splice.okCount === splice.segments.length ? "border-success/30 bg-success/10 text-success" : "border-warning/30 bg-warning/10 text-warning"}`}>
               <div className="flex items-center gap-2">

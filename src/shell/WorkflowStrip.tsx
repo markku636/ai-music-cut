@@ -153,12 +153,12 @@ export default function WorkflowStrip(p: WorkflowStripProps) {
     };
   } else {
     caption = {
-      text: lastOutput ? t("已輸出 · 可以用 ASR 驗收，確認沒有剪掉不該剪的字") : t("已輸出"),
+      text: lastOutput ? t("已輸出 · 可以驗收，確認每段都剪對、響度達標") : t("已輸出"),
       cta: (
         <>
           {lastOutput && (
             <Button size="sm" variant="primary" onClick={p.onVerify}>
-              {t("ASR 驗收")}
+              {t("輸出驗收")}
             </Button>
           )}
           <Button size="sm" variant="ghost" onClick={p.onRender}>

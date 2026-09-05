@@ -17,6 +17,10 @@ export interface LastOutput {
   path: string;
   /** EDL 預估的成品長度（驗收時比對時長差用）。 */
   keptMs: number | null;
+  /** ffmpeg 實測（給交付前的響度守門）。 */
+  outputLufs?: number | null;
+  outputTp?: number | null;
+  targetLufs?: number;
 }
 
 interface VerifyStore {

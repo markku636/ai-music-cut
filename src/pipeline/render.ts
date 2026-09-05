@@ -110,7 +110,14 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
   unDone();
   void api.clientLog(`[render] done ok=${r.ok} err=${r.error ?? ""} lufs=${r.output_lufs ?? ""}`).catch(() => {});
   if (r.ok) {
-    if (r.out_path) useVerify.getState().setLastOutput(mediaId, { path: r.out_path, keptMs: built.edl.stats.keptMs });
+    if (r.out_path)
+      useVerify.getState().setLastOutput(mediaId, {
+        path: r.out_path,
+        keptMs: built.edl.stats.keptMs,
+        outputLufs: r.output_lufs,
+        outputTp: r.output_tp,
+        targetLufs: opts.targetLufs,
+      });
     jobs.upsert({ id: jobId, status: "done", step: t("完成"), pct: 100, message: `${r.out_path ?? ""} · ${r.output_lufs?.toFixed(1) ?? "?"} LUFS`, endedAt: Date.now() });
   } else if (r.error === "已取消") {
     jobs.upsert({ id: jobId, status: "canceled", step: t("已取消"), endedAt: Date.now() });

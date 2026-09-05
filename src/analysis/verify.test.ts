@@ -22,7 +22,7 @@ const EDL: Edl = {
     { id: 1, srcStartMs: 2000, srcEndMs: 3000, outStartMs: 1000, outEndMs: 2000, gainDb: 0 },
   ],
   joins: [],
-  stats: { removedMs: 1000, keptMs: 2000, cutCount: 1, byKind: {} },
+  stats: { removedMs: 1000, keptMs: 2000, outMs: 2000, cutCount: 1, byKind: {} },
   downgrades: [],
   removals: [],
 };

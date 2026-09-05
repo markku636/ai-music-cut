@@ -2,6 +2,8 @@
 import { listen } from "@tauri-apps/api/event";
 import { api, type RenderDone, type RenderJoin, type RenderPlan, type RenderProgress, type RenderSeg } from "../api";
 import type { Edl } from "../analysis/edl/build";
+import { DEFAULT_EDL_OPTIONS } from "../analysis/edl/build";
+import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
 import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
 import { splitUnits } from "../analysis/loudness/units";
 import { t } from "../i18n";
@@ -41,6 +43,8 @@ export interface BuiltPlan {
   edl: Edl;
   units: number;
   gains: { unitId: number; gainDb: number }[];
+  /** 這份計畫預期會產出多長（毫秒）。驗收比對成品時間軸要用這個，不是 edl.stats.keptMs。 */
+  expectedOutMs: number;
 }
 
 export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan | null {
@@ -56,19 +60,44 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   const segs: RenderSeg[] = units.map((u, i) => ({ src_start_ms: u.startMs, src_end_ms: u.endMs, gain_db: gains[i]?.gainDb ?? 0 }));
   const joins: RenderJoin[] = [];
   for (let i = 0; i + 1 < units.length; i++) {
-    if (units[i].keepId === units[i + 1].keepId) joins.push({ kind: "seam", ms: 0 });
-    else {
-      const j = edl.joins.find((x) => x.afterKeepId === units[i].keepId);
-      joins.push({ kind: j?.kind ?? "crossfade", ms: j?.ms ?? 20 });
+    if (units[i].keepId === units[i + 1].keepId) {
+      // 同一保留段內的響度單元邊界：直接接，不淡也不重疊
+      joins.push({ kind: "seam", ms: 0 });
+      continue;
     }
+    const j = edl.joins.find((x) => x.afterKeepId === units[i].keepId);
+    if (j?.kind === "gap") {
+      joins.push({ kind: "gap", ms: j.ms });
+      continue;
+    }
+    // EDL 的 crossfade 是依「保留段」長度夾過的；送進 Rust 的是「單元」，
+    // 所以要用單元長度重夾一次，兩邊的長度帳才會一致。
+    const spec = j?.ms ?? DEFAULT_EDL_OPTIONS.crossfadeMs;
+    const ms = effectiveXfMs(spec, units[i].endMs - units[i].startMs, units[i + 1].endMs - units[i + 1].startMs);
+    joins.push({ kind: "crossfade", ms });
   }
   const channels = Math.max(1, Math.min(2, media.probe?.audio?.channels ?? 1));
   const effects = (useDecisions.getState().effects[mediaId] ?? []).map((e) => ({ kind: e.kind, start_ms: e.startMs, end_ms: e.endMs, db: e.db ?? 0 }));
   return {
-    plan: { segs, effects, joins, crossfade_ms: 20, target_lufs: opts.targetLufs, true_peak_dbtp: -1.5, format: opts.format, out_path: opts.outPath, channels },
+    plan: {
+      segs,
+      effects,
+      joins,
+      // 只當 fallback：joins[].ms 都帶了實際值，Rust 端只有在遇到舊 plan（ms=0）時才會用到它。
+      crossfade_ms: DEFAULT_EDL_OPTIONS.crossfadeMs,
+      target_lufs: opts.targetLufs,
+      true_peak_dbtp: -1.5,
+      format: opts.format,
+      out_path: opts.outPath,
+      channels,
+    },
     edl,
     units: units.length,
     gains,
+    expectedOutMs: planOutDurationMs(
+      segs.map((sg) => ({ startMs: sg.src_start_ms, endMs: sg.src_end_ms })),
+      joins,
+    ),
   };
 }
 
@@ -113,7 +142,7 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
     if (r.out_path)
       useVerify.getState().setLastOutput(mediaId, {
         path: r.out_path,
-        keptMs: built.edl.stats.keptMs,
+        expectedOutMs: built.expectedOutMs,
         outputLufs: r.output_lufs,
         outputTp: r.output_tp,
         targetLufs: opts.targetLufs,

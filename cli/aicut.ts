@@ -346,6 +346,9 @@ async function verifyOutput(a: Analysis, edl: Edl, outFile: string, ff: Ffmpeg, 
   const probe = await ff.probe(outFile);
   const r = verifyEdit(expectedWords(a.transcript, edl), actualWords(outTr), edl, {
     outDurationMs: probe.durationMs,
+    // 這裡刻意用 keptMs 而不是 edl.stats.outMs：CLI 的剪接器是 ffmpeg 的 atrim + concat，
+    // 沒有 crossfade、沒有 room tone gap，成品長度天生就等於保留段總長。
+    // App 走 Rust 的 Cutter（有接點），才要用含接點帳的 outMs / expectedOutMs。
     expectedDurationMs: edl.stats.keptMs,
   });
   printVerify(r);

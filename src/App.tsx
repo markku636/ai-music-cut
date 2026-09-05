@@ -315,8 +315,9 @@ export default function App() {
     if (!id) return;
     const v = useVerify.getState();
     const last = v.lastOutput[id] ?? null;
-    setVerifyFor({ outPath: last?.path ?? v.byMedia[id]?.outPath ?? null, durationMs: last?.keptMs ?? null });
-    if (!v.byMedia[id] && last) void runVerify(id, { outPath: last.path, outDurationMs: last.keptMs }).catch(() => {});
+    // durationMs 交給 runVerify 自己去 probe 成品；這裡不再塞「期望長度」進去（那會讓時長檢查失效）
+    setVerifyFor({ outPath: last?.path ?? v.byMedia[id]?.outPath ?? null, durationMs: null });
+    if (!v.byMedia[id] && last) void runVerify(id, { outPath: last.path }).catch(() => {});
   };
 
   /** 輸出完成 → 直接跑 ASR 驗收並開報告（人只要聽機器標出來的可疑處）。 */

@@ -208,7 +208,7 @@ function tryBand(a: string[], b: string[], w: number): AlignOp[] | null {
 export interface VerifyOptions {
   /** 成品實際時長（有的話會比對 EDL 預估）。 */
   outDurationMs?: number | null;
-  /** 期待時長（EDL keptMs）。 */
+  /** 期待時長：輸出計畫的 expectedOutMs（含 crossfade 重疊與 room tone），不是 EDL 的 keptMs。 */
   expectedDurationMs?: number | null;
 }
 

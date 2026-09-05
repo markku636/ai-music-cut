@@ -10,6 +10,7 @@ import { newJobId, useJobs } from "../store/jobs";
 import { useProject } from "../store/project";
 import { useVerify } from "../store/verify";
 import { toast } from "../ui";
+import { edlOutDurationMs } from "../analysis/edl/joins";
 import { edlFor } from "./rules";
 import { withVramRetry } from "./gpu";
 import { isAbort, sleep, withBackoff } from "./retry";
@@ -61,15 +62,19 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
   useVerify.getState().setRunning(mediaId, true);
 
   let splice: SpliceAuditReport | null = null;
+  // 成品的真實長度自己量。呼叫端以前傳的是「EDL 估的長度」，跟期望值同源 →
+  // durationDelta 永遠是 0，那個檢查等於沒做。
+  let actualOutMs: number | null = opts.outDurationMs ?? null;
   try {
     const fp = await api.mediaFingerprint(opts.outPath);
+    const outProbe = await api.mediaProbe(opts.outPath).catch(() => null);
+    if (outProbe) actualOutMs = outProbe.duration_ms;
 
     // 1) 音訊比對（純本機，音樂也能驗）：把成品也算一份波形，逐段跟來源做正規化互相關
     const srcLocal = useTranscript.getState().local[mediaId];
-    if (srcLocal) {
+    if (srcLocal && outProbe) {
       step(t("音訊比對（波形逐段對齊）"));
       try {
-        const outProbe = await api.mediaProbe(opts.outPath);
         const buf = await api.mediaAnalyzeLocal(newJobId(), opts.outPath, fp, outProbe.duration_ms);
         splice = auditSplice(srcLocal, parseAnalysis(buf), edl);
         useVerify.getState().setSplice(mediaId, { ...splice, outPath: opts.outPath, at: new Date().toISOString() });
@@ -109,8 +114,10 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
     step(t("逐字比對"));
     const outTr = normalizeTranscript(server);
     const report = verifyEdit(expectedWords(tr, edl), actualWords(outTr), edl, {
-      outDurationMs: opts.outDurationMs ?? null,
-      expectedDurationMs: edl.stats.keptMs,
+      outDurationMs: actualOutMs,
+      // 成品時間軸的期望值要含接點帳（crossfade 扣重疊、gap 加 room tone）。
+      // 用 keptMs 的話每刀差約 20 ms，2–3 刀就會誤報「時長不符」。
+      expectedDurationMs: useVerify.getState().lastOutput[mediaId]?.expectedOutMs ?? edlOutDurationMs(edl),
     });
     useVerify.getState().setReport(mediaId, { ...report, outPath: opts.outPath, at: new Date().toISOString() });
     const hard = report.findings.filter((f) => (f.kind === "missing" || f.kind === "extra") && !f.lowConfidence).length;

@@ -30,7 +30,14 @@ pub struct RenderSeg {
 pub struct RenderJoin {
     /// crossfade | gap | seam（同一保留段內的響度單元接縫：直接接、不淡）
     pub kind: String,
+    /// crossfade：重疊長度；gap：room tone 長度；seam：忽略。
     pub ms: f64,
+    /// gap 接點的前段淡出長度（None = 用 ms 當預設）。
+    #[serde(default)]
+    pub fade_out_ms: Option<f64>,
+    /// gap 接點的後段淡入長度（None = 用 ms 當預設）。
+    #[serde(default)]
+    pub fade_in_ms: Option<f64>,
 }
 
 /// 區段效果（來源時間）：mute / gain / fade_in / fade_out；與前端 analysis/effects.ts 同一套包絡定義。
@@ -87,7 +94,79 @@ fn ms_to_frames(ms: f64) -> u64 {
     ((ms.max(0.0) / 1000.0) * SR as f64).round() as u64
 }
 
+/// gap 接點預設的淡出 / 淡入長度（前端沒指定時）。
+const GAP_FADE_OUT_MS: f64 = 18.0;
+const GAP_FADE_IN_MS: f64 = 25.0;
+/// 檔案結尾的淡出長度（避免最後一個 frame 硬切出 click）。
+const TAIL_FADE_MS: f64 = 20.0;
+
+/// 每段的長度（frame）。
+fn seg_lens(plan: &RenderPlan) -> Vec<u64> {
+    plan.segs.iter().map(|s| ms_to_frames(s.src_end_ms).saturating_sub(ms_to_frames(s.src_start_ms))).collect()
+}
+
+/// 接點實際重疊幾個 frame。**兩段都要夾一半**：只夾前一段的話，下一段太短時
+/// 混音會在段結束前跑不完，Cutter 會把剩餘 tail 直接補寫出去，長度就對不起來。
+/// 與前端 src/analysis/edl/joins.ts 的 effectiveXfFrames 是同一條公式。
+fn effective_xf_frames(spec_ms: f64, prev_len: u64, next_len: u64) -> u64 {
+    ms_to_frames(spec_ms).min(prev_len / 2).min(next_len / 2)
+}
+
+/// 每個接點的 (前段扣住的 tail, 後段淡入長度)。tail 是「不直接寫出、留給接點處理」的部分。
+fn join_plan(plan: &RenderPlan) -> (Vec<u64>, Vec<u64>) {
+    let lens = seg_lens(plan);
+    let n = plan.segs.len();
+    let mut holds = vec![0u64; n];
+    let mut fade_ins = vec![0u64; plan.joins.len()];
+    for (i, j) in plan.joins.iter().enumerate() {
+        if i + 1 >= n {
+            break;
+        }
+        let (prev, next) = (lens[i], lens[i + 1]);
+        match j.kind.as_str() {
+            "gap" => {
+                holds[i] = ms_to_frames(j.fade_out_ms.unwrap_or(GAP_FADE_OUT_MS)).min(prev / 2);
+                fade_ins[i] = ms_to_frames(j.fade_in_ms.unwrap_or(GAP_FADE_IN_MS)).min(next / 2);
+            }
+            "seam" => {}
+            _ => {
+                // 舊 plan 沒有 per-join ms（都是 0）→ 退回全域 crossfade_ms，否則每個接點會變成 0 長度交叉 = 爆音
+                let spec = if j.ms > 0.0 { j.ms } else { plan.crossfade_ms };
+                holds[i] = effective_xf_frames(spec, prev, next);
+            }
+        }
+    }
+    // 最後一段的 tail 由結尾淡出寫回去 → 不影響總長，只是不要硬切。
+    if n > 0 {
+        holds[n - 1] = ms_to_frames(TAIL_FADE_MS).min(lens[n - 1] / 2);
+    }
+    (holds, fade_ins)
+}
+
+/// 輸出總長（frame）。這是唯一的定義，`total_out_frames` 與 Cutter 都走它。
+fn plan_out_frames(plan: &RenderPlan) -> u64 {
+    let lens = seg_lens(plan);
+    let (holds, _) = join_plan(plan);
+    let mut n: u64 = lens.iter().sum();
+    for (i, j) in plan.joins.iter().enumerate() {
+        if i + 1 >= plan.segs.len() {
+            break;
+        }
+        match j.kind.as_str() {
+            // tail 淡出後照寫，再加 room tone；淨增 room tone
+            "gap" => n += ms_to_frames(j.ms).max(1),
+            "seam" => {}
+            // tail 蓋在下一段開頭上 → 淨損一個重疊
+            _ => n -= holds[i].min(n),
+        }
+    }
+    n
+}
+
 /// 串流剪接器：frame 逐一進來，依 plan 決定寫 / 丟；接點做等功率 crossfade 或 room tone gap。
+///
+/// 剪點的淡化一律走這裡的接點邏輯，**不要**用 RenderEffect 的 fade_in / fade_out：
+/// 那個 fx_gain 是線性、而且套在 crossfade 混音「之前」，會變成雙重衰減。
 /// 靜音 / 增益邊緣的平滑長度（5 ms），避免爆音。
 const EDGE_FRAMES: u64 = SR as u64 / 200;
 
@@ -123,7 +202,10 @@ struct Cutter<W: std::io::Write + std::io::Seek> {
     segs: Vec<(u64, u64, f32)>, // (start_frame, end_frame, gain_lin)
     fx: Vec<Fx>,
     joins: Vec<(String, u64)>,  // (kind, frames)
-    xf: u64,
+    /// 每段結束時扣住幾個 frame 當 tail（見 join_plan）。
+    holds: Vec<u64>,
+    /// gap 接點後段的淡入長度。
+    fade_ins: Vec<u64>,
     si: usize,
     t: u64,
     /// 上一段被扣住的尾巴（crossfade 長度），寫下一段開頭時混入。
@@ -143,6 +225,7 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
             .map(|s| (ms_to_frames(s.src_start_ms), ms_to_frames(s.src_end_ms), 10f32.powf((s.gain_db / 20.0) as f32)))
             .collect();
         let joins = plan.joins.iter().map(|j| (j.kind.clone(), ms_to_frames(j.ms))).collect();
+        let (holds, fade_ins) = join_plan(plan);
         let fx = plan
             .effects
             .iter()
@@ -164,7 +247,8 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
             segs,
             fx,
             joins,
-            xf: ms_to_frames(plan.crossfade_ms.max(1.0)),
+            holds,
+            fade_ins,
             si: 0,
             t: 0,
             tail: Vec::new(),
@@ -222,9 +306,10 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
                 self.flush_tail_fade_out()?;
                 self.write_room_tone(frames.max(1), seed)?;
                 // 下一段開頭用 tail 為零的 crossfade ＝ 淡入
-                self.tail = vec![0.0; (self.xf as usize) * self.ch];
-                self.mix_total = self.xf;
-                self.mixing_left = self.xf;
+                let fi = self.fade_ins.get(self.si - 1).copied().unwrap_or(0);
+                self.tail = vec![0.0; (fi as usize) * self.ch];
+                self.mix_total = fi;
+                self.mixing_left = fi;
             }
             "seam" => {
                 // 直接接：tail 原樣寫出
@@ -268,9 +353,8 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
         }
         let env: f32 = self.fx.iter().map(|f| fx_gain(f, t)).product();
         let mut cur: Vec<f32> = frame.iter().map(|v| v * g * env).collect();
-        // 本段最後 xf 個 frame 扣住當 tail（若段夠長）
-        let len = e - s;
-        let hold = self.xf.min(len / 2);
+        // 本段最後 hold 個 frame 扣住當 tail（長度由接點協定決定，見 join_plan）
+        let hold = self.holds.get(self.si).copied().unwrap_or(0);
         if t + hold >= e && hold > 0 {
             self.tail.extend_from_slice(&cur);
             return Ok(());
@@ -315,13 +399,7 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
 }
 
 fn total_out_frames(plan: &RenderPlan) -> u64 {
-    let mut n: u64 = plan.segs.iter().map(|s| ms_to_frames(s.src_end_ms).saturating_sub(ms_to_frames(s.src_start_ms))).sum();
-    for j in &plan.joins {
-        if j.kind == "gap" {
-            n += ms_to_frames(j.ms);
-        }
-    }
-    n
+    plan_out_frames(plan)
 }
 
 /// 第一階段：來源 → concat.wav（f32、48k、ch）。
@@ -547,7 +625,7 @@ mod tests {
         RenderPlan {
             segs: segs.iter().map(|&(a, b, g)| RenderSeg { src_start_ms: a, src_end_ms: b, gain_db: g }).collect(),
             effects: vec![],
-            joins: joins.iter().map(|&(k, ms)| RenderJoin { kind: k.into(), ms }).collect(),
+            joins: joins.iter().map(|&(k, ms)| RenderJoin { kind: k.into(), ms, fade_out_ms: None, fade_in_ms: None }).collect(),
             crossfade_ms: 20.0,
             target_lufs: -16.0,
             true_peak_dbtp: -1.5,
@@ -574,6 +652,77 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         assert_eq!(out.len() as u64, written);
         out
+    }
+
+    /// 輸出長度只能有一份公式：`plan_out_frames` 必須逐 frame 等於 Cutter 真的寫出來的數量。
+    /// 這條測試是 R3 之後所有音質工作的安全網 —— Cutter 改壞不會 panic，只會「長度慢慢漂」，
+    /// 而且會被後面的 loudnorm 掩蓋掉，聽感上只剩「接縫怪怪的」。
+    #[test]
+    fn plan_out_frames_matches_what_the_cutter_actually_writes() {
+        // 決定性偽亂數（測試不能靠 rand，失敗要能重現）
+        let mut seed = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let kinds = ["crossfade", "gap", "seam"];
+        for case in 0..120u32 {
+            let n = 1 + (next() % 5) as usize;
+            let mut segs = Vec::new();
+            let mut cursor = 0.0f64;
+            for _ in 0..n {
+                // 刻意混入「比 crossfade 還短」的段：那正是舊公式會漏算的情況
+                let len = match next() % 4 {
+                    0 => 5.0 + (next() % 20) as f64,
+                    1 => 30.0 + (next() % 60) as f64,
+                    _ => 120.0 + (next() % 900) as f64,
+                };
+                let gap = (next() % 200) as f64;
+                segs.push((cursor, cursor + len, 0.0));
+                cursor += len + gap;
+            }
+            let joins: Vec<(&str, f64)> = (0..n.saturating_sub(1))
+                .map(|_| {
+                    let k = kinds[(next() % 3) as usize];
+                    let ms = match k {
+                        "gap" => 40.0 + (next() % 300) as f64,
+                        "seam" => 0.0,
+                        _ => 4.0 + (next() % 60) as f64,
+                    };
+                    (k, ms)
+                })
+                .collect();
+            let p = plan(&segs, &joins);
+            let expect = plan_out_frames(&p);
+            let out = run_cutter(&p, ms_to_frames(cursor + 100.0));
+            assert_eq!(
+                out.len() as u64,
+                expect,
+                "case {case}: segs={segs:?} joins={joins:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn effective_crossfade_is_clamped_by_both_sides() {
+        // 只夾前一段是錯的：下一段太短時 Cutter 會補寫殘餘 tail，長度就對不起來
+        assert_eq!(effective_xf_frames(20.0, 4800, 4800), ms_to_frames(20.0));
+        assert_eq!(effective_xf_frames(20.0, 100, 4800), 50);
+        assert_eq!(effective_xf_frames(20.0, 4800, 100), 50);
+        assert_eq!(effective_xf_frames(20.0, 1, 4800), 0);
+    }
+
+    #[test]
+    fn legacy_plan_without_per_join_ms_falls_back_to_global_crossfade() {
+        // 舊版專案 / CLI 產生的 plan：joins[].ms = 0。不退回 crossfade_ms 的話
+        // 每個接點都會變成 0 長度交叉 ＝ 硬切爆音。
+        let p = plan(&[(0.0, 500.0, 0.0), (800.0, 1300.0, 0.0)], &[("crossfade", 0.0)]);
+        let (holds, _) = join_plan(&p);
+        assert_eq!(holds[0], ms_to_frames(20.0), "應退回 plan.crossfade_ms");
+        let out = run_cutter(&p, ms_to_frames(1400.0));
+        assert_eq!(out.len() as u64, plan_out_frames(&p));
     }
 
     #[test]

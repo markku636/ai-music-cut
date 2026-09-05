@@ -1,6 +1,7 @@
 // EDL（Edit Decision List）：由已接受的候選算出「保留段」清單，含自然度守門。
 // 純函式、無 DOM；probe 提供能量最低點（Rust 波形桶）供邊界貼齊，測試可用 midpoint 假件。
 import type { Candidate, DecisionMap, Sentence, VadRegion, Word } from "../types";
+import { effectiveXfFrames, effectiveXfMs, framesToMs, msToFrames } from "./joins";
 import { isActiveState } from "../types";
 
 export interface EdlOptions {
@@ -68,7 +69,10 @@ export interface Join {
 
 export interface EdlStats {
   removedMs: number;
+  /** 保留段的來源總長（不含接點重疊與 room tone）—— 不是成品長度。 */
   keptMs: number;
+  /** 成品長度：keptMs 扣掉 crossfade 重疊、加上 gap 的 room tone。 */
+  outMs: number;
   cutCount: number;
   byKind: Record<string, { count: number; ms: number }>;
 }
@@ -255,22 +259,36 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
   pushKeep(cursor, durationMs);
 
   // 7) joins + 輸出時間
+  //
+  // 兩趟：先決定每個接點的種類，再用 joins.ts 的公式算重疊與輸出時間。
+  // crossfade 是「重疊」不是「插入」—— 一趟做完會漏扣重疊，每刀累積約 20 ms 漂移。
   const joins: Join[] = [];
-  let out = 0;
-  for (let i = 0; i < keeps.length; i++) {
+  for (let i = 0; i + 1 < keeps.length; i++) {
     const k = keeps[i];
-    k.outStartMs = out;
-    out += k.srcEndMs - k.srcStartMs;
-    k.outEndMs = out;
-    if (i < keeps.length - 1) {
-      const next = keeps[i + 1];
-      const between = joinsMeta.filter((m) => m.removal.startMs >= k.srcEndMs - 1 && m.removal.endMs <= next.srcStartMs + 1);
-      const gap = between.some((m) => m.gapInsert);
-      const ids = between.flatMap((m) => m.removal.candidateIds);
-      if (gap) {
-        joins.push({ afterKeepId: k.id, kind: "gap", ms: opts.minBreathGapMs, removedCandidateIds: ids });
-        out += opts.minBreathGapMs;
-      } else joins.push({ afterKeepId: k.id, kind: "crossfade", ms: opts.crossfadeMs, removedCandidateIds: ids });
+    const next = keeps[i + 1];
+    const between = joinsMeta.filter((m) => m.removal.startMs >= k.srcEndMs - 1 && m.removal.endMs <= next.srcStartMs + 1);
+    const ids = between.flatMap((m) => m.removal.candidateIds);
+    if (between.some((m) => m.gapInsert)) {
+      joins.push({ afterKeepId: k.id, kind: "gap", ms: opts.minBreathGapMs, removedCandidateIds: ids });
+    } else {
+      // 存「實際生效」的長度而不是規格值：EDL 要能自我描述，讀 Join.ms 的人看到的就是真的。
+      // Rust 端會用同一條公式再夾一次（冪等），舊 plan 也就自動安全。
+      const ms = effectiveXfMs(opts.crossfadeMs, k.srcEndMs - k.srcStartMs, next.srcEndMs - next.srcStartMs);
+      joins.push({ afterKeepId: k.id, kind: "crossfade", ms, removedCandidateIds: ids });
+    }
+  }
+  {
+    // 輸出時間軸一律走 frame，四捨五入的位置才會跟 Rust 一致。
+    let outFrames = 0;
+    for (let i = 0; i < keeps.length; i++) {
+      const k = keeps[i];
+      k.outStartMs = framesToMs(outFrames);
+      outFrames += msToFrames(k.srcEndMs) - msToFrames(k.srcStartMs);
+      k.outEndMs = framesToMs(outFrames);
+      const j = joins[i];
+      if (!j) continue;
+      if (j.kind === "gap") outFrames += msToFrames(j.ms);
+      else outFrames -= effectiveXfFrames(j.ms, msToFrames(k.srcEndMs) - msToFrames(k.srcStartMs), msToFrames(keeps[i + 1].srcEndMs) - msToFrames(keeps[i + 1].srcStartMs));
     }
   }
 
@@ -288,7 +306,8 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
     }
   }
   const keptMs = keeps.reduce((s, k) => s + (k.srcEndMs - k.srcStartMs), 0);
-  return { keeps, joins, stats: { removedMs, keptMs, cutCount: Math.max(0, keeps.length - 1), byKind }, downgrades, removals };
+  const outMs = keeps.length ? keeps[keeps.length - 1].outEndMs : 0;
+  return { keeps, joins, stats: { removedMs, keptMs, outMs, cutCount: Math.max(0, keeps.length - 1), byKind }, downgrades, removals };
 }
 
 function hasKeptWordBetween(words: Word[], cutWordIds: Set<number>, fromMs: number, toMs: number): boolean {

@@ -25,9 +25,18 @@ function silencePoints(vad: VadRegion[], fromMs: number, toMs: number, minSilenc
   return pts;
 }
 
-export function splitUnits(keeps: KeepSegment[], vad: VadRegion[], maxUnitMs = 15_000, minSilenceMs = 150): Unit[] {
+/**
+ * 保留段內切成響度單元。
+ *
+ * `minUnitMs` 是給接點協定用的：輸出計畫送進 Rust 的是「單元」不是「保留段」，
+ * 保留段邊界的 crossfade 會被夾在相鄰**單元**長度的一半以內（見 edl/joins.ts）。
+ * 單元比 2×crossfade 還短時，實際交叉會被悄悄縮短，EDL 算的長度也就對不上成品。
+ * 所以切完之後把過短的單元併回鄰居（同一保留段內；保留段本身太短就整段當一個單元）。
+ */
+export function splitUnits(keeps: KeepSegment[], vad: VadRegion[], maxUnitMs = 15_000, minSilenceMs = 150, minUnitMs = 200): Unit[] {
   const out: Unit[] = [];
   for (const k of keeps) {
+    const spans: { start: number; end: number }[] = [];
     let cur = k.srcStartMs;
     const pts = silencePoints(vad, k.srcStartMs, k.srcEndMs, minSilenceMs);
     let pi = 0;
@@ -39,10 +48,27 @@ export function splitUnits(keeps: KeepSegment[], vad: VadRegion[], maxUnitMs = 1
         pi += 1;
       }
       if (cut < 0) cut = cur + maxUnitMs;
-      out.push({ id: out.length, keepId: k.id, startMs: cur, endMs: cut });
+      spans.push({ start: cur, end: cut });
       cur = cut;
     }
-    if (k.srcEndMs > cur) out.push({ id: out.length, keepId: k.id, startMs: cur, endMs: k.srcEndMs });
+    if (k.srcEndMs > cur) spans.push({ start: cur, end: k.srcEndMs });
+    if (!spans.length) continue;
+    // 過短的單元併回鄰居（往前併；第一個就往後併）
+    for (let i = 0; i < spans.length; ) {
+      if (spans.length === 1 || spans[i].end - spans[i].start >= minUnitMs) {
+        i += 1;
+        continue;
+      }
+      if (i > 0) {
+        spans[i - 1].end = spans[i].end;
+        spans.splice(i, 1);
+        i = Math.max(0, i - 1);
+      } else {
+        spans[1].start = spans[0].start;
+        spans.splice(0, 1);
+      }
+    }
+    for (const sp of spans) out.push({ id: out.length, keepId: k.id, startMs: sp.start, endMs: sp.end });
   }
   return out;
 }

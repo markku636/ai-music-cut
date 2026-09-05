@@ -3,6 +3,8 @@
 //
 // 只在 `import.meta.env.DEV` 掛載 —— 正式打包時 main.tsx 的 if 會被 tree-shake 掉，window 上不會有任何東西。
 // 這是 AICUT_DEV_* 煙霧鉤子的延伸：那些只能「開檔 / 跑分析」，這裡可以量到毫秒。
+import { edlFor } from "./pipeline/rules";
+import { buildRenderPlan, runRender } from "./pipeline/render";
 import { getPlayer, isRangePlaying, lastRangeStop, playRange, seekTo, stopRange, togglePlay } from "./preview/playerRef";
 import { currentGain } from "./preview/previewGain";
 import { tickCount, tickRunning } from "./preview/ticker";
@@ -33,6 +35,9 @@ export interface DevBridge {
   }>;
   ticker: () => { count: number; running: boolean; gain: number };
   lastRangeStop: typeof lastRangeStop;
+  edlFor: typeof edlFor;
+  buildRenderPlan: typeof buildRenderPlan;
+  runRender: typeof runRender;
 }
 
 export function installDevBridge() {
@@ -77,5 +82,8 @@ export function installDevBridge() {
     measureRange,
     ticker: () => ({ count: tickCount(), running: tickRunning(), gain: currentGain() }),
     lastRangeStop,
+    edlFor,
+    buildRenderPlan,
+    runRender,
   };
 }

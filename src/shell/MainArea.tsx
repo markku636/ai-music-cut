@@ -7,6 +7,7 @@ import { isActiveState, type Candidate, type DecisionMap } from "../analysis/typ
 import { EmptyState, Button } from "../ui/index";
 import { useT } from "../i18n";
 import { restoreAnalysis } from "../pipeline/analyze";
+import { edlFor } from "../pipeline/rules";
 import { ensureLocalAnalysis } from "../pipeline/waveform";
 import AudioPlayer from "../preview/AudioPlayer";
 import { playRange } from "../preview/playerRef";
@@ -49,6 +50,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   const decisions = useDecisions((s) => (mediaId ? s.decisions[mediaId] ?? EMPTY_D : EMPTY_D));
   const effects = useDecisions((s) => (mediaId ? s.effects[mediaId] ?? EMPTY_E : EMPTY_E));
   const selectedIds = useDecisions((s) => s.selectedIds);
+  const aggressiveness = useProject((s) => s.aggressiveness);
   const select = useDecisions((s) => s.select);
   const removeCandidate = useDecisions((s) => s.removeCandidate);
   const [menu, setMenu] = useState<WaveMenuInfo | null>(null);
@@ -65,7 +67,18 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   const anchorWord = useRef<number | null>(null);
   const timeline = useResizable({ storageKey: "aicut:timelineH", initial: 220, min: 140, max: () => window.innerHeight * 0.6, axis: "y" });
 
-  const cuts = useMemo(() => activeRanges(candidates, decisions), [candidates, decisions]);
+  // 跳播與輸出必須看同一份剪除區。舊版跳播吃 activeRanges（原始候選直接合併），
+  // 輸出吃 buildEdl（pad / 貼齊能量最低點 / 呼吸還原 / 守門降級），兩者差好幾十毫秒 ——
+  // 使用者「試聽覺得沒問題」但成品不一樣，是最難查的那種 bug。
+  // EDL 算不出來（還沒逐字稿 / 還沒探測）時才退回 activeRanges。
+  // edlFor 從 store 直接讀（getState），所以 lint 看不出它依賴什麼；
+  // 這些 dep 就是「該重算」的訊號，刻意留著。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const edl = useMemo(() => (mediaId ? edlFor(mediaId) : null), [mediaId, candidates, decisions, aggressiveness, local, transcript]);
+  const cuts = useMemo(
+    () => edl?.removals.map((r) => ({ startMs: r.startMs, endMs: r.endMs })) ?? activeRanges(candidates, decisions),
+    [edl, candidates, decisions],
+  );
   // 波形一好就算拍點（純 JS、5 ms 桶自相關；語音信心低會回 null → 不顯示網格）
   const setBeatGrid = useTimeline((s) => s.setBeatGrid);
   useEffect(() => {

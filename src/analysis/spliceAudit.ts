@@ -120,7 +120,9 @@ export function auditSplice(src: LocalAnalysis, out: LocalAnalysis, edl: Edl, op
   }
 
   const okCount = segments.filter((s) => s.ok).length;
-  const expected = edl.stats.keptMs;
+  // 期望長度要含接點帳：keptMs 是保留段的來源總長，沒扣 crossfade 重疊也沒加 room tone。
+  // 用它比對成品每刀會差 20–150 ms，摘要裡的「時長差」就永遠是個假警訊。
+  const expected = edl.stats.outMs;
   const durationDeltaMs = Math.round(out.durationMs - expected);
   const summary = segments.length
     ? okCount === segments.length

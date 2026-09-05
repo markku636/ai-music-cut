@@ -15,8 +15,12 @@ export interface StoredSpliceReport extends SpliceAuditReport {
 
 export interface LastOutput {
   path: string;
-  /** EDL 預估的成品長度（驗收時比對時長差用）。 */
-  keptMs: number | null;
+  /**
+   * 這份輸出計畫「預期」的成品長度（毫秒）。
+   * 注意不是 edl.stats.keptMs —— 那是保留段的來源總長，沒扣 crossfade 重疊也沒加 room tone，
+   * 拿它比對成品時間軸會每刀誤差約 20 ms。正解是 buildRenderPlan 的 expectedOutMs。
+   */
+  expectedOutMs: number | null;
   /** ffmpeg 實測（給交付前的響度守門）。 */
   outputLufs?: number | null;
   outputTp?: number | null;

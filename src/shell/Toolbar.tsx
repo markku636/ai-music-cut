@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { BrainCircuit, Cog, FileMusic, FolderOpen, Info, Keyboard, MicOff, Save, Sparkles, WandSparkles } from "lucide-react";
+import { BrainCircuit, Cog, FileMusic, FolderOpen, Info, Keyboard, MicOff, Save, Sparkles, WandSparkles, Zap } from "lucide-react";
 import Icon from "../ui/Icon";
 import { APP_NAME } from "../brand";
 import { useT } from "../i18n";
@@ -17,6 +17,8 @@ export interface ToolbarProps {
   canRender: boolean;
   onSeparate: () => void;
   canSeparate: boolean;
+  onHighlight: () => void;
+  canHighlight: boolean;
   onSave: () => void;
   dirty: boolean;
   onHelp: () => void;
@@ -34,6 +36,7 @@ export default function Toolbar(p: ToolbarProps) {
     { icon: <Icon icon={BrainCircuit} size={20} />, label: t("AI 判讀"), onClick: p.onJudge, disabled: !p.canJudge, hint: t("先完成分析") },
     { icon: <Icon icon={FileMusic} size={20} />, label: t("輸出"), onClick: p.onRender, disabled: !p.canRender, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={MicOff} size={20} />, label: t("去人聲"), onClick: p.onSeparate, disabled: !p.canSeparate, hint: t("先開啟一個音檔") },
+    { icon: <Icon icon={Zap} size={20} />, label: t("精華片段"), onClick: p.onHighlight, disabled: !p.canHighlight, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Save} size={20} />, label: t("儲存專案"), onClick: p.onSave, disabled: false, badge: p.dirty },
     { icon: <Icon icon={Sparkles} size={20} />, label: t("AI 助手"), onClick: () => useAssistant.getState().toggle(), disabled: false, active: assistantOpen },
     { icon: <Icon icon={Keyboard} size={20} />, label: t("快捷鍵 (F1)"), onClick: p.onHelp, disabled: false },

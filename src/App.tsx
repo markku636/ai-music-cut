@@ -5,6 +5,7 @@ import { AUDIO_EXTENSIONS } from "./brand";
 import AssistantPanel from "./assistant/AssistantPanel";
 import { installToolBridge } from "./assistant/tools";
 import DecisionPanel from "./decisions/DecisionPanel";
+import HighlightDialog from "./dialogs/HighlightDialog";
 import AboutDialog from "./dialogs/AboutDialog";
 import RenderDialog from "./dialogs/RenderDialog";
 import SeparateDialog from "./dialogs/SeparateDialog";
@@ -120,6 +121,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renderOpen, setRenderOpen] = useState(false);
   const [separateOpen, setSeparateOpen] = useState(false);
+  const [highlightOpen, setHighlightOpen] = useState(false);
   const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
@@ -328,6 +330,8 @@ export default function App() {
         canRender={!!active}
         onSeparate={() => setSeparateOpen(true)}
         canSeparate={!!active}
+        onHighlight={() => setHighlightOpen(true)}
+        canHighlight={!!active}
         onSave={() => void saveProject()}
         dirty={dirty}
         onHelp={() => setHelpOpen(true)}
@@ -357,6 +361,7 @@ export default function App() {
       {renderOpen && active && <RenderDialog mediaId={active.id} onClose={() => setRenderOpen(false)} onVerify={startVerify} />}
       {verifyFor && active && <VerifyDialog mediaId={active.id} outPath={verifyFor.outPath} outDurationMs={verifyFor.durationMs} onClose={() => setVerifyFor(null)} />}
       {separateOpen && active && <SeparateDialog mediaId={active.id} onClose={() => setSeparateOpen(false)} />}
+      {highlightOpen && active && <HighlightDialog mediaId={active.id} onClose={() => setHighlightOpen(false)} />}
       <UiHost />
     </div>
   );

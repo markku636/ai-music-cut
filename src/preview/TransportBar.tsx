@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Crosshair, FastForward, Magnet, Maximize2, MousePointer2, Music2, Pause, Play, Rewind, Scissors, SquareDashed, ZoomIn, ZoomOut } from "lucide-react";
+import { Crosshair, FastForward, Hand, Magnet, Maximize2, MousePointer2, Music2, Pause, Play, Rewind, Scissors, SquareDashed, Target, ZoomIn, ZoomOut } from "lucide-react";
 import { IconButton, Segmented } from "../ui/index";
 import { useT } from "../i18n";
 import { usePlayback } from "../store/playback";
@@ -29,6 +29,9 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
   const toggleBeats = useTimeline((s) => s.toggleBeats);
   const snapBeats = useTimeline((s) => s.snapBeats);
   const toggleSnap = useTimeline((s) => s.toggleSnap);
+  const scaleGrid = useTimeline((s) => s.scaleGrid);
+  const setDownbeatAt = useTimeline((s) => s.setDownbeatAt);
+  const tap = useTimeline((s) => s.tap);
   const setTool = useTimeline((s) => s.setTool);
   const removedMs = cuts.reduce((s, c) => s + (c.endMs - c.startMs), 0);
   const editedNow = editedTimeAt(cuts, currentMs);
@@ -38,7 +41,7 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
   useEffect(() => {
     const el = barRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setNarrow(el.clientWidth < 620));
+    const ro = new ResizeObserver(() => setNarrow(el.clientWidth < 820));
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -81,9 +84,17 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
             className={`h-7 px-2 rounded-sm text-[11px] mono tabular-nums inline-flex items-center gap-1 whitespace-nowrap ${showBeats ? "bg-accent/15 text-accent" : "text-fg/55 hover:bg-fg/5"}`}
           >
             <Music2 size={13} />
-            {beatGrid.bpm} BPM
+            {narrow ? beatGrid.bpm : `${beatGrid.bpm} BPM`}
           </button>
           <IconButton icon={Magnet} label={snapBeats ? t("選取貼齊拍點（開）") : t("選取貼齊拍點（關）")} active={snapBeats} onClick={toggleSnap} />
+          <button type="button" onClick={() => scaleGrid(0.5)} title={t("拍子太密 → 減半（÷2）")} className="h-7 px-1.5 rounded-sm text-[11px] mono text-fg/55 hover:bg-fg/5">
+            ÷2
+          </button>
+          <button type="button" onClick={() => scaleGrid(2)} title={t("拍子太疏 → 加倍（×2）")} className="h-7 px-1.5 rounded-sm text-[11px] mono text-fg/55 hover:bg-fg/5">
+            ×2
+          </button>
+          <IconButton icon={Target} label={t("把播放位置設為小節首拍")} onClick={() => setDownbeatAt(currentMs)} />
+          <IconButton icon={Hand} label={t("跟著音樂點這顆抓速度（敲 3 下以上）")} onClick={() => tap(performance.now())} />
         </span>
       )}
       <span className="flex items-center gap-0.5">

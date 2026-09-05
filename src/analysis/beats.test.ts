@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectBeats, foldBpm, isDownbeat, snapToBeat } from "./beats";
+import { applyOverride, detectBeats, foldBpm, isDownbeat, snapToBeat, tapTempo } from "./beats";
 import type { LocalAnalysis } from "./peaks";
 
 /** 造一個 pps=200（5 ms 桶）的假分析：每 beatMs 打一下鼓（RMS 突起）。 */
@@ -84,5 +84,29 @@ describe("beats", () => {
     expect(isDownbeat(grid, 0)).toBe(true);
     expect(isDownbeat(grid, 500)).toBe(false);
     expect(isDownbeat(grid, 2000)).toBe(true);
+  });
+});
+
+describe("grid override", () => {
+  const raw = { bpm: 60, periodMs: 1000, offsetMs: 100, confidence: 0.5, beatsPerBar: 4, beats: [100, 1100, 2100] };
+  it("applyOverride ×2 → 週期減半、BPM 加倍", () => {
+    const g = applyOverride(raw, { bpmScale: 2, offsetDeltaMs: 0 }, 4000)!;
+    expect(g.periodMs).toBe(500);
+    expect(g.bpm).toBe(120);
+    expect(g.beats.length).toBeGreaterThan(raw.beats.length);
+  });
+  it("applyOverride 相位平移", () => {
+    const g = applyOverride(raw, { bpmScale: 1, offsetDeltaMs: 250 }, 4000)!;
+    expect(g.offsetMs).toBe(350);
+  });
+  it("不改就回原物件", () => {
+    expect(applyOverride(raw, { bpmScale: 1, offsetDeltaMs: 0 })).toBe(raw);
+  });
+  it("tapTempo：500 ms 間隔 → 120 BPM；太少下數回 null", () => {
+    expect(tapTempo([0, 500, 1000, 1500])).toBeCloseTo(120, 0);
+    expect(tapTempo([0, 500])).toBeNull();
+  });
+  it("tapTempo 丟掉離群值", () => {
+    expect(tapTempo([0, 500, 1000, 3000, 3500, 4000])).toBeCloseTo(120, 0);
   });
 });

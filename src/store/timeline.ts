@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { snapToBeat, type BeatGrid } from "../analysis/beats";
+import { applyOverride, NO_OVERRIDE, snapToBeat, tapTempo, type BeatGrid, type GridOverride } from "../analysis/beats";
 
 /** 時間軸縮放與工具狀態。pxPerSec = null 代表「整段適配」（fit-to-width），由 Timeline 依容器寬度算出 fitPxPerSec。 */
 export const MAX_PX_PER_SEC = 500;
@@ -31,7 +31,19 @@ interface TimelineStore {
   showBeats: boolean;
   /** 選取自動貼齊拍點（剪在拍子上才不會破）。 */
   snapBeats: boolean;
+  /** AI 偵測到的原始網格（未套人工修正）。 */
+  rawGrid: BeatGrid | null;
+  gridOverride: GridOverride;
+  /** 敲拍的時間戳（毫秒，效能計時）。 */
+  taps: number[];
   setBeatGrid: (g: BeatGrid | null) => void;
+  /** 倍速 / 半速（AI 抓成半拍時一鍵修正）。 */
+  scaleGrid: (factor: number) => void;
+  /** 把某個時間點設成小節首拍。 */
+  setDownbeatAt: (ms: number) => void;
+  /** 敲一下（≥3 下就套用測到的 BPM）；回目前測到的 BPM。 */
+  tap: (nowMs: number) => number | null;
+  resetGrid: () => void;
   toggleBeats: () => void;
   toggleSnap: () => void;
   setFit: (px: number, viewWidth?: number) => void;
@@ -93,9 +105,39 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   loopSelection: readBool("aicut:loopSelection", false),
   scrollReq: null,
   beatGrid: null,
+  rawGrid: null,
+  gridOverride: NO_OVERRIDE,
+  taps: [],
   showBeats: readBool("aicut:showBeats", true),
   snapBeats: readBool("aicut:snapBeats", true),
-  setBeatGrid: (g) => set({ beatGrid: g }),
+  setBeatGrid: (g) => set({ rawGrid: g, gridOverride: NO_OVERRIDE, taps: [], beatGrid: g }),
+  scaleGrid: (factor) =>
+    set((s) => {
+      const ov = { ...s.gridOverride, bpmScale: Math.max(0.25, Math.min(4, s.gridOverride.bpmScale * factor)) };
+      return { gridOverride: ov, beatGrid: applyOverride(s.rawGrid, ov) };
+    }),
+  setDownbeatAt: (ms) =>
+    set((s) => {
+      const g = s.beatGrid;
+      if (!g?.periodMs) return {};
+      const barMs = g.periodMs * g.beatsPerBar;
+      // 讓 ms 落在小節線上：位移量取 [−半小節, +半小節)
+      let delta = (ms - g.offsetMs) % barMs;
+      if (delta > barMs / 2) delta -= barMs;
+      const ov = { ...s.gridOverride, offsetDeltaMs: s.gridOverride.offsetDeltaMs + delta };
+      return { gridOverride: ov, beatGrid: applyOverride(s.rawGrid, ov) };
+    }),
+  tap: (nowMs) => {
+    const taps = [...get().taps.filter((t) => nowMs - t < 4000), nowMs];
+    const bpm = tapTempo(taps);
+    if (bpm && get().rawGrid) {
+      const raw = get().rawGrid!;
+      const ov = { ...get().gridOverride, bpmScale: raw.periodMs / (60000 / bpm) };
+      set({ taps, gridOverride: ov, beatGrid: applyOverride(raw, ov) });
+    } else set({ taps });
+    return bpm;
+  },
+  resetGrid: () => set((s) => ({ gridOverride: NO_OVERRIDE, taps: [], beatGrid: s.rawGrid })),
   toggleBeats: () =>
     set((s) => {
       writeBool("aicut:showBeats", !s.showBeats);

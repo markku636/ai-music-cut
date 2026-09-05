@@ -138,6 +138,44 @@ export function detectBeats(a: LocalAnalysis, opts: DetectOptions = {}): BeatGri
   };
 }
 
+/** 人工修正：AI 抓錯拍時使用者的調整（倍/半速、相位平移）。 */
+export interface GridOverride {
+  /** 週期倍率：2 = 拍子變兩倍密（BPM ×2）、0.5 = 減半。 */
+  bpmScale: number;
+  /** 相位平移（ms），指定某處為小節首拍時用。 */
+  offsetDeltaMs: number;
+}
+
+export const NO_OVERRIDE: GridOverride = { bpmScale: 1, offsetDeltaMs: 0 };
+
+/** 把人工修正套到偵測結果上（重算拍點）。 */
+export function applyOverride(g: BeatGrid | null, ov: GridOverride, durationMs?: number): BeatGrid | null {
+  if (!g || !g.periodMs) return g;
+  if (ov.bpmScale === 1 && ov.offsetDeltaMs === 0) return g;
+  const periodMs = g.periodMs / ov.bpmScale;
+  const offsetMs = g.offsetMs + ov.offsetDeltaMs;
+  const dur = durationMs ?? (g.beats.length ? g.beats[g.beats.length - 1] : 0);
+  const beats: number[] = [];
+  const first = offsetMs - Math.floor(offsetMs / periodMs) * periodMs;
+  for (let t = first; t <= dur; t += periodMs) beats.push(Math.round(t));
+  return { ...g, bpm: Math.round((60000 / periodMs) * 10) / 10, periodMs, offsetMs, beats };
+}
+
+/** 敲拍測速：取最近幾次間隔的中位數（丟掉離群 > 1.6 倍中位數者）。至少 3 下才回 BPM。 */
+export function tapTempo(times: number[]): number | null {
+  if (times.length < 3) return null;
+  const recent = times.slice(-8);
+  const gaps: number[] = [];
+  for (let i = 1; i < recent.length; i++) gaps.push(recent[i] - recent[i - 1]);
+  const sorted = gaps.slice().sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)];
+  const good = gaps.filter((g) => g > med / 1.6 && g < med * 1.6);
+  if (!good.length) return null;
+  const avg = good.reduce((a, b) => a + b, 0) / good.length;
+  if (avg < 200 || avg > 2000) return null;
+  return Math.round(foldBpm(60000 / avg) * 10) / 10;
+}
+
 /** 貼齊：把時間點吸到最近的拍點（超過 tolerance 就不動）。 */
 export function snapToBeat(grid: BeatGrid | null, ms: number, toleranceMs = 120): number {
   if (!grid || !grid.periodMs || grid.confidence < MIN_BEAT_CONFIDENCE) return ms;

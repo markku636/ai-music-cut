@@ -26,6 +26,7 @@
 
 0. **開檔**（`pipeline/waveform.ts`）：ffprobe → 指紋 → 立刻跑本機 `analysis.bin`（5 ms 波形桶 + 100 ms LUFS 視窗；只需 ffmpeg、快取命中即時）→ 時間軸 fit-to-width 首繪。與 ttls / 金鑰無關；沒分析也能播放、手動剪、輸出。
 1. **分析**（`pipeline/analyze.ts`）：確保本機分析 ∥ `upload.ogg`（16k opus）→ ttls 轉寫 202+輪詢（503/429 backoff）→ `normalizeTranscript`（秒→ms、句子切分）→ `runRules` → 候選 + 預設決策。
+1b. **節拍**（`analysis/beats.ts`）：5 ms RMS 桶 → 半波整流一階差分（onset）→ 自相關（60–190 BPM，倍/半週期加權）→ 相位對齊 → 拍點 / 小節線；信心 < 0.12 視為非音樂不顯示。選取貼齊在 `store/timeline.setSelection` 統一處理（拖曳、逐字稿、右鍵都吃得到）。
 2. **規則層**（`analysis/rules/*`）：贅字（語境：句首「然後」保留、「那個」+名詞保留、問句後的「對」是回答…）、口吃 / 重複片語 / restart（LCS）、長停頓縮短為 350 ms、含糊（低信心 / 段級訊號 / 音量偏小）、雜音。門檻由激進度 0–100 線性插值（`thresholds.ts`）。
 3. **決策**（`store/decisions.ts`）：`auto | accepted | rejected | pending`；只建議的類型（unclear / rambling / off_topic / redo）永遠不會自動剪；user 決策與人工拉過的範圍（`meta.userRange`）跨重跑保留；undo/redo 為整份快照（候選 + 決策 + 效果）。
 3b. **人工剪輯**（`store/timeline.ts` + `timeline/selectionActions.ts`）：選取工具拖出 `selection` → 剪掉（manual 候選）/ 只保留 / 播放（可循環）；區段效果（`analysis/effects.ts`：mute / gain / fade_in / fade_out）以來源時間包絡定義，預聽用 `<audio>.volume`，輸出由 Rust 逐 frame 相乘（同一套 5 ms 邊緣平滑）。

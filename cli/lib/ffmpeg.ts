@@ -42,6 +42,49 @@ export class Ffmpeg {
     return { durationMs: Math.round(Number(j.format?.duration ?? 0) * 1000), codec: s.codec_name ?? "?", sampleRate: Number(s.sample_rate ?? 0), channels: s.channels ?? 1 };
   }
 
+
+  /**
+   * 解碼成 mono f32 並算 5 ms RMS 桶（與 Rust media.rs 的 analysis.bin 同一套 u8 映射：0..255 ↔ −60..0 dBFS）。
+   * 給 CLI 的節拍偵測用；App 走 Rust 版本。
+   */
+  async rmsBuckets(file: string, pps = 200): Promise<{ rmsU8: Uint8Array; pps: number; sampleRate: number; totalSamples: number }> {
+    const sr = 48000;
+    const per = Math.max(1, Math.round(sr / pps));
+    return new Promise((resolve, reject) => {
+      const p = spawn(this.ffmpeg, ["-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", String(sr), "-f", "f32le", "-"], { windowsHide: true });
+      const out: number[] = [];
+      let acc = 0;
+      let n = 0;
+      let total = 0;
+      let carry = Buffer.alloc(0);
+      let err = "";
+      p.stderr.on("data", (d: Buffer) => (err += d.toString()));
+      p.stdout.on("data", (chunk: Buffer) => {
+        const buf = carry.length ? Buffer.concat([carry, chunk]) : chunk;
+        const usable = buf.length - (buf.length % 4);
+        for (let i = 0; i < usable; i += 4) {
+          const v = buf.readFloatLE(i);
+          acc += v * v;
+          n += 1;
+          total += 1;
+          if (n === per) {
+            const rms = Math.sqrt(acc / n);
+            const db = rms > 0 ? 20 * Math.log10(rms) : -120;
+            out.push(Math.max(0, Math.min(255, Math.round(((db + 60) / 60) * 255))));
+            acc = 0;
+            n = 0;
+          }
+        }
+        carry = buf.subarray(usable);
+      });
+      p.on("error", (e) => reject(new Error(`無法執行 ${this.ffmpeg}：${e.message}`)));
+      p.on("close", (code) => {
+        if (code !== 0) return reject(new Error(`解碼失敗：${err.trim().slice(-200)}`));
+        resolve({ rmsU8: Uint8Array.from(out), pps, sampleRate: sr, totalSamples: total });
+      });
+    });
+  }
+
   /** 上傳用 16k mono opus（與 App 相同）。 */
   async toUploadOpus(file: string, out: string): Promise<void> {
     const r = await run(this.ffmpeg, ["-y", "-v", "error", "-i", file, "-vn", "-ac", "1", "-ar", "16000", "-c:a", "libopus", "-b:a", "48k", "-f", "ogg", out]);

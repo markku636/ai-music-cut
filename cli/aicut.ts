@@ -18,6 +18,8 @@ import { normalizeTranscript, type ServerTranscript } from "../src/analysis/norm
 import { runRulesAt } from "../src/analysis/rules";
 import { thresholdsFor } from "../src/analysis/thresholds";
 import { SUGGEST_ONLY_KINDS, isActiveState, KIND_LABEL, type Candidate, type DecisionMap, type DecisionState, type Transcript } from "../src/analysis/types";
+import { detectBeats, MIN_BEAT_CONFIDENCE } from "../src/analysis/beats";
+import type { LocalAnalysis } from "../src/analysis/peaks";
 import { actualWords, expectedWords, verifyEdit, type VerifyReport } from "../src/analysis/verify";
 import { Ffmpeg } from "./lib/ffmpeg";
 import { judgeAll } from "./lib/judge";
@@ -79,6 +81,7 @@ function help(): void {
                           [--project p.aicut.json]   沿用 App 存的決策 / 手動剪輯 / 效果（不重跑規則）
   aicut separate   <音檔> [--stems vocals_accom|all] [--format wav|mp3|flac] [--out-dir DIR]
   aicut verify     <原始音檔> <剪好的成品> [--project p.aicut.json]   用 ASR 重新轉寫成品，逐字比對該留的字
+  aicut beats      <音檔> [--bars]                                    偵測 BPM / 拍點（剪音樂用；--bars 列出小節時間）
 
 共用選項：
   --server URL      ttls 伺服器（預設 https://ttls.markkulab.net）
@@ -378,6 +381,37 @@ async function cmdVerify(args: Args): Promise<void> {
   process.exitCode = r.findings.some((f) => (f.kind === "missing" || f.kind === "extra") && !f.lowConfidence) ? 2 : 0;
 }
 
+async function cmdBeats(args: Args): Promise<void> {
+  const file = args.positional[0];
+  if (!file) throw new Error("請給音檔路徑");
+  const ff = ffmpegOf(args.flags);
+  const probe = await ff.probe(file);
+  log("解碼並計算能量包絡…");
+  const { rmsU8, pps, sampleRate, totalSamples } = await ff.rmsBuckets(file);
+  const a: LocalAnalysis = {
+    version: 2,
+    pps,
+    hopMs: 100,
+    sampleRate,
+    nBuckets: rmsU8.length,
+    nWin: 0,
+    totalSamples,
+    durationMs: probe.durationMs,
+    mins: new Int8Array(0),
+    maxs: new Int8Array(0),
+    rmsU8,
+    win: new Float32Array(0),
+  };
+  const g = detectBeats(a);
+  const ok = g.confidence >= MIN_BEAT_CONFIDENCE;
+  process.stdout.write(`${g.bpm} BPM · 每拍 ${g.periodMs.toFixed(1)} ms · 首拍 ${fmtMs(g.offsetMs)} · 信心 ${(g.confidence * 100).toFixed(0)}%${ok ? "" : "（信心不足，可能不是節奏明顯的音樂）"}\n`);
+  if (args.flags.bars) {
+    const bars = g.beats.filter((_, i) => i % g.beatsPerBar === 0).slice(0, 40);
+    process.stdout.write(`小節線：${bars.map((b) => fmtMs(b, )).join("  ")}\n`);
+  }
+  process.exitCode = ok ? 0 : 3;
+}
+
 async function cmdSeparate(args: Args): Promise<void> {
   const file = args.positional[0];
   if (!file) throw new Error("請給音檔路徑");
@@ -411,6 +445,8 @@ async function main(): Promise<void> {
       return cmdSeparate(args);
     case "verify":
       return cmdVerify(args);
+    case "beats":
+      return cmdBeats(args);
     case "--version":
     case "version":
       process.stdout.write(`${VERSION}\n`);

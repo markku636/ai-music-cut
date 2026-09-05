@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Crop, Music, Play, Repeat, Scissors, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, X, ZoomIn } from "lucide-react";
 import type { AudioEffect } from "../analysis/effects";
+import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
 import { activeRanges } from "../analysis/edl/build";
 import { isActiveState, type Candidate, type DecisionMap } from "../analysis/types";
 import { EmptyState, Button } from "../ui/index";
@@ -63,6 +64,16 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   const timeline = useResizable({ storageKey: "aicut:timelineH", initial: 220, min: 140, max: () => window.innerHeight * 0.6, axis: "y" });
 
   const cuts = useMemo(() => activeRanges(candidates, decisions), [candidates, decisions]);
+  // 波形一好就算拍點（純 JS、5 ms 桶自相關；語音信心低會回 null → 不顯示網格）
+  const setBeatGrid = useTimeline((s) => s.setBeatGrid);
+  useEffect(() => {
+    if (!local) {
+      setBeatGrid(null);
+      return;
+    }
+    const g = detectBeats(local);
+    setBeatGrid(g.confidence >= MIN_BEAT_CONFIDENCE ? g : null);
+  }, [local, setBeatGrid]);
   useSkipPlayback(cuts);
   useEffectPreview(effects);
 

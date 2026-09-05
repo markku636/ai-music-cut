@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Crosshair, FastForward, Maximize2, MousePointer2, Pause, Play, Rewind, Scissors, SquareDashed, ZoomIn, ZoomOut } from "lucide-react";
+import { Crosshair, FastForward, Magnet, Maximize2, MousePointer2, Music2, Pause, Play, Rewind, Scissors, SquareDashed, ZoomIn, ZoomOut } from "lucide-react";
 import { IconButton, Segmented } from "../ui/index";
 import { useT } from "../i18n";
 import { usePlayback } from "../store/playback";
@@ -24,6 +24,11 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
   const zoomBy = useTimeline((s) => s.zoomBy);
   const fit = useTimeline((s) => s.fit);
   const tool = useTimeline((s) => s.tool);
+  const beatGrid = useTimeline((s) => s.beatGrid);
+  const showBeats = useTimeline((s) => s.showBeats);
+  const toggleBeats = useTimeline((s) => s.toggleBeats);
+  const snapBeats = useTimeline((s) => s.snapBeats);
+  const toggleSnap = useTimeline((s) => s.toggleSnap);
   const setTool = useTimeline((s) => s.setTool);
   const removedMs = cuts.reduce((s, c) => s + (c.endMs - c.startMs), 0);
   const editedNow = editedTimeAt(cuts, currentMs);
@@ -67,6 +72,20 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
           { value: "select", label: narrow ? "" : t("選取"), icon: SquareDashed, title: t("選取（預設）：點一下定位、拖曳選一段，再播放 / 剪掉 / 只保留（S）") },
         ]}
       />
+      {beatGrid && (
+        <span className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={toggleBeats}
+            title={t("顯示 / 隱藏拍線與小節線（偵測到 {bpm} BPM，信心 {c}%）", { bpm: beatGrid.bpm, c: Math.round(beatGrid.confidence * 100) })}
+            className={`h-7 px-2 rounded-sm text-[11px] mono tabular-nums inline-flex items-center gap-1 whitespace-nowrap ${showBeats ? "bg-accent/15 text-accent" : "text-fg/55 hover:bg-fg/5"}`}
+          >
+            <Music2 size={13} />
+            {beatGrid.bpm} BPM
+          </button>
+          <IconButton icon={Magnet} label={snapBeats ? t("選取貼齊拍點（開）") : t("選取貼齊拍點（關）")} active={snapBeats} onClick={toggleSnap} />
+        </span>
+      )}
       <span className="flex items-center gap-0.5">
         <IconButton icon={ZoomOut} label={t("縮小（Ctrl+-）")} onClick={() => zoomBy(0.8)} disabled={pxPerSec === null} />
         {!narrow && (

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.esm.js";
 import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline.esm.js";
@@ -11,6 +11,7 @@ import { usePlayback } from "../store/playback";
 import { useTimeline } from "../store/timeline";
 import { useTheme } from "../theme";
 import { formatMs } from "../time";
+import BeatGridOverlay from "./BeatGridOverlay";
 import TimelinePlaceholder from "./TimelinePlaceholder";
 
 /** 時間尺高度（TimelinePlugin，插在波形上方）。 */
@@ -157,6 +158,8 @@ export default function Timeline(props: TimelineProps) {
   const selRegionRef = useRef<Region | null>(null);
   const effectMap = useRef(new Map<string, Region>());
   const disableDragRef = useRef<(() => void) | null>(null);
+  // 交給拍線疊層用（state 而非 ref：實例換掉要重新訂閱事件）
+  const [wsInstance, setWsInstance] = useState<WaveSurfer | null>(null);
   const cb = useRef(props);
   cb.current = props;
   const themeId = useTheme((s) => s.themeId);
@@ -215,6 +218,7 @@ export default function Timeline(props: TimelineProps) {
       plugins: [regions, ruler, hover],
     });
     wsRef.current = ws;
+    setWsInstance(ws);
     regionsRef.current = regions;
     regionMap.current = new Map();
     effectMap.current = new Map();
@@ -307,6 +311,7 @@ export default function Timeline(props: TimelineProps) {
         /* 容器已被移除時 wavesurfer 會丟 removeChild 例外，忽略 */
       }
       wsRef.current = null;
+      setWsInstance(null);
       regionsRef.current = null;
       regionMap.current = new Map();
       effectMap.current = new Map();
@@ -450,7 +455,10 @@ export default function Timeline(props: TimelineProps) {
   }
   return (
     <div className="relative h-full px-2 py-2 overflow-hidden" style={{ height }}>
-      <div ref={boxRef} className="w-full h-full" onContextMenu={onContextMenu} />
+      <div className="relative w-full h-full">
+        <div ref={boxRef} className="w-full h-full" onContextMenu={onContextMenu} />
+        <BeatGridOverlay ws={wsInstance} height={waveH + RULER_H} />
+      </div>
       {hint && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
           <span className="text-[11px] text-fg/45 bg-well/85 px-2 py-1 rounded">在波形上拖曳選一段 → 播放 / 剪掉 / 只保留（右鍵有更多）</span>

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { snapToBeat, type BeatGrid } from "../analysis/beats";
 
 /** 時間軸縮放與工具狀態。pxPerSec = null 代表「整段適配」（fit-to-width），由 Timeline 依容器寬度算出 fitPxPerSec。 */
 export const MAX_PX_PER_SEC = 500;
@@ -24,6 +25,15 @@ interface TimelineStore {
   loopSelection: boolean;
   /** 一次性捲動請求（Timeline 消費）。 */
   scrollReq: { ms: number; nonce: number } | null;
+  /** 目前媒體的拍網格（剪音樂用；語音檔信心低時為 null）。 */
+  beatGrid: BeatGrid | null;
+  /** 時間軸上顯示拍線 / 小節線。 */
+  showBeats: boolean;
+  /** 選取自動貼齊拍點（剪在拍子上才不會破）。 */
+  snapBeats: boolean;
+  setBeatGrid: (g: BeatGrid | null) => void;
+  toggleBeats: () => void;
+  toggleSnap: () => void;
   setFit: (px: number, viewWidth?: number) => void;
   setPxPerSec: (px: number | null) => void;
   zoomBy: (factor: number) => void;
@@ -82,6 +92,20 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   selection: null,
   loopSelection: readBool("aicut:loopSelection", false),
   scrollReq: null,
+  beatGrid: null,
+  showBeats: readBool("aicut:showBeats", true),
+  snapBeats: readBool("aicut:snapBeats", true),
+  setBeatGrid: (g) => set({ beatGrid: g }),
+  toggleBeats: () =>
+    set((s) => {
+      writeBool("aicut:showBeats", !s.showBeats);
+      return { showBeats: !s.showBeats };
+    }),
+  toggleSnap: () =>
+    set((s) => {
+      writeBool("aicut:snapBeats", !s.snapBeats);
+      return { snapBeats: !s.snapBeats };
+    }),
   setFit: (px, viewWidth) => set((s) => ({ fitPxPerSec: Math.max(0.01, px), viewWidth: viewWidth ?? s.viewWidth })),
   setPxPerSec: (px) => set({ pxPerSec: px == null ? null : clampZoom(px, get().fitPxPerSec) }),
   zoomBy: (factor) => set((s) => ({ pxPerSec: nextZoom(s.pxPerSec, s.fitPxPerSec, factor) })),
@@ -113,8 +137,12 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
       set({ selection: null });
       return;
     }
-    const startMs = Math.max(0, Math.min(sel.startMs, sel.endMs));
-    const endMs = Math.max(sel.startMs, sel.endMs);
+    const st = get();
+    // 貼齊拍點：容差取半拍與 140 ms 的較小者，避免把很短的選取吸掉
+    const grid = st.snapBeats ? st.beatGrid : null;
+    const tol = grid ? Math.min(140, grid.periodMs / 2) : 0;
+    const startMs = Math.max(0, snapToBeat(grid, Math.min(sel.startMs, sel.endMs), tol));
+    const endMs = snapToBeat(grid, Math.max(sel.startMs, sel.endMs), tol);
     set({ selection: endMs - startMs < 20 ? null : { startMs: Math.round(startMs), endMs: Math.round(endMs) } });
   },
   toggleLoop: () =>

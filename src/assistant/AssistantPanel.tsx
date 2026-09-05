@@ -12,7 +12,7 @@ const WIDTH = 380;
 
 const SUGGESTIONS = ["幫我看一下目前的剪輯狀況", "把句首以外的「就是」都剪掉", "待決的建議逐一告訴我你的看法", "激進度調到 70 再看看會剪多少"];
 
-export default function AssistantPanel() {
+export default function AssistantPanel({ embedded = false }: { embedded?: boolean } = {}) {
   const t = useT();
   const open = useAssistant((s) => s.open);
   const setOpen = useAssistant((s) => s.setOpen);
@@ -31,7 +31,7 @@ export default function AssistantPanel() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, busy]);
 
-  if (!open) return null;
+  if (!embedded && !open) return null;
 
   const submit = () => {
     const v = input.trim();
@@ -42,7 +42,10 @@ export default function AssistantPanel() {
   const ready = !!claude?.installed;
 
   return (
-    <div className="shrink-0 bg-panel border-l border-fg/10 flex flex-col text-sm min-h-0" style={{ width: WIDTH }}>
+    <div
+      className={embedded ? "flex-1 min-h-0 flex flex-col text-sm" : "shrink-0 bg-panel border-l border-fg/10 flex flex-col text-sm min-h-0"}
+      style={embedded ? undefined : { width: WIDTH }}
+    >
       <div className="h-9 shrink-0 flex items-center gap-2 px-3 border-b border-fg/10">
         <Icon icon={Sparkles} size={14} className="text-accent" />
         <span className="text-xs text-fg/45 uppercase tracking-wide">{t("AI 助手")}</span>

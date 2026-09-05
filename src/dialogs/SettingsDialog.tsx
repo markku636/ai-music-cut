@@ -5,6 +5,7 @@ import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
 import { pickDirectory, pickOpenFile, toast } from "../ui";
 import { useT } from "../i18n";
 import { ffmpegSourceLabel } from "../ffmpegSource";
+import { useUi, type Density } from "../store/ui";
 import { useSettings } from "../store/settings";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -42,6 +43,8 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
   const s = useSettings((x) => x.s);
   const save = useSettings((x) => x.save);
   const ffmpeg = useSettings((x) => x.ffmpeg);
+  const density = useUi((x) => x.density);
+  const setDensity = useUi((x) => x.setDensity);
   const ttls = useSettings((x) => x.ttls);
   const key = useSettings((x) => x.key);
   const probeAll = useSettings((x) => x.probeAll);
@@ -192,6 +195,13 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
                 {t("偵測")}
               </Button>
             </div>
+          </Field>
+          <Field label={t("介面密度")} hint={t("大螢幕用「寬鬆」讀起來比較不吃力；筆電用「緊湊」可以多看到幾列")}>
+            <Select value={density} onChange={(e) => setDensity(e.target.value as Density)}>
+              <option value="compact">{t("緊湊")}</option>
+              <option value="normal">{t("標準")}</option>
+              <option value="comfortable">{t("寬鬆")}</option>
+            </Select>
           </Field>
           <Field label={t("Claude 模型（claude CLI --model）")} hint={t("AI 判讀與助手都用本機 claude 登入身分；sonnet 速度與品質均衡")}>
             <Select value={draft.claude_model || "sonnet"} onChange={(e) => void commit({ claude_model: e.target.value })}>

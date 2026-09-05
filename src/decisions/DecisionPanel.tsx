@@ -35,7 +35,18 @@ const KIND_CLASS: Record<CandidateKind, string> = {
 
 type StateFilter = "all" | "active" | "pending" | "rejected" | "conflict";
 
-export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: { mediaId: string | null; analysisState: AnalysisState | null; onRerunRules: () => void }) {
+export default function DecisionPanel({
+  mediaId,
+  analysisState,
+  onRerunRules,
+  embedded = false,
+}: {
+  mediaId: string | null;
+  analysisState: AnalysisState | null;
+  onRerunRules: () => void;
+  /** 嵌在右側欄裡：開合與寬度由 RightRail 管，這裡只畫內容。 */
+  embedded?: boolean;
+}) {
   const t = useT();
   const [open, setOpen] = useState(() => {
     try {
@@ -122,7 +133,7 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
     [candidates, decisions, stateFilter, kindFilter],
   );
 
-  if (!open) {
+  if (!embedded && !open) {
     return (
       <div className="w-7 shrink-0 bg-panel border-l border-fg/10 flex flex-col items-center pt-2">
         <IconButton icon={ChevronLeft} label={t("顯示決策面板")} iconSize={16} box="w-6 h-6" onClick={toggle} />
@@ -142,14 +153,17 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
   };
 
   return (
-    <div className="shrink-0 bg-panel border-l border-fg/10 flex flex-col text-sm relative min-h-0" style={{ width }}>
-      <div onPointerDown={startResize} title={t("拖曳調整寬度")} className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-accent/40 z-10" />
+    <div
+      className={embedded ? "flex-1 min-h-0 flex flex-col text-sm" : "shrink-0 bg-panel border-l border-fg/10 flex flex-col text-sm relative min-h-0"}
+      style={embedded ? undefined : { width }}
+    >
+      {!embedded && <div onPointerDown={startResize} title={t("拖曳調整寬度")} className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-accent/40 z-10" />}
       <div className="h-9 shrink-0 flex items-center gap-2 px-3 border-b border-fg/10">
         <span className="text-xs text-fg/45 uppercase tracking-wide">{t("決策")}</span>
         <span className="text-[11px] text-fg/40 mono">
           {counts.total} · −{(removedMs / 1000).toFixed(1)}s
         </span>
-        <IconButton icon={ChevronRight} label={t("收合面板")} iconSize={16} box="w-6 h-6" onClick={toggle} className="ml-auto" />
+        {!embedded && <IconButton icon={ChevronRight} label={t("收合面板")} iconSize={16} box="w-6 h-6" onClick={toggle} className="ml-auto" />}
       </div>
 
       <div className="px-3 py-2 border-b border-fg/10 space-y-2">

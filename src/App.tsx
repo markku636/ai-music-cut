@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, errMessage } from "./api";
 import { AUDIO_EXTENSIONS } from "./brand";
-import AssistantPanel from "./assistant/AssistantPanel";
 import { installToolBridge } from "./assistant/tools";
-import DecisionPanel from "./decisions/DecisionPanel";
 import HighlightDialog from "./dialogs/HighlightDialog";
 import MusicDialog from "./dialogs/MusicDialog";
 import AboutDialog from "./dialogs/AboutDialog";
@@ -30,6 +28,7 @@ import { isActiveState } from "./analysis/types";
 import { t } from "./i18n";
 import { defaultProjectFileName } from "./project/format";
 import MainArea from "./shell/MainArea";
+import RightRail from "./shell/RightRail";
 import SetupBanner from "./shell/SetupBanner";
 import Sidebar from "./shell/Sidebar";
 import Splitter from "./shell/Splitter";
@@ -363,8 +362,7 @@ export default function App() {
         <Sidebar width={sidebar.size} onOpen={() => void openMedia()} onAnalyze={(id) => analyzeWithPreflight(id)} onOpenSettings={openSettings} />
         <Splitter axis="x" onPointerDown={sidebar.onPointerDown} />
         <MainArea onOpen={() => void openMedia()} onAnalyze={() => analyzeWithPreflight()} onOpenSettings={openSettings} />
-        <DecisionPanel mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} onRerunRules={rerunRules} />
-        <AssistantPanel />
+        <RightRail mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} onRerunRules={rerunRules} onVerify={openVerify} />
       </div>
       <StatusBar onOpenSettings={openSettings} />
       <SettingsDialog open={settingsOpen} focus={settingsFocus} onClose={() => setSettingsOpen(false)} />

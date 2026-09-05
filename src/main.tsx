@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { applyDocLang, readStoredLang, t, useLang } from "./i18n";
+import { applyDensity, useUi } from "./store/ui";
 import { invoke } from "@tauri-apps/api/core";
 
 // 前端錯誤回報到 Rust stderr（tauri dev 終端看得到；非 Tauri 環境靜默）。
@@ -80,6 +81,9 @@ const render = () =>
 if (import.meta.env.DEV) {
   void import("./devBridge").then((m) => m.installDevBridge());
 }
+
+// 介面密度：在首次繪製前套用，避免字級閃一下
+applyDensity(useUi.getState().density);
 
 const startLang = readStoredLang();
 applyDocLang(startLang);

@@ -96,6 +96,13 @@ html, body, #root {
   margin: 0;
 }
 
+/* 介面密度：--ui-scale 由 store/ui.ts 的 applyDensity 寫進 <html>。
+   縮的是根字級，所有 rem 與 text-[11px] 之外的尺寸都會跟著走；
+   大螢幕（2576px）用「寬鬆」讀起來才不會像在看縮圖。 */
+html {
+  font-size: calc(16px * var(--ui-scale, 1));
+}
+
 body {
   background: rgb(var(--c-app));
   color: rgb(var(--c-fg));

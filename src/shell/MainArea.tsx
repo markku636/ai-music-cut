@@ -90,9 +90,13 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
       setBeatGrid(null);
       return;
     }
+    // 有逐字稿＝這是說話，不是音樂。講話的節奏會讓自相關算出一個「像樣」的 BPM
+    // （這個 34 秒的 podcast 就算出 139.5 BPM，信心 0.59），但拍線畫在人聲波形上
+    // 只是噪音 —— 使用者要看的是字在哪裡，不是想像中的小節線。
+    const isSpeech = (transcript?.words.length ?? 0) > 0;
     const g = detectBeats(local);
-    setBeatGrid(g.confidence >= MIN_BEAT_CONFIDENCE ? g : null);
-  }, [local, setBeatGrid]);
+    setBeatGrid(!isSpeech && g.confidence >= MIN_BEAT_CONFIDENCE ? g : null);
+  }, [local, transcript, setBeatGrid]);
   useSkipPlayback(cuts);
   useEffectPreview(effects);
 

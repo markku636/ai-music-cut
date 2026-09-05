@@ -23,7 +23,7 @@ import type { LocalAnalysis } from "../src/analysis/peaks";
 import { actualWords, expectedWords, verifyEdit, type VerifyReport } from "../src/analysis/verify";
 import { Ffmpeg } from "./lib/ffmpeg";
 import { judgeAll } from "./lib/judge";
-import { health, keyFromEnvFile, resolveKey, separate, transcribe, type TtlsClient } from "./lib/ttls";
+import { generateMusic, health, keyFromEnvFile, resolveKey, separate, transcribe, type TtlsClient } from "./lib/ttls";
 
 const VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 declare const __APP_VERSION__: string | undefined;
@@ -82,6 +82,7 @@ function help(): void {
   aicut separate   <音檔> [--stems vocals_accom|all] [--format wav|mp3|flac] [--out-dir DIR]
   aicut verify     <原始音檔> <剪好的成品> [--project p.aicut.json]   用 ASR 重新轉寫成品，逐字比對該留的字
   aicut beats      <音檔> [--bars]                                    偵測 BPM / 拍點（剪音樂用；--bars 列出小節時間）
+  aicut music      "<風格描述>" [--duration 30] [--bpm 0] [--quality fast|fine|max] [--n 1] [--format mp3] [--out-dir DIR]
 
 共用選項：
   --server URL      ttls 伺服器（預設 https://ttls.markkulab.net）
@@ -93,6 +94,7 @@ function help(): void {
 範例：
   aicut cut ep12.m4a --judge -o ep12_cut.mp3 --verify
   aicut verify ep12.m4a ep12_cut.mp3
+  aicut music "lofi hip hop, warm, mellow" --duration 30 --bpm 90
   aicut separate song.mp3 --format wav
 `);
 }
@@ -412,6 +414,45 @@ async function cmdBeats(args: Args): Promise<void> {
   process.exitCode = ok ? 0 : 3;
 }
 
+async function cmdMusic(args: Args): Promise<void> {
+  const prompt = args.positional.join(" ").trim();
+  if (!prompt) throw new Error('用法：aicut music "<風格描述>" [--duration 30] [--bpm 90] [--quality fast|fine|max]');
+  const c = await client(args.flags);
+  const durationSec = Math.max(10, Math.min(240, num(args.flags, "duration", 30)));
+  const bpm = Math.max(0, Math.min(300, num(args.flags, "bpm", 0)));
+  const quality = str(args.flags, "quality", "fast");
+  const nCandidates = Math.max(1, Math.min(4, num(args.flags, "n", 1)));
+  const format = str(args.flags, "format", "mp3");
+  const dir = str(args.flags, "out-dir", process.cwd());
+  log(`ACE-Step 生成中（${durationSec} 秒${bpm ? ` · ${bpm} BPM` : ""} · ${quality} · ${nCandidates} 首）…`);
+  let last = "";
+  const outs = await generateMusic(c, {
+    prompt,
+    durationSec,
+    bpm,
+    quality,
+    nCandidates,
+    format,
+    onProgress: (status, sec) => {
+      const line = `  ${status} ${sec}s`;
+      if (line !== last) {
+        log(line);
+        last = line;
+      }
+    },
+  });
+  const { mkdir } = await import("node:fs/promises");
+  await mkdir(dir, { recursive: true });
+  const stem = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "bgm";
+  for (const o of outs) {
+    const name = outs.length > 1 ? `${stem}-${o.index + 1}` : stem;
+    const p = path.join(dir, `${name}.${o.format}`);
+    await writeFile(p, o.data);
+    process.stdout.write(`${p}\n`);
+    log(`  ${(o.data.length / 1048576).toFixed(1)} MB${o.seed != null ? ` · seed ${o.seed}` : ""}`);
+  }
+}
+
 async function cmdSeparate(args: Args): Promise<void> {
   const file = args.positional[0];
   if (!file) throw new Error("請給音檔路徑");
@@ -447,6 +488,8 @@ async function main(): Promise<void> {
       return cmdVerify(args);
     case "beats":
       return cmdBeats(args);
+    case "music":
+      return cmdMusic(args);
     case "--version":
     case "version":
       process.stdout.write(`${VERSION}\n`);

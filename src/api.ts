@@ -185,6 +185,32 @@ export interface SeparateStem {
   bytes: number;
 }
 
+/** ACE-Step 音樂生成送單參數（對齊伺服器 MusicRequest）。 */
+export interface MusicOpts {
+  prompt: string;
+  duration_sec: number;
+  /** 0 = 不指定。 */
+  bpm: number;
+  /** fast | fine | max；空字串 = 伺服器預設。 */
+  quality: string;
+  n_candidates: number;
+  format: string;
+  /** -1 = 隨機。 */
+  seed: number;
+}
+
+export interface MusicJobInfo {
+  job_id: string;
+  kind: string;
+  status: "queued" | "running" | "post" | "done" | "failed" | "cancelled";
+  error: string | null;
+  audio_format: string | null;
+  outputs: { index: number; audio_url: string; seed?: number; audio_format?: string }[];
+  seed: number | null;
+  waiting_sec: number;
+  running_sec: number | null;
+}
+
 /** Rust `AppError` 序列化形狀。 */
 export interface AppErrorShape {
   kind: string;
@@ -245,6 +271,12 @@ export const api = {
   /** 去人聲 / 分軌（同步等待伺服器；用 mediaCancel(jobId) 放棄）。 */
   ttlsSeparate: (jobId: string, path: string, stems: string, targetFormat: string, outDir: string | null) =>
     invoke<SeparateStem[]>("ttls_separate", { jobId, path, stems, targetFormat, outDir }),
+  /** ACE-Step 配樂：送單 → 輪詢 → 下載候選（非同步，30 秒～數分鐘）。 */
+  ttlsMusicStart: (opts: MusicOpts) => invoke<string>("ttls_music_start", { opts }),
+  ttlsMusicPoll: (jobId: string) => invoke<MusicJobInfo>("ttls_music_poll", { jobId }),
+  ttlsMusicFetch: (jobId: string, index: number, outDir: string, fileStem: string, ext: string) =>
+    invoke<string>("ttls_music_fetch", { jobId, index, outDir, fileStem, ext }),
+  ttlsMusicCancel: (jobId: string) => invoke<void>("ttls_music_cancel", { jobId }),
   renderStart: (jobId: string, src: string, plan: RenderPlan) => invoke<void>("render_start", { jobId, src, plan }),
   renderCancel: (jobId: string) => invoke<void>("render_cancel", { jobId }),
   projectSave: (path: string, doc: unknown) => invoke<void>("project_save", { path, doc }),

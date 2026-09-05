@@ -32,6 +32,7 @@ const KIND_LABEL: Record<JobKind, string> = {
   render: "輸出",
   separate: "去人聲",
   verify: "驗收",
+  music: "AI 配樂",
 };
 
 export interface SidebarProps {

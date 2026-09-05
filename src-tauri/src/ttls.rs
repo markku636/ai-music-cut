@@ -262,3 +262,99 @@ pub async fn separate(
     }
     Ok(out)
 }
+
+// ---------------- ACE-Step 音樂生成（POST /v1/music → 輪詢 → 下載候選） ----------------
+
+/// 送單參數（前端傳來；欄位對齊伺服器 MusicRequest）。
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct MusicOpts {
+    pub prompt: String,
+    pub duration_sec: f64,
+    /// 0 = 不指定
+    pub bpm: i64,
+    /// fast | fine | max（空字串 = 伺服器預設）
+    pub quality: String,
+    pub n_candidates: i64,
+    /// mp3 | wav | flac | m4a…
+    pub format: String,
+    /// -1 = 隨機
+    pub seed: i64,
+}
+
+/// POST /v1/music：回 job_id（202）。生成是非同步的，之後用 music_poll 輪詢。
+pub async fn music_start(http: &reqwest::Client, base: &str, opts: &MusicOpts) -> AppResult<String> {
+    let mut body = serde_json::json!({
+        "prompt": opts.prompt,
+        "duration_sec": opts.duration_sec,
+        "n_candidates": opts.n_candidates.clamp(1, 4),
+        "format": opts.format,
+        "seed": opts.seed,
+    });
+    if opts.bpm > 0 {
+        body["bpm"] = serde_json::json!(opts.bpm);
+    }
+    if !opts.quality.trim().is_empty() {
+        body["quality"] = serde_json::json!(opts.quality);
+    }
+    let r = authed(http, reqwest::Method::POST, format!("{}/v1/music", base_url(base)))?
+        .json(&body)
+        .timeout(Duration::from_secs(60))
+        .send()
+        .await?;
+    if r.status().as_u16() != 202 {
+        return Err(err_from(r).await);
+    }
+    let v: serde_json::Value = r.json().await?;
+    v["job_id"]
+        .as_str()
+        .map(String::from)
+        .ok_or_else(|| AppError::Ttls { status: 202, detail: "回應缺少 job_id".into() })
+}
+
+/// GET /v1/music/jobs/{id}：狀態快照（status / outputs / seed / running_sec）。
+pub async fn music_poll(http: &reqwest::Client, base: &str, job_id: &str) -> AppResult<serde_json::Value> {
+    let r = authed(http, reqwest::Method::GET, format!("{}/v1/music/jobs/{job_id}", base_url(base)))?
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await?;
+    if !r.status().is_success() {
+        return Err(err_from(r).await);
+    }
+    Ok(r.json().await?)
+}
+
+/// GET /v1/music/jobs/{id}/audio?i=N → 寫成檔案，回實際路徑。
+pub async fn music_fetch(
+    http: &reqwest::Client,
+    base: &str,
+    job_id: &str,
+    index: i64,
+    out_dir: &std::path::Path,
+    file_stem: &str,
+    ext: &str,
+) -> AppResult<String> {
+    let r = authed(http, reqwest::Method::GET, format!("{}/v1/music/jobs/{job_id}/audio?i={index}", base_url(base)))?
+        .timeout(Duration::from_secs(300))
+        .send()
+        .await?;
+    if !r.status().is_success() {
+        return Err(err_from(r).await);
+    }
+    let bytes = r.bytes().await?;
+    tokio::fs::create_dir_all(out_dir).await?;
+    let path = out_dir.join(format!("{file_stem}.{ext}"));
+    tokio::fs::write(&path, &bytes).await?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// DELETE /v1/music/jobs/{id}：取消（排隊中立即、生成中 best-effort）。
+pub async fn music_cancel(http: &reqwest::Client, base: &str, job_id: &str) -> AppResult<()> {
+    let r = authed(http, reqwest::Method::DELETE, format!("{}/v1/music/jobs/{job_id}", base_url(base)))?
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await?;
+    if r.status().is_success() || r.status().as_u16() == 404 {
+        return Ok(());
+    }
+    Err(err_from(r).await)
+}

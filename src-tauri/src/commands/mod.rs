@@ -356,6 +356,39 @@ pub async fn ttls_separate(
     r
 }
 
+// ---------------- ACE-Step 音樂生成 ----------------
+
+#[tauri::command]
+pub async fn ttls_music_start(state: State<'_, AppState>, opts: ttls::MusicOpts) -> AppResult<String> {
+    let base = state.base_url();
+    ttls::music_start(&state.http, &base, &opts).await
+}
+
+#[tauri::command]
+pub async fn ttls_music_poll(state: State<'_, AppState>, job_id: String) -> AppResult<serde_json::Value> {
+    let base = state.base_url();
+    ttls::music_poll(&state.http, &base, &job_id).await
+}
+
+#[tauri::command]
+pub async fn ttls_music_fetch(
+    state: State<'_, AppState>,
+    job_id: String,
+    index: i64,
+    out_dir: String,
+    file_stem: String,
+    ext: String,
+) -> AppResult<String> {
+    let base = state.base_url();
+    ttls::music_fetch(&state.http, &base, &job_id, index, std::path::Path::new(&out_dir), &file_stem, &ext).await
+}
+
+#[tauri::command]
+pub async fn ttls_music_cancel(state: State<'_, AppState>, job_id: String) -> AppResult<()> {
+    let base = state.base_url();
+    ttls::music_cancel(&state.http, &base, &job_id).await
+}
+
 // ---------------- 輸出 ----------------
 
 #[tauri::command]

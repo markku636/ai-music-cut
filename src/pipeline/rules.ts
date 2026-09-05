@@ -1,7 +1,7 @@
 // 規則層 / EDL 與 store 的接線（分析完成、滑桿變動、專案還原時呼叫）。
 import { buildEdl, DEFAULT_EDL_OPTIONS, type Edl, type EdlOptions, type EnergyProbe } from "../analysis/edl/build";
 import { breathFor } from "../analysis/edl/breath";
-import { loudnessWindows, minEnergyPointMs, rmsDbRange } from "../analysis/peaks";
+import { hasZeroCross, loudnessWindows, minEnergyPointMs, nearestZeroCrossMs, rmsDbRange } from "../analysis/peaks";
 import { runRulesAt } from "../analysis/rules";
 import { thresholdsFor } from "../analysis/thresholds";
 import { useDecisions } from "../store/decisions";
@@ -28,7 +28,12 @@ export function edlFor(mediaId: string): Edl | null {
   if (!durationMs) return null;
   const local = ts.local[mediaId];
   const probe: EnergyProbe | undefined = local
-    ? { minEnergyPointMs: (a, b) => minEnergyPointMs(local, a, b), rmsDbAt: (a, b) => rmsDbRange(local, a, b) }
+    ? {
+        minEnergyPointMs: (a, b) => minEnergyPointMs(local, a, b),
+        rmsDbAt: (a, b) => rmsDbRange(local, a, b),
+        // v2 的舊分析檔沒有零交越 → 不掛這個方法，buildEdl 就會跳過第三段細修
+        ...(hasZeroCross(local) ? { nearestZeroCrossMs: (ms: number, w: number) => nearestZeroCrossMs(local, ms, w) } : {}),
+      }
     : undefined;
   const d = useDecisions.getState();
   const th = thresholdsFor(useProject.getState().aggressiveness);

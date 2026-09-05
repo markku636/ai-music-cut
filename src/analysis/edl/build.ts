@@ -12,6 +12,8 @@ export interface EdlOptions {
   padPostMs: number;
   /** 邊界貼齊到 ±window 內能量最低點。 */
   snapWindowMs: number;
+  /** 再往樣本層級微調到 ±window 內最近的上升零交越（需要 analysis.bin v3）。 */
+  zeroCrossWindowMs: number;
   /** 兩段剪除相距小於此 → 合併（中間無保留字才合）。 */
   mergeGapMs: number;
   /** 短於此且沒有字的保留段併入剪除。 */
@@ -36,6 +38,7 @@ export const DEFAULT_EDL_OPTIONS: EdlOptions = {
   padPreMs: 40,
   padPostMs: 60,
   snapWindowMs: 30,
+  zeroCrossWindowMs: 3,
   mergeGapMs: 120,
   minKeepMs: 80,
   minBreathGapMs: 150,
@@ -51,6 +54,8 @@ export interface EnergyProbe {
   minEnergyPointMs(fromMs: number, toMs: number): number;
   /** [from,to] 的 RMS（dBFS）。沒有實作時淡化策略一律當成語音接語音（最保守）。 */
   rmsDbAt?(fromMs: number, toMs: number): number;
+  /** 最近的上升零交越（±windowMs）。v2 的舊分析檔沒有這個能力 → 不實作即可。 */
+  nearestZeroCrossMs?(ms: number, windowMs: number): number;
 }
 
 export const MIDPOINT_PROBE: EnergyProbe = { minEnergyPointMs: (a, b) => (a + b) / 2 };
@@ -167,12 +172,24 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
     removals.push({ startMs: start, endMs: end, candidateIds: [c.id], speech: wordBased });
   }
 
-  // 2) 邊界貼齊到低能量點（±snap），但不越過候選本身的字
+  // 2) 邊界細修，三段式（由粗到細，每一段都不准越過安全窗）：
+  //    ① 安全窗：不得吃到相鄰的保留字（步驟 1 已經算好 start/end 的極限）
+  //    ② 5 ms 桶的能量最低點：字 / 音節層級，找到「這附近最安靜的地方」
+  //    ③ 零交越 ±3 ms：樣本層級。5 ms 桶對 100 Hz 基頻（週期 10 ms）根本定位不到零點，
+  //       切在波形中間就是一個 click。只在夠安靜處才用 —— 語音正中間的零交越
+  //       對得再準也還是切在字的中間。
+  //    全程不 Math.round：這裡的小數在後面才會被 msToFrames 一次轉成 frame。
   for (const r of removals) {
     const s2 = probe.minEnergyPointMs(r.startMs - opts.snapWindowMs, r.startMs + opts.snapWindowMs);
     const e2 = probe.minEnergyPointMs(r.endMs - opts.snapWindowMs, r.endMs + opts.snapWindowMs);
     if (Number.isFinite(s2) && s2 < r.endMs) r.startMs = Math.max(0, s2);
     if (Number.isFinite(e2) && e2 > r.startMs) r.endMs = Math.min(durationMs, e2);
+    if (probe.nearestZeroCrossMs) {
+      const s3 = probe.nearestZeroCrossMs(r.startMs, opts.zeroCrossWindowMs);
+      const e3 = probe.nearestZeroCrossMs(r.endMs, opts.zeroCrossWindowMs);
+      if (Number.isFinite(s3) && s3 < r.endMs && s3 >= 0) r.startMs = s3;
+      if (Number.isFinite(e3) && e3 > r.startMs && e3 <= durationMs) r.endMs = e3;
+    }
   }
 
   // 3) 合併：重疊一律合；間隙 < mergeGap 且中間沒有保留字才合

@@ -20,7 +20,9 @@ pub const PPS: u32 = 200;
 /// 響度視窗 hop（ms）。
 pub const HOP_MS: u32 = 100;
 const SR: u32 = 48_000;
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
+/// analysis.bin 的 magic。v3 起每個桶多一個 byte：桶內第一個上升零交越的樣本位移（無則 255）。
+pub const MAGIC: &[u8; 4] = b"AIPK";
 
 pub const UPLOAD_FILE: &str = "upload.ogg";
 pub const ANALYSIS_FILE: &str = "analysis.bin";
@@ -122,6 +124,10 @@ struct Analyzer {
     mins: Vec<i8>,
     maxs: Vec<i8>,
     rms: Vec<u8>,
+    /// 每個桶內第一個上升零交越的樣本位移（255 = 這個桶裡沒有）。
+    zx: Vec<u8>,
+    cur_zx: u8,
+    prev: f32,
     ebu: ebur128::EbuR128,
     hop_buf: Vec<f32>,
     win: Vec<f32>, // [momentary, shortTerm, rmsDb] × n
@@ -154,6 +160,9 @@ impl Analyzer {
             mins: Vec::new(),
             maxs: Vec::new(),
             rms: Vec::new(),
+            zx: Vec::new(),
+            cur_zx: u8::MAX,
+            prev: 0.0,
             ebu,
             hop_buf: Vec::with_capacity((sr / 10) as usize),
             win: Vec::new(),
@@ -171,10 +180,12 @@ impl Analyzer {
         let rms = (self.cur_sq / self.cur_n as f64).sqrt();
         let db = if rms > 0.0 { 20.0 * rms.log10() } else { -120.0 };
         self.rms.push(db_to_u8(db));
+        self.zx.push(self.cur_zx);
         self.cur_min = f32::MAX;
         self.cur_max = f32::MIN;
         self.cur_sq = 0.0;
         self.cur_n = 0;
+        self.cur_zx = u8::MAX;
     }
 
     fn flush_hop(&mut self) {
@@ -200,6 +211,13 @@ impl Analyzer {
             if v > self.cur_max {
                 self.cur_max = v;
             }
+            // 桶內第一個「上升零交越」（負→非負）的樣本位移。
+            // 剪點對到這裡才不會在波形中間硬切出 click；5 ms 桶（240 sample）
+            // 對 100 Hz 基頻（週期 10 ms）根本定位不到，所以要記到樣本層級。
+            if self.cur_zx == u8::MAX && self.prev < 0.0 && v >= 0.0 && self.cur_n < 255 {
+                self.cur_zx = self.cur_n as u8;
+            }
+            self.prev = v;
             self.cur_sq += (v as f64) * (v as f64);
             self.cur_n += 1;
             if self.cur_n >= self.bucket_len {
@@ -214,13 +232,17 @@ impl Analyzer {
     }
 
     /// 打包：`"AIPK"` u32 version u32 pps u32 hop_ms u32 sr u32 n_buckets u32 n_win u64 total_samples
-    /// → i8[n_buckets] min → i8[n_buckets] max → u8[n_buckets] rms → f32[n_win*3]（LE）。
+    /// → i8[n_buckets] min → i8[n_buckets] max → u8[n_buckets] rms → u8[n_buckets] zero-cross
+    /// → f32[n_win*3]（LE）。
+    ///
+    /// v3 起多了 zero-cross 那一段（每個桶 1 byte，30 分鐘約 +360 KB）：
+    /// 桶內第一個上升零交越的樣本位移，剪點對到它才不會硬切出 click。
     fn finish(mut self) -> Vec<u8> {
         self.flush_bucket();
         self.flush_hop();
         let n_b = self.mins.len() as u32;
         let n_w = (self.win.len() / 3) as u32;
-        let mut out = Vec::with_capacity(4 + 4 * 6 + 8 + n_b as usize * 3 + self.win.len() * 4);
+        let mut out = Vec::with_capacity(4 + 4 * 6 + 8 + n_b as usize * 4 + self.win.len() * 4);
         out.extend_from_slice(b"AIPK");
         for v in [FORMAT_VERSION, PPS, HOP_MS, SR, n_b, n_w] {
             out.extend_from_slice(&v.to_le_bytes());
@@ -229,11 +251,31 @@ impl Analyzer {
         out.extend(self.mins.iter().map(|v| *v as u8));
         out.extend(self.maxs.iter().map(|v| *v as u8));
         out.extend_from_slice(&self.rms);
+        out.extend_from_slice(&self.zx);
         for v in &self.win {
             out.extend_from_slice(&v.to_le_bytes());
         }
         out
     }
+}
+
+/// header 長度：magic 4 + 6 個 u32 + total_samples u64。
+const HEADER_LEN: usize = 4 + 6 * 4 + 8;
+
+/// 快取檔的 header 是不是這一版能讀的：magic 對、版本對、長度湊得起來。
+/// 任何一項不符就當成要重算 —— 寧可多花 20–40 秒，也不要拿錯位的資料去算剪點。
+pub fn analysis_header_ok(bytes: &[u8]) -> bool {
+    if bytes.len() < HEADER_LEN || &bytes[..4] != MAGIC {
+        return false;
+    }
+    let u32_at = |i: usize| u32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]);
+    if u32_at(4) != FORMAT_VERSION {
+        return false;
+    }
+    let n_b = u32_at(20) as usize;
+    let n_w = u32_at(24) as usize;
+    // v3 版面：header + 每桶 4 byte（min/max/rms/zero-cross）+ 每個響度視窗 3×f32
+    bytes.len() == HEADER_LEN + n_b * 4 + n_w * 12
 }
 
 /// 一趟串流 decode（f32le mono 48k）算波形 + 響度；有快取直接回。`cancel` 設 true 會殺 ffmpeg 並回 Canceled。
@@ -248,7 +290,15 @@ pub async fn analyze_local(
 ) -> AppResult<Vec<u8>> {
     let out = dir.join(ANALYSIS_FILE);
     if nonempty(&out) {
-        return Ok(tokio::fs::read(&out).await?);
+        let bytes = tokio::fs::read(&out).await?;
+        // **一定要驗 header**：舊版只看「檔案非空」就直接回傳。
+        // 版面一改（v2 → v3 每個桶多一個 byte），新解析器讀到舊快取會整個錯位，
+        // 而且**完全不報錯** —— 症狀是波形亂掉、剪點全錯，最難查的那種。
+        if analysis_header_ok(&bytes) {
+            return Ok(bytes);
+        }
+        eprintln!("[media] analysis.bin 版本不符（或損毀），重新分析：{}", out.display());
+        let _ = tokio::fs::remove_file(&out).await;
     }
     let mut c = proc::cmd(&bins.ffmpeg);
     c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-i"]);
@@ -332,11 +382,41 @@ mod tests {
         assert!(maxs.iter().all(|&m| (m as i8) >= 60), "峰值約 0.5 → ~63");
         let rms = &bytes[head + 2 * n_b as usize..head + 3 * n_b as usize];
         assert!(rms.iter().all(|&r| r > 200), "-9 dBFS RMS → 約 216");
-        let win_off = head + 3 * n_b as usize;
+        // v3：桶 rms 之後多一段零交越位移
+        let zx = &bytes[head + 3 * n_b as usize..head + 4 * n_b as usize];
+        // 440 Hz、5 ms 桶（240 sample）→ 每個桶內都會有 2～3 次上升零交越
+        assert!(zx.iter().all(|&z| z != u8::MAX), "每個桶都該找得到上升零交越");
+        assert!(zx.iter().all(|&z| (z as usize) < SR as usize / PPS as usize), "位移必須落在桶內");
+
+        let win_off = head + 4 * n_b as usize;
         let f = |i: usize| f32::from_le_bytes(bytes[win_off + i * 4..win_off + i * 4 + 4].try_into().unwrap());
         // 最後一個視窗的 momentary 已有 400ms 資料，應接近 -9 LUFS（±3）
         let last_m = f((n_w as usize - 1) * 3);
         assert!(last_m > -14.0 && last_m < -4.0, "momentary={last_m}");
+
+        // 整份長度要跟 header 對得起來（analysis_header_ok 就是靠這個擋掉舊快取）
+        assert!(analysis_header_ok(&bytes));
+    }
+
+    #[test]
+    fn old_v2_cache_is_rejected_so_it_gets_rebuilt() {
+        // 手工造一份 v2 的 header：magic 對、版本不對 → 一定要判為不可用。
+        // 沒有這道檢查的話，v3 的解析器讀 v2 快取會整個錯位而且不報錯。
+        let mut v2 = Vec::new();
+        v2.extend_from_slice(MAGIC);
+        for v in [2u32, PPS, HOP_MS, SR, 10u32, 1u32] {
+            v2.extend_from_slice(&v.to_le_bytes());
+        }
+        v2.extend_from_slice(&0u64.to_le_bytes());
+        v2.extend_from_slice(&vec![0u8; 10 * 3 + 12]); // v2 版面：每桶 3 byte
+        assert!(!analysis_header_ok(&v2), "v2 快取必須被拒絕");
+
+        // magic 不對、太短、長度湊不起來也都要拒絕
+        assert!(!analysis_header_ok(b"NOPE"));
+        assert!(!analysis_header_ok(&[]));
+        let mut truncated = Analyzer::new(SR).unwrap().finish();
+        truncated.truncate(truncated.len() - 1);
+        assert!(!analysis_header_ok(&truncated));
     }
 
     #[test]

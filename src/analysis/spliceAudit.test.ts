@@ -20,6 +20,7 @@ function fromDb(db: number[]): LocalAnalysis {
     maxs: new Int8Array(0),
     rmsU8,
     win: new Float32Array(0),
+    zx: null,
   };
 }
 

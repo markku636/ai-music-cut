@@ -27,6 +27,7 @@ function pulseAnalysis(bpm: number, seconds = 30): LocalAnalysis {
     maxs: new Int8Array(n),
     rmsU8,
     win: new Float32Array(0),
+    zx: null,
   };
 }
 
@@ -61,6 +62,7 @@ describe("beats", () => {
       maxs: new Int8Array(n),
       rmsU8: new Uint8Array(n).fill(10),
       win: new Float32Array(0),
+      zx: null,
     };
     expect(detectBeats(flat).confidence).toBeLessThan(0.12);
   });

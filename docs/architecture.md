@@ -47,6 +47,34 @@
 
 ## 專案檔 `*.aicut.json`（schemaVersion 1）
 
+## analysis.bin 版本與零交越（v3）
+
+`media.rs` 產生的 `analysis.bin` 版面：
+
+```
+"AIPK" u32 version u32 pps u32 hop_ms u32 sr u32 n_buckets u32 n_win u64 total_samples
+→ i8[n_buckets] min → i8[n_buckets] max → u8[n_buckets] rms
+→ u8[n_buckets] zero-cross（v3 起）→ f32[n_win*3]
+```
+
+**v3 多的那一段**是「桶內第一個上升零交越的樣本位移」（255 = 沒有），每桶 1 byte、
+30 分鐘約 +360 KB。剪點對到零交越才不會在波形中間硬切出 click ——
+5 ms 桶對 100 Hz 基頻（週期 10 ms）根本定位不到零點。
+
+三段式細修在 `buildEdl` 內完成（`analysis/edl/build.ts` 步驟 2），
+所以 `outStartMs` 就是最終值；**不要**在 EDL 之後平移 `RenderPlan` 的 `src_*_ms`，
+那會重新製造 R3 才修好的累積漂移。
+
+讀快取一定要先驗 header（`analysis_header_ok`）：magic、版本、長度三項都要對。
+舊版只看「檔案非空」，v3 的解析器讀到 v2 快取會整個錯位而且**完全不報錯** ——
+症狀是波形亂掉、剪點全錯。版本不符就刪檔重算（30 分鐘約 20–40 秒）。
+前端的 `parseAnalysis` 仍然讀得動 v2（只是 `zx` 為 null），所以舊 session 留在記憶體
+或專案檔裡的分析不會壞。
+
+**已知限制**：分析走 mono 下混、render 走原聲道，所以下混後的零點不保證在每個聲道
+都成立。靠接點協定的 ≥4 ms 等功率交叉兜底（`analysis/edl/fade.ts`）。
+
+
 `media[]`（路徑 / 指紋 / probe）、`settings`（激進度 / 目標響度）、`analysis[mediaId]`（`transcript`、`candidates`、`decisions`、`effects`、`llm` 視窗快取）。沒逐字稿但有人工剪輯 / 效果也會存。CLI `cut --project` 讀同一格式。媒體快取（opus / analysis.bin / transcript.json）在 `%LOCALAPPDATA%\net.markkulab.aimusiccut\media\<fp16>\`，同檔重開免重跑。
 
 ## dev 鉤子（只在 debug build 生效）

@@ -1,4 +1,6 @@
-// 解析 Rust media.rs 的 analysis.bin（"AIPK" v2）：波形 min/max/RMS（5 ms 桶）+ 響度視窗（100 ms hop）。
+// 解析 Rust media.rs 的 analysis.bin（"AIPK"）：波形 min/max/RMS（5 ms 桶）+ 響度視窗（100 ms hop）。
+// v3 起每個桶多一個 byte：桶內第一個上升零交越的樣本位移（255 = 沒有）。
+// **v2 的檔照樣讀得動**，只是沒有零交越資料 —— 舊專案不必強迫重新分析。
 import type { LoudnessWindow } from "./types";
 
 export interface LocalAnalysis {
@@ -17,6 +19,11 @@ export interface LocalAnalysis {
   rmsU8: Uint8Array;
   /** f32 × 3 per window：[momentary LUFS, shortTerm LUFS, rms dBFS]。 */
   win: Float32Array;
+  /**
+   * v3+：每個桶內第一個上升零交越的樣本位移（255 = 這個桶裡沒有）。
+   * v2 的檔案沒有這一段，值為 null —— 呼叫端要能接受「這份分析沒有零交越資訊」。
+   */
+  zx: Uint8Array | null;
 }
 
 const MAGIC = 0x4b504941; // "AIPK" little-endian
@@ -34,7 +41,9 @@ export function parseAnalysis(buf: ArrayBuffer): LocalAnalysis {
   const nWin = dv.getUint32(24, true);
   const totalSamples = Number(dv.getBigUint64(28, true));
   let off = 36;
-  const need = off + nBuckets * 3 + nWin * 12;
+  // v3 每桶 4 byte（多了零交越），v2 是 3 byte
+  const perBucket = version >= 3 ? 4 : 3;
+  const need = off + nBuckets * perBucket + nWin * 12;
   if (buf.byteLength < need) throw new AnalysisFormatError(`analysis.bin 長度不足（${buf.byteLength} < ${need}）`);
   const mins = new Int8Array(buf, off, nBuckets);
   off += nBuckets;
@@ -42,6 +51,11 @@ export function parseAnalysis(buf: ArrayBuffer): LocalAnalysis {
   off += nBuckets;
   const rmsU8 = new Uint8Array(buf, off, nBuckets);
   off += nBuckets;
+  let zx: Uint8Array | null = null;
+  if (version >= 3) {
+    zx = new Uint8Array(buf, off, nBuckets);
+    off += nBuckets;
+  }
   // f32 需 4 對齊：off 可能不對齊 → 複製一份
   const winBytes = buf.slice(off, off + nWin * 12);
   const win = new Float32Array(winBytes);
@@ -58,7 +72,42 @@ export function parseAnalysis(buf: ArrayBuffer): LocalAnalysis {
     maxs,
     rmsU8,
     win,
+    zx,
   };
+}
+
+/** 這份分析有沒有零交越資料（v2 的舊快取沒有）。 */
+export function hasZeroCross(a: LocalAnalysis): boolean {
+  return a.zx !== null;
+}
+
+/**
+ * 找離 ms 最近的上升零交越（±windowMs 內），回毫秒；找不到就回原值。
+ *
+ * 只在「夠安靜」的地方用：語音正中間的零交越一樣會切在字的中間，
+ * 對得再準也還是切壞了。quietDb 就是這道閘門。
+ */
+export function nearestZeroCrossMs(a: LocalAnalysis, ms: number, windowMs = 3, quietDb = -45): number {
+  if (!a.zx) return ms;
+  const bucketMs = 1000 / a.pps;
+  const samplesPerBucket = a.sampleRate / a.pps;
+  const span = Math.max(1, Math.ceil(windowMs / bucketMs));
+  const center = Math.floor((ms / 1000) * a.pps);
+  let best = ms;
+  let bestD = Number.POSITIVE_INFINITY;
+  for (let i = center - span; i <= center + span; i++) {
+    if (i < 0 || i >= a.nBuckets) continue;
+    const off = a.zx[i];
+    if (off === 255) continue;
+    if (rmsU8ToDb(a.rmsU8[i]) > quietDb) continue;
+    const at = (i * samplesPerBucket + off) / a.sampleRate * 1000;
+    const d = Math.abs(at - ms);
+    if (d < bestD && d <= windowMs) {
+      bestD = d;
+      best = at;
+    }
+  }
+  return best;
 }
 
 export function rmsU8ToDb(v: number): number {

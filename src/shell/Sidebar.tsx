@@ -3,11 +3,39 @@ import Icon from "../ui/Icon";
 import { Badge, Button, IconButton, Spinner } from "../ui/index";
 import { useT } from "../i18n";
 import { cancelLocalAnalysis } from "../pipeline/waveform";
+import { getPlayer, stopRange } from "../preview/playerRef";
 import { useJobs, type Job, type JobKind } from "../store/jobs";
 import { useProject, type MediaItem } from "../store/project";
 import { useSettings } from "../store/settings";
 import { useTranscript } from "../store/transcript";
 import { formatDuration } from "../time";
+
+/**
+ * 雙擊音檔：切過去並從頭播。換來源時 <audio> 的 src 才剛換掉，要等 canplay 才能 play()，
+ * 否則會拿到 AbortError；同一個檔案且已載入就直接播。
+ */
+function playFromStart(id: string) {
+  const proj = useProject.getState();
+  const same = proj.activeMediaId === id;
+  proj.setActive(id);
+  stopRange();
+  const el = getPlayer();
+  if (!el) return;
+  const start = () => {
+    el.currentTime = 0;
+    void el.play().catch(() => {});
+  };
+  if (same && el.readyState >= 2) {
+    start();
+    return;
+  }
+  const timer = window.setTimeout(() => el.removeEventListener("canplay", once), 8000);
+  const once = () => {
+    window.clearTimeout(timer);
+    start();
+  };
+  el.addEventListener("canplay", once, { once: true });
+}
 
 function jobTone(j: Job): "neutral" | "info" | "success" | "danger" | "warning" {
   switch (j.status) {
@@ -121,10 +149,11 @@ export default function Sidebar({ width, onOpen, onAnalyze, onOpenSettings }: Si
                 role="button"
                 tabIndex={0}
                 onClick={() => setActive(m.id)}
+                onDoubleClick={() => playFromStart(m.id)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") setActive(m.id);
                 }}
-                title={m.path}
+                title={`${m.path}\n${t("雙擊：切換並從頭播放")}`}
                 className={`group flex items-center gap-2 px-3 py-2 border-b border-fg/5 cursor-pointer ${active ? "bg-accent/12" : "hover:bg-fg/5"}`}
               >
                 <span className={`shrink-0 ${active ? "text-accent" : "text-fg/50"}`}>

@@ -76,6 +76,11 @@ const render = () =>
 // 語言啟動：zh-TW 是原文，catalog 恆空 → 同步渲染，不多付一個 tick、也不會先閃一次中文。
 // 其餘語言必須先把譯文表載進來（vite dynamic import chunk）才首次繪製，否則會看到中文閃一下。
 // 載入失敗（chunk 壞掉 / 離線）就照 identity fallback 渲染中文，總比白屏好。
+// 開發時掛上 window.__aicut 自動化橋接（正式打包 tree-shake 掉）
+if (import.meta.env.DEV) {
+  void import("./devBridge").then((m) => m.installDevBridge());
+}
+
 const startLang = readStoredLang();
 applyDocLang(startLang);
 if (startLang === "zh-TW") render();

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Crosshair, FastForward, Hand, Magnet, Maximize2, MousePointer2, Music2, Pause, Play, Rewind, Scissors, SquareDashed, Target, ZoomIn, ZoomOut } from "lucide-react";
+import { Crosshair, FastForward, Hand, Magnet, Maximize2, MousePointer2, Music2, Pause, Play, Rewind, Scissors, SquareDashed, Target, Unlink, ZoomIn, ZoomOut } from "lucide-react";
 import { IconButton, Segmented } from "../ui/index";
 import { useT } from "../i18n";
 import { usePlayback } from "../store/playback";
@@ -18,8 +18,8 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
   const setRate = usePlayback((s) => s.setRate);
   const skipEnabled = usePlayback((s) => s.skipEnabled);
   const toggleSkip = usePlayback((s) => s.toggleSkip);
-  const follow = usePlayback((s) => s.follow);
-  const toggleFollow = usePlayback((s) => s.toggleFollow);
+  const followMode = usePlayback((s) => s.followMode);
+  const cycleFollow = usePlayback((s) => s.cycleFollow);
   const pxPerSec = useTimeline((s) => s.pxPerSec);
   const zoomBy = useTimeline((s) => s.zoomBy);
   const fit = useTimeline((s) => s.fit);
@@ -115,7 +115,18 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
           disabled={!cuts.length}
           onClick={toggleSkip}
         />
-        <IconButton icon={Crosshair} label={t("跟隨播放位置")} active={follow} onClick={toggleFollow} />
+        <IconButton
+          icon={followMode === "off" ? Unlink : followMode === "center" ? Crosshair : Target}
+          label={
+            followMode === "page"
+              ? t("跟隨：翻頁（線往右走，到邊緣才翻頁）")
+              : followMode === "center"
+                ? t("跟隨：置中（線固定在畫面中央，移動的是波形）")
+                : t("跟隨：關閉（畫面不自動捲動）")
+          }
+          active={followMode !== "off"}
+          onClick={cycleFollow}
+        />
       </span>
     </div>
   );

@@ -19,7 +19,7 @@ import { runJudge } from "./pipeline/judge";
 import { runVerify } from "./pipeline/verify";
 import { enrichAnalysis } from "./pipeline/persist";
 import { runRulesFor } from "./pipeline/rules";
-import { getPlayer, playRange, seekTo, togglePlay } from "./preview/playerRef";
+import { getPlayer, isRangePlaying, playRange, seekTo, stopRange, togglePlay } from "./preview/playerRef";
 import { useDecisions } from "./store/decisions";
 import { useAssistant } from "./store/assistant";
 import { useAssistantChat } from "./store/assistantChat";
@@ -79,12 +79,19 @@ function previewSelected() {
   playRange(c.startMs - 1000, c.endMs + 1000, { skip: isActiveState(d.decisions[id]?.[c.id]?.state) });
 }
 
-/** Space：有時間選取且沒在播 → 播選取（可循環）；否則播放 / 暫停。 */
+/**
+ * Space：有時間選取 → 播這段選取（可循環）；已經在播這段就停。
+ * 舊版還要求「而且目前是暫停」，所以播到一半想重播選取只會變成暫停，很難用。
+ */
 function spaceKey() {
   const tl = useTimeline.getState();
   const p = getPlayer();
-  if (tl.selection && p && p.paused) {
-    playRange(tl.selection.startMs, tl.selection.endMs, { skip: false, loop: tl.loopSelection });
+  if (tl.selection && p) {
+    const pv = usePlayback.getState().preview;
+    const onThisSelection =
+      isRangePlaying() && !!pv && pv.startMs === tl.selection.startMs && pv.endMs === tl.selection.endMs;
+    if (onThisSelection) stopRange();
+    else playRange(tl.selection.startMs, tl.selection.endMs, { skip: false, loop: tl.loopSelection });
     return;
   }
   togglePlay();

@@ -12,6 +12,7 @@ import { useTimeline } from "../store/timeline";
 import { useTheme } from "../theme";
 import { formatMs } from "../time";
 import BeatGridOverlay from "./BeatGridOverlay";
+import PlayheadOverlay from "./PlayheadOverlay";
 import TimelinePlaceholder from "./TimelinePlaceholder";
 
 /** 時間尺高度（TimelinePlugin，插在波形上方）。 */
@@ -40,7 +41,7 @@ const KIND_VAR: Record<CandidateKind, string> = {
 
 function regionColor(c: Candidate, decisions: DecisionMap, selected: boolean): string {
   const st = decisions[c.id]?.state ?? "pending";
-  const alpha = selected ? 0.55 : isActiveState(st) ? 0.36 : st === "pending" ? 0.14 : 0.04;
+  const alpha = selected ? 0.34 : isActiveState(st) ? 0.36 : st === "pending" ? 0.14 : 0.04;
   return cssRgb(KIND_VAR[c.kind], alpha);
 }
 
@@ -163,7 +164,7 @@ export default function Timeline(props: TimelineProps) {
   const cb = useRef(props);
   cb.current = props;
   const themeId = useTheme((s) => s.themeId);
-  const follow = usePlayback((s) => s.follow);
+  const followMode = usePlayback((s) => s.followMode);
   const tool = useTimeline((s) => s.tool);
   const selection = useTimeline((s) => s.selection);
   const waveH = Math.max(40, height - 16 - RULER_H);
@@ -202,16 +203,19 @@ export default function Timeline(props: TimelineProps) {
       duration: durSec,
       height: Math.max(40, boxHeight(box) - RULER_H),
       waveColor: cssRgb("--c-fg", 0.55),
-      progressColor: cssRgb("--c-accent", 0.8),
-      cursorColor: cssRgb("--c-accent", 1),
-      cursorWidth: 2,
+      progressColor: cssRgb("--c-fg", 0.72),
+      cursorColor: "transparent",
+      // 內建 cursor 停用：它畫在 .wrapper 裡會被 region 色塊蓋住，而且位置取自 media.duration
+      // （我們餵給 wavesurfer 的是 ffprobe 時長），兩者不一致時會出現兩條線。改由 PlayheadOverlay 畫。
+      cursorWidth: 0,
       barWidth: 2,
       barGap: 1,
       barRadius: 1,
       minPxPerSec: tl.pxPerSec ?? fitOf(),
       fillParent: true,
-      autoScroll: usePlayback.getState().follow,
-      autoCenter: usePlayback.getState().follow,
+      // page 模式的翻頁由 PlayheadOverlay 負責（wavesurfer 只有 autoCenter 一種跟隨）
+      autoScroll: usePlayback.getState().followMode === "center",
+      autoCenter: usePlayback.getState().followMode === "center",
       dragToSeek: tl.tool === "seek",
       hideScrollbar: false,
       normalize: false,
@@ -326,8 +330,9 @@ export default function Timeline(props: TimelineProps) {
   }, [waveH]);
 
   useEffect(() => {
-    wsRef.current?.setOptions({ autoScroll: follow, autoCenter: follow });
-  }, [follow]);
+    const center = followMode === "center";
+    wsRef.current?.setOptions({ autoScroll: center, autoCenter: center });
+  }, [followMode]);
 
   // 工具：定位（拖曳 seek）↔ 選取（拖曳選一段；候選 region 暫時不吃滑鼠，才能從任何地方開始拖）
   useEffect(() => {
@@ -458,6 +463,7 @@ export default function Timeline(props: TimelineProps) {
       <div className="relative w-full h-full">
         <div ref={boxRef} className="w-full h-full" onContextMenu={onContextMenu} />
         <BeatGridOverlay ws={wsInstance} height={waveH + RULER_H} />
+        <PlayheadOverlay ws={wsInstance} height={waveH + RULER_H} />
       </div>
       {hint && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">

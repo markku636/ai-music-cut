@@ -2,10 +2,13 @@ import { useEffect, useRef } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { usePlayback } from "../store/playback";
 import { setPlayer } from "./playerRef";
+import { bindGainTarget } from "./previewGain";
+import { subscribeTick, TICK_PRIORITY } from "./ticker";
 
 /**
  * 隱藏的 <audio>：來源走 Tauri asset protocol（支援 Range → seek）。
- * 播放位置以 rAF 迴圈回寫 playback store（timeupdate 只有 4Hz，游標會頓）。
+ * 播放位置以共用 ticker 回寫 playback store（timeupdate 只有 4Hz，游標會頓）；
+ * 排在跳播與效果之後、播放線之前，所以 store 讀到的一定是這一幀的最終位置。
  */
 export default function AudioPlayer({ path }: { path: string | null }) {
   const ref = useRef<HTMLAudioElement>(null);
@@ -14,7 +17,11 @@ export default function AudioPlayer({ path }: { path: string | null }) {
 
   useEffect(() => {
     setPlayer(ref.current);
-    return () => setPlayer(null);
+    bindGainTarget(ref.current);
+    return () => {
+      setPlayer(null);
+      bindGainTarget(null);
+    };
   }, []);
 
   useEffect(() => {
@@ -32,19 +39,17 @@ export default function AudioPlayer({ path }: { path: string | null }) {
     const el = ref.current;
     if (!el) return;
     const pb = usePlayback.getState();
-    let raf = 0;
-    const tick = () => {
-      pb.setCurrent(el.currentTime * 1000);
-      if (!el.paused) raf = requestAnimationFrame(tick);
-    };
+    let unTick: (() => void) | null = null;
+    const tick = () => pb.setCurrent(el.currentTime * 1000);
     const onPlay = () => {
       pb.setPlaying(true);
-      cancelAnimationFrame(raf);
-      raf = requestAnimationFrame(tick);
+      unTick?.();
+      unTick = subscribeTick(tick, TICK_PRIORITY.store);
     };
     const onPause = () => {
       pb.setPlaying(false);
-      cancelAnimationFrame(raf);
+      unTick?.();
+      unTick = null;
       pb.setCurrent(el.currentTime * 1000);
     };
     const onTime = () => {
@@ -56,7 +61,7 @@ export default function AudioPlayer({ path }: { path: string | null }) {
     el.addEventListener("timeupdate", onTime);
     el.addEventListener("seeked", onTime);
     return () => {
-      cancelAnimationFrame(raf);
+      unTick?.();
       el.removeEventListener("play", onPlay);
       el.removeEventListener("pause", onPause);
       el.removeEventListener("ended", onPause);

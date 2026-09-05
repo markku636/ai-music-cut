@@ -26,7 +26,7 @@ export interface TranscriptEditorProps {
  */
 export default function TranscriptEditor({ transcript, candidates, decisions, selectedIds, selection = null, onWordClick, onWordToggle, onSentenceSelect }: TranscriptEditorProps) {
   const currentMs = usePlayback((s) => s.currentMs);
-  const follow = usePlayback((s) => s.follow);
+  const follow = usePlayback((s) => s.followMode !== "off");
   const seek = usePlayback((s) => s.seek);
   const listRef = useRef<HTMLDivElement>(null);
 

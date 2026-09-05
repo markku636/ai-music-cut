@@ -11,6 +11,7 @@ import { usePlayback } from "../store/playback";
 import { useTimeline } from "../store/timeline";
 import { useVerify } from "../store/verify";
 import { formatMs } from "../time";
+import { AudioLines } from "lucide-react";
 
 export interface VerifyDialogProps {
   mediaId: string;
@@ -27,6 +28,7 @@ export interface VerifyDialogProps {
 export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose }: VerifyDialogProps) {
   const t = useT();
   const report = useVerify((s) => s.byMedia[mediaId] ?? null);
+  const splice = useVerify((s) => s.spliceByMedia[mediaId] ?? null);
   const running = useVerify((s) => !!s.running[mediaId]);
   const seek = usePlayback((s) => s.seek);
   const setSelection = useTimeline((s) => s.setSelection);
@@ -85,7 +87,7 @@ export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose 
           <Spinner size={16} className="text-accent" />
           {t("把成品送回 ttls 重新轉寫，再逐字比對…（與轉寫同樣需要一點時間）")}
         </div>
-      ) : !report ? (
+      ) : !report && !splice ? (
         <EmptyState
           compact
           icon={BadgeCheck}
@@ -94,6 +96,28 @@ export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose 
         />
       ) : (
         <div className="space-y-4 text-sm">
+          {splice && (
+            <div className={`rounded-md border px-3 py-2 text-xs ${splice.okCount === splice.segments.length ? "border-success/30 bg-success/10 text-success" : "border-warning/30 bg-warning/10 text-warning"}`}>
+              <div className="flex items-center gap-2">
+                <AudioLines size={14} />
+                <span className="font-medium">{t("音訊比對")}</span>
+                <span className="flex-1 min-w-0 truncate">{splice.summary}</span>
+              </div>
+              {splice.segments.some((s) => !s.ok) && (
+                <ul className="mt-1 space-y-0.5 text-[11px]">
+                  {splice.segments
+                    .filter((s) => !s.ok)
+                    .slice(0, 6)
+                    .map((s) => (
+                      <li key={s.index} className="mono">
+                        {t("第 {n} 段", { n: s.index + 1 })} {formatMs(s.srcStartMs, { millis: false })} → {formatMs(s.outStartMs, { millis: false })}：{s.note}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {report && (
           <div className="flex items-center gap-3">
             <span
               className={`text-2xl font-semibold tabular-nums ${grade === "good" ? "text-success" : grade === "warn" ? "text-warning" : "text-danger"}`}
@@ -109,7 +133,10 @@ export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose 
             </div>
           </div>
 
-          {hard.length === 0 && badSeams.length === 0 ? (
+          )}
+          {!report ? (
+            <div className="text-xs text-fg/45">{t("這個媒體沒有逐字稿，只做了音訊比對；要逐字驗收請先「分析」取得逐字稿。")}</div>
+          ) : hard.length === 0 && badSeams.length === 0 ? (
             <div className="rounded-md border border-success/30 bg-success/10 text-success px-3 py-2 text-xs">
               {t("成品逐字等於預期，{n} 個接縫都沒有吃到字。", { n: report.seams.length })}
             </div>
@@ -136,6 +163,7 @@ export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose 
             </div>
           )}
 
+          {report && (
           <div className="space-y-1">
             <div className="text-[11px] text-fg/45 uppercase tracking-wide">
               {t("接縫（{ok} / {n} 乾淨）", { ok: report.seams.length - badSeams.length, n: report.seams.length })}
@@ -167,9 +195,12 @@ export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose 
               )}
             </div>
           </div>
+          )}
+          {report && (
           <p className="text-[11px] text-fg/35 leading-relaxed">
             {t("提醒：驗證用的是重新辨識的結果，ASR 本身也會聽錯；「接縫附近」的漏字最值得先聽。")}
           </p>
+          )}
         </div>
       )}
     </Modal>

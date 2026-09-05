@@ -1,0 +1,79 @@
+import { describe, expect, it } from "vitest";
+import type { Edl } from "./edl/build";
+import type { LocalAnalysis } from "./peaks";
+import { auditSplice, ncc } from "./spliceAudit";
+
+const PPS = 200;
+
+function fromDb(db: number[]): LocalAnalysis {
+  const rmsU8 = Uint8Array.from(db.map((d) => Math.max(0, Math.min(255, Math.round(((d + 60) / 60) * 255)))));
+  return {
+    version: 2,
+    pps: PPS,
+    hopMs: 100,
+    sampleRate: 48000,
+    nBuckets: rmsU8.length,
+    nWin: 0,
+    totalSamples: 0,
+    durationMs: Math.round((rmsU8.length / PPS) * 1000),
+    mins: new Int8Array(0),
+    maxs: new Int8Array(0),
+    rmsU8,
+    win: new Float32Array(0),
+  };
+}
+
+/** 造一段有辨識度的包絡：用不同頻率的正弦當「指紋」。 */
+function pattern(seconds: number, freq: number, offset = 0): number[] {
+  const n = Math.round(seconds * PPS);
+  return Array.from({ length: n }, (_, i) => -30 + 20 * Math.sin((2 * Math.PI * freq * (i + offset)) / PPS));
+}
+
+// 來源 6 秒：A(0–2s, f=3) B(2–4s, f=7) C(4–6s, f=13)；EDL 保留 A 與 C
+const SRC = fromDb([...pattern(2, 3), ...pattern(2, 7, 400), ...pattern(2, 13, 800)]);
+const EDL: Edl = {
+  keeps: [
+    { id: 0, srcStartMs: 0, srcEndMs: 2000, outStartMs: 0, outEndMs: 2000, gainDb: 0 },
+    { id: 1, srcStartMs: 4000, srcEndMs: 6000, outStartMs: 2000, outEndMs: 4000, gainDb: 0 },
+  ],
+  joins: [],
+  stats: { removedMs: 2000, keptMs: 4000, cutCount: 1, byKind: {} },
+  downgrades: [],
+  removals: [],
+};
+
+describe("spliceAudit", () => {
+  it("剪對了 → 每段都對得上", () => {
+    const out = fromDb([...pattern(2, 3), ...pattern(2, 13, 800)]);
+    const r = auditSplice(SRC, out, EDL, { probeMs: 1200 });
+    expect(r.segments).toHaveLength(2);
+    expect(r.okCount).toBe(2);
+    expect(Math.abs(r.segments[0].lagMs)).toBeLessThanOrEqual(25);
+    expect(r.segments[1].corr).toBeGreaterThan(0.75);
+    expect(r.summary).toContain("全部對得上");
+  });
+
+  it("接錯段（把 B 接上去）→ 該段對不上", () => {
+    const out = fromDb([...pattern(2, 3), ...pattern(2, 7, 400)]);
+    const r = auditSplice(SRC, out, EDL, { probeMs: 1200 });
+    expect(r.segments[0].ok).toBe(true);
+    expect(r.segments[1].ok).toBe(false);
+    expect(r.segments[1].note).toContain("對不上");
+  });
+
+  it("整體偏移 40 ms → 標成位置偏了", () => {
+    const pad = Array.from({ length: Math.round(0.04 * PPS) }, () => -60);
+    const out = fromDb([...pad, ...pattern(2, 3), ...pattern(2, 13, 800)]);
+    const r = auditSplice(SRC, out, EDL, { probeMs: 1200 });
+    expect(Math.abs(r.segments[0].lagMs)).toBeGreaterThanOrEqual(25);
+    expect(r.segments[0].ok).toBe(false);
+  });
+
+  it("ncc：同訊號 1、反相 −1", () => {
+    const a = Float32Array.from([1, 2, 3, 4, 5]);
+    const b = Float32Array.from([1, 2, 3, 4, 5]);
+    const c = Float32Array.from([5, 4, 3, 2, 1]);
+    expect(ncc(a, b)).toBeCloseTo(1, 5);
+    expect(ncc(a, c)).toBeCloseTo(-1, 5);
+  });
+});

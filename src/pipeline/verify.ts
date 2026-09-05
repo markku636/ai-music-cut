@@ -2,6 +2,8 @@
 // 人機協作的最後一哩：AI 剪完、人只需要聽「機器覺得可疑」的那幾個接縫。
 import { api, errKind, errMessage, type TranscribeJobInfo } from "../api";
 import { normalizeTranscript, type ServerTranscript } from "../analysis/normalize";
+import { parseAnalysis } from "../analysis/peaks";
+import { auditSplice, type SpliceAuditReport } from "../analysis/spliceAudit";
 import { actualWords, expectedWords, verifyEdit, type VerifyReport } from "../analysis/verify";
 import { t } from "../i18n";
 import { newJobId, useJobs } from "../store/jobs";
@@ -20,13 +22,19 @@ export interface VerifyOpts {
   outDurationMs?: number | null;
 }
 
-/** 對某媒體的成品跑 ASR 驗收；結果寫進 useVerify（UI 直接讀）。 */
-export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<VerifyReport> {
+export interface VerifyResult {
+  /** 逐字比對（需要逐字稿；音樂通常沒有）。 */
+  asr: VerifyReport | null;
+  /** 波形包絡逐段比對（音樂也適用，純本機）。 */
+  splice: SpliceAuditReport | null;
+}
+
+/** 對某媒體的成品跑驗收：先做本機音訊比對，有逐字稿再加上 ASR 逐字比對。 */
+export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<VerifyResult> {
   const proj = useProject.getState();
   const media = proj.media.find((m) => m.id === mediaId);
   if (!media) throw new Error(t("找不到媒體"));
   const tr = useTranscript.getState().byMedia[mediaId];
-  if (!tr?.words.length) throw new Error(t("沒有逐字稿可比對（純人工剪輯無法用 ASR 驗證）"));
   const edl = edlFor(mediaId);
   if (!edl) throw new Error(t("尚未建立剪輯計畫"));
 
@@ -51,8 +59,32 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
   const step = (label: string, pct: number | null = null, message = "") => jobs.upsert({ id: jobId, step: label, pct, message });
   useVerify.getState().setRunning(mediaId, true);
 
+  let splice: SpliceAuditReport | null = null;
   try {
     const fp = await api.mediaFingerprint(opts.outPath);
+
+    // 1) 音訊比對（純本機，音樂也能驗）：把成品也算一份波形，逐段跟來源做正規化互相關
+    const srcLocal = useTranscript.getState().local[mediaId];
+    if (srcLocal) {
+      step(t("音訊比對（波形逐段對齊）"));
+      try {
+        const outProbe = await api.mediaProbe(opts.outPath);
+        const buf = await api.mediaAnalyzeLocal(newJobId(), opts.outPath, fp, outProbe.duration_ms);
+        splice = auditSplice(srcLocal, parseAnalysis(buf), edl);
+        useVerify.getState().setSplice(mediaId, { ...splice, outPath: opts.outPath, at: new Date().toISOString() });
+      } catch {
+        /* 比對失敗不影響 ASR 驗收 */
+      }
+    }
+    if (canceled) throw new Error("canceled");
+    if (!tr?.words.length) {
+      const msg = splice ? splice.summary : t("沒有逐字稿可比對（音訊比對也無法進行）");
+      jobs.upsert({ id: jobId, status: "done", step: t("完成"), pct: 100, message: msg, endedAt: Date.now() });
+      if (splice && splice.okCount === splice.segments.length) toast.success(msg);
+      else toast.info(msg);
+      return { asr: null, splice };
+    }
+
     const prep = await api.mediaPrepare(opts.outPath, fp);
     if (canceled) throw new Error("canceled");
 
@@ -84,7 +116,7 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
     jobs.upsert({ id: jobId, status: "done", step: t("完成"), pct: 100, message: report.summary, endedAt: Date.now() });
     if (hard === 0) toast.success(report.summary);
     else toast.info(report.summary);
-    return report;
+    return { asr: report, splice };
   } catch (e) {
     const msg = errMessage(e);
     if (canceled || isAbort(e) || errKind(e) === "canceled" || msg === "canceled") {

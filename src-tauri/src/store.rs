@@ -24,6 +24,10 @@ pub struct AppSettings {
     pub ffmpeg_path: Option<String>,
     /// claude CLI 的 --model（空＝CLI 預設）。
     pub claude_model: String,
+    /// 審核 agent 用的模型（第二輪覆核；預設用比較便宜的 haiku）。
+    pub claude_review_model: String,
+    /// AI 判讀跑幾個角色："editor"＝只有剪輯；"editor+reviewer"＝剪輯提議、審核覆核。
+    pub judge_roles: String,
     pub default_aggressiveness: u8,
     pub target_lufs: f32,
     pub output_dir: Option<String>,
@@ -41,6 +45,8 @@ impl Default for AppSettings {
             ttls_base_url: "https://ttls.markkulab.net".to_string(),
             ffmpeg_path: None,
             claude_model: "sonnet".to_string(),
+            claude_review_model: "haiku".to_string(),
+            judge_roles: "editor+reviewer".to_string(),
             default_aggressiveness: 50,
             target_lufs: -16.0,
             output_dir: None,

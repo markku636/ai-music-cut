@@ -46,3 +46,33 @@ export interface JudgeOutput {
   new_candidates: { kind: "unclear" | "rambling" | "off_topic" | "redo" | "filler" | "restart"; sentence_id: number; text: string; action: "suggest" | "apply"; reason: string }[];
   notes?: string;
 }
+
+/** 審核 agent 的 schema：只覆核既有候選，**不允許新增**。 */
+export const REVIEW_SCHEMA_VERSION = 1;
+
+export const REVIEW_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["window_id", "reviews"],
+  properties: {
+    window_id: { type: "string" },
+    reviews: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["id", "verdict", "reason"],
+        properties: {
+          id: { type: "string", description: "候選代號（c1、c2…）" },
+          verdict: { type: "string", enum: ["cut", "keep", "unsure"], description: "cut=同意剪；keep=不該剪；unsure=不確定" },
+          reason: { type: "string", maxLength: 60 },
+        },
+      },
+    },
+  },
+} as const;
+
+export interface ReviewOutput {
+  window_id: string;
+  reviews: { id: string; verdict: "cut" | "keep" | "unsure"; reason: string }[];
+}

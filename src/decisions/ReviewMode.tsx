@@ -10,6 +10,7 @@ import { useTranscript } from "../store/transcript";
 import { formatMs } from "../time";
 import { Badge, Button, IconButton } from "../ui/index";
 import GroupBoard from "./GroupBoard";
+import OpinionChips from "./OpinionChips";
 import { buildGroups, candidateText, groupKeyOf } from "./group";
 import { advanceAfterDecision, queueProgress, reviewQueue, stepQueue } from "./queue";
 import { installReviewHotkeys } from "./reviewHotkeys";
@@ -45,7 +46,9 @@ export default function ReviewMode({ mediaId, onExit }: { mediaId: string; onExi
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const downgrades = useMemo(() => edlFor(mediaId)?.downgrades ?? null, [mediaId, candidates, decisions, aggressiveness]);
 
-  const queue = useMemo(() => reviewQueue(candidates, decisions, { downgrades }), [candidates, decisions, downgrades]);
+  // 兩個 agent 意見相反的一定要人裁決（resolveOpinions 已經把它留在 pending，這裡確保不會被漏掉）
+  const conflictIds = useMemo(() => new Set(candidates.filter((c) => decisions[c.id]?.conflict).map((c) => c.id)), [candidates, decisions]);
+  const queue = useMemo(() => reviewQueue(candidates, decisions, { downgrades, conflictIds }), [candidates, decisions, downgrades, conflictIds]);
   const groups = useMemo(() => buildGroups(candidates, words, decisions), [candidates, words, decisions]);
 
   useEffect(() => {
@@ -176,11 +179,13 @@ export default function ReviewMode({ mediaId, onExit }: { mediaId: string; onExi
                 </span>
               )}
               {downgrades?.some((d) => d.candidateId === cur.id) && <Badge tone="warning">{t("被守門降級")}</Badge>}
+              {decisions[cur.id]?.conflict && <Badge tone="warning">{t("兩個 AI 意見相反")}</Badge>}
             </div>
             <div className="mt-1.5 text-lg leading-snug text-fg/90 break-words">
               {sentence || <span className="text-fg/45">{text || cur.reason}</span>}
             </div>
             <div className="mt-1 text-xs text-fg/50">{cur.reason}</div>
+            <OpinionChips decision={decisions[cur.id]} />
           </div>
           <div className="shrink-0 flex flex-col gap-1.5 items-stretch w-56">
             <div className="flex gap-1.5">

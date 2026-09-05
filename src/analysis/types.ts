@@ -89,11 +89,31 @@ export interface Candidate {
 
 export type DecisionState = "auto" | "accepted" | "rejected" | "pending";
 
+/** 一個 agent 對某個候選的看法。 */
+export interface Opinion {
+  verdict: "cut" | "keep" | "unsure";
+  /** 繁中，≤60 字。 */
+  reason: string;
+  at: string;
+  /** 用哪個模型跑的（審核通常用比較便宜的）。 */
+  model?: string;
+}
+
+export type AgentRole = "editor" | "reviewer";
+
 export interface Decision {
   state: DecisionState;
   origin: CandidateSource;
   reason?: string;
   at: string;
+  /**
+   * 各 agent 的意見（剪輯 / 審核）。刻意是 optional 附加欄位：
+   * state / origin / isActiveState 完全不動 → EDL、CLI、驗收路徑零改動，
+   * 舊專案檔讀進來也不會壞。
+   */
+  opinions?: Partial<Record<AgentRole, Opinion>>;
+  /** 兩個 agent 意見相反 → 送人裁決（審核佇列會收）。 */
+  conflict?: boolean;
 }
 
 export type DecisionMap = Record<string, Decision>;

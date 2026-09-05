@@ -5,6 +5,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ttls_base_url: "https://ttls.markkulab.net",
   ffmpeg_path: null,
   claude_model: "sonnet",
+  claude_review_model: "haiku",
+  judge_roles: "editor+reviewer",
   default_aggressiveness: 50,
   target_lufs: -16,
   output_dir: null,

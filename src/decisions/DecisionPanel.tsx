@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, ListChecks, Play, X } from "lucide-react";
 import { candidateText } from "./group";
+import OpinionChips from "./OpinionChips";
 import { useTranscript } from "../store/transcript";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState } from "../analysis/types";
 import { useT } from "../i18n";
@@ -32,7 +33,7 @@ const KIND_CLASS: Record<CandidateKind, string> = {
   manual: "bg-kind-manual/20 text-kind-manual",
 };
 
-type StateFilter = "all" | "active" | "pending" | "rejected";
+type StateFilter = "all" | "active" | "pending" | "rejected" | "conflict";
 
 export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: { mediaId: string | null; analysisState: AnalysisState | null; onRerunRules: () => void }) {
   const t = useT();
@@ -101,6 +102,8 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
   useEffect(() => setAggrDraft(aggressiveness), [aggressiveness]);
 
   const counts = useMemo(() => decisionCounts(candidates, decisions), [candidates, decisions]);
+  // 兩個 agent 意見相反的筆數（沒開審核時恆為 0，篩選也就不會出現）
+  const conflictCount = useMemo(() => candidates.reduce((n, c) => n + (decisions[c.id]?.conflict ? 1 : 0), 0), [candidates, decisions]);
   const removedMs = useMemo(
     () => candidates.reduce((s, c) => (isActiveState(decisions[c.id]?.state) ? s + (c.endMs - c.startMs) : s), 0),
     [candidates, decisions],
@@ -112,6 +115,7 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
         if (stateFilter === "active" && !isActiveState(st)) return false;
         if (stateFilter === "pending" && st !== "pending") return false;
         if (stateFilter === "rejected" && st !== "rejected") return false;
+        if (stateFilter === "conflict" && !decisions[c.id]?.conflict) return false;
         if (kindFilter.size && !kindFilter.has(c.kind)) return false;
         return true;
       }),
@@ -186,6 +190,7 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
             { value: "active", label: `${t("剪")} ${counts.byState.auto + counts.byState.accepted}` },
             { value: "pending", label: `${t("待決")} ${counts.byState.pending}` },
             { value: "rejected", label: `${t("拒")} ${counts.byState.rejected}` },
+            ...(conflictCount ? [{ value: "conflict" as const, label: `${t("分歧")} ${conflictCount}` }] : []),
           ]}
         />
         <div className="flex flex-wrap gap-1">
@@ -269,7 +274,7 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
                 key={c.id}
                 data-cid={c.id}
                 onClick={() => onRow(c)}
-                className={`px-3 py-2 border-b border-fg/5 cursor-pointer ${selected ? "bg-accent/12" : "hover:bg-fg/5"} ${st === "rejected" ? "opacity-50" : ""}`}
+                className={`px-3 py-2 border-b border-fg/5 cursor-pointer ${selected ? "bg-accent/12" : "hover:bg-fg/5"} ${st === "rejected" ? "opacity-50" : ""} ${d?.conflict ? "border-l-2 border-l-warning" : ""}`}
               >
                 <div className="flex items-center gap-1.5">
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-xs ${KIND_CLASS[c.kind]}`}>{t(KIND_LABEL[c.kind])}</span>
@@ -287,6 +292,7 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
                   return text ? <div className="mt-1 text-sm text-fg/90 leading-snug break-words line-clamp-1">「{text}」</div> : null;
                 })()}
                 <div className="mt-0.5 text-xs text-fg/60 leading-snug line-clamp-2">{c.reason}</div>
+                <OpinionChips decision={d} />
                 {d?.reason && d.origin === "llm" && <div className="mt-0.5 text-[11px] text-info/80">AI：{d.reason}</div>}
                 <div className="mt-1.5 flex items-center gap-1">
                   <IconButton icon={Play} label={t("預聽")} iconSize={13} box="w-6 h-6" onClick={(e) => { e.stopPropagation(); preview(c); }} />

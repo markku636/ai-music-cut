@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { effectLabel, type AudioEffect } from "../analysis/effects";
 import { thresholdsFor } from "../analysis/thresholds";
-import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState } from "../analysis/types";
+import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState, type Opinion } from "../analysis/types";
+import { resolveOpinions } from "../analysis/llm/resolve";
 import { useProject } from "./project";
 
 /** 一筆可復原的變更：某媒體的候選 + 決策整份快照（幾千筆內複製成本可忽略）。 */
@@ -35,6 +36,18 @@ interface DecisionsStore {
   setCandidates: (mediaId: string, cands: Candidate[], opts: { label: string; aggressiveness: number; keepLlm?: boolean; record?: boolean }) => void;
   /** LLM 判讀結果：對既有 id 設狀態（不覆寫 user）、加入新候選。 */
   applyJudge: (mediaId: string, updates: { id: string; state: DecisionState; reason?: string }[], added: Candidate[], aggressiveness: number) => void;
+  /**
+   * 兩個 agent 的意見一起併入（剪輯 + 審核）。收斂規則全在 analysis/llm/resolve.ts。
+   * `applyJudge` 變成「只有剪輯意見」的薄包裝 —— CLI / MCP 不必改。
+   */
+  applyOpinions: (
+    mediaId: string,
+    editor: { id: string; state: DecisionState; reason?: string }[],
+    added: Candidate[],
+    reviewer: Record<string, Opinion>,
+    aggressiveness: number,
+    label?: string,
+  ) => void;
   decide: (mediaId: string, ids: string[], state: DecisionState, opts?: { origin?: Decision["origin"]; label?: string; reason?: string }) => void;
   toggleWordCut: (mediaId: string, wordId: number, word: { startMs: number; endMs: number; text: string }, sentenceId: number) => void;
   addManualCut: (mediaId: string, startMs: number, endMs: number, wordIds: number[], reason?: string, sentenceId?: number) => string;
@@ -120,22 +133,54 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     },
 
     applyJudge: (mediaId, updates, added, aggressiveness) => {
+      get().applyOpinions(mediaId, updates, added, {}, aggressiveness, "AI 判讀");
+    },
+
+    applyOpinions: (mediaId, editor, added, reviewer, aggressiveness, label) => {
       const cands = (get().candidates[mediaId] ?? []).slice();
       const dec: DecisionMap = { ...(get().decisions[mediaId] ?? {}) };
       const ids = new Set(cands.map((c) => c.id));
-      for (const u of updates) {
-        if (!ids.has(u.id)) continue;
-        const old = dec[u.id];
-        if (old?.origin === "user") continue;
-        dec[u.id] = { state: u.state, origin: "llm", reason: u.reason, at: now() };
-      }
+      const at = now();
+
+      // 先把新候選加進來，後面的收斂才看得到它們
       for (const c of added) {
         if (ids.has(c.id)) continue;
         cands.push(c);
         ids.add(c.id);
-        dec[c.id] = { state: SUGGEST_ONLY_KINDS.has(c.kind) ? "pending" : defaultStateFor(c, aggressiveness), origin: "llm", reason: c.reason, at: now() };
+        dec[c.id] = { state: SUGGEST_ONLY_KINDS.has(c.kind) ? "pending" : defaultStateFor(c, aggressiveness), origin: "llm", reason: c.reason, at };
       }
-      commit(mediaId, "AI 判讀", { candidates: cands.sort((a, b) => a.startMs - b.startMs), decisions: dec });
+      const kindOf = new Map(cands.map((c) => [c.id, c.kind] as const));
+
+      // 剪輯的 state 換算成 verdict：apply→cut、drop→keep、suggest→unsure
+      const editorOpinions = new Map<string, Opinion>();
+      for (const u of editor) {
+        if (!ids.has(u.id)) continue;
+        const verdict: Opinion["verdict"] = u.state === "auto" ? "cut" : u.state === "rejected" ? "keep" : "unsure";
+        editorOpinions.set(u.id, { verdict, reason: u.reason ?? "", at });
+      }
+
+      for (const id of new Set([...editorOpinions.keys(), ...Object.keys(reviewer)])) {
+        if (!ids.has(id)) continue;
+        const kind = kindOf.get(id);
+        const r = resolveOpinions({
+          current: dec[id],
+          editor: editorOpinions.get(id),
+          reviewer: reviewer[id],
+          suggestOnly: !!kind && SUGGEST_ONLY_KINDS.has(kind),
+        });
+        if (!r.changed) continue;
+        const prev = dec[id];
+        dec[id] = {
+          // origin=user 的決定不能被覆蓋，resolveOpinions 已經保證 state 不變
+          state: r.state,
+          origin: prev?.origin === "user" ? "user" : "llm",
+          reason: prev?.origin === "user" ? prev.reason : r.reason,
+          at,
+          opinions: r.opinions,
+          ...(r.conflict ? { conflict: true } : {}),
+        };
+      }
+      commit(mediaId, label ?? "AI 判讀（剪輯＋審核）", { candidates: cands.sort((a, b) => a.startMs - b.startMs), decisions: dec });
     },
 
     decide: (mediaId, ids, state, opts = {}) => {

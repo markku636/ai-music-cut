@@ -6,6 +6,9 @@ export interface AppSettings {
   ttls_base_url: string;
   ffmpeg_path: string | null;
   claude_model: string;
+  claude_review_model: string;
+  /** "editor" | "editor+reviewer" */
+  judge_roles: string;
   default_aggressiveness: number;
   target_lufs: number;
   output_dir: string | null;

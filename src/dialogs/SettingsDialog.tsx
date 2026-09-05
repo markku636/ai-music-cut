@@ -200,6 +200,26 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
               <option value="haiku">haiku</option>
             </Select>
           </Field>
+          <Field
+            label={t("AI 判讀角色")}
+            hint={t("剪輯提議剪什麼，審核站在相反立場覆核（只覆核判剪的）。兩邊意見相反的會留給你裁決，不會自動剪。")}
+          >
+            <Select value={draft.judge_roles || "editor+reviewer"} onChange={(e) => void commit({ judge_roles: e.target.value })}>
+              <option value="editor+reviewer">{t("剪輯 + 審核（兩個 agent）")}</option>
+              <option value="editor">{t("只有剪輯（比較快、比較省）")}</option>
+            </Select>
+          </Field>
+          <Field label={t("審核模型")} hint={t("第二輪覆核用；審核的工作比較單純，haiku 就夠")}>
+            <Select
+              value={draft.claude_review_model || "haiku"}
+              disabled={!(draft.judge_roles || "editor+reviewer").includes("reviewer")}
+              onChange={(e) => void commit({ claude_review_model: e.target.value })}
+            >
+              <option value="haiku">haiku</option>
+              <option value="sonnet">sonnet</option>
+              <option value="opus">opus</option>
+            </Select>
+          </Field>
         </Section>
 
         <Section title={t("分析")}>

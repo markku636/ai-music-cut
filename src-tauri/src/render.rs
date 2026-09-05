@@ -64,6 +64,10 @@ pub struct RenderPlan {
     pub format: String,
     pub out_path: String,
     pub channels: u32,
+    /// 預覽模式：跳過 loudnorm 的兩趟量測，只做 limiter + 低位元率編碼。
+    /// 剪接（Cutter）完全一樣 —— 預覽跟成品的差別只在響度處理，接點與時間軸逐 frame 相同。
+    #[serde(default)]
+    pub preview: bool,
 }
 
 #[derive(Serialize, Clone)]
@@ -531,20 +535,31 @@ pub async fn measure(bins: &FfmpegBins, wav_path: &Path, plan: &RenderPlan, canc
 
 /// 第三階段：套用 + 編碼（pass 2），`-progress pipe:1` 回報進度。回 (output_i, output_tp)。
 pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &RenderPlan, m: &LoudnormStats, out_part: &Path, total_frames: u64, job_id: &str, cancel: &AtomicBool) -> AppResult<(Option<f64>, Option<f64>)> {
-    let filter = format!(
-        "{}:measured_I={:.2}:measured_TP={:.2}:measured_LRA={:.2}:measured_thresh={:.2}:offset={:.2}:linear=true:print_format=json,alimiter=limit={:.4}:attack=5:release=50:level=false",
-        loudnorm_base(plan),
-        m.input_i,
-        m.input_tp,
-        m.input_lra,
-        m.input_thresh,
-        m.target_offset,
-        10f64.powf(plan.true_peak_dbtp / 20.0)
-    );
-    let (fmt, codec): (&str, Vec<&str>) = match plan.format.as_str() {
-        "wav" => ("wav", vec!["-c:a", "pcm_s16le"]),
-        "m4a" => ("mp4", vec!["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]),
-        _ => ("mp3", vec!["-c:a", "libmp3lame", "-q:a", "2"]),
+    let limit = 10f64.powf(plan.true_peak_dbtp / 20.0);
+    let filter = if plan.preview {
+        // 預覽：不跑 loudnorm（那要先量測一趟，30 分鐘素材要幾十秒），只留 limiter 防爆
+        format!("alimiter=limit={limit:.4}:attack=5:release=50:level=false")
+    } else {
+        format!(
+            "{}:measured_I={:.2}:measured_TP={:.2}:measured_LRA={:.2}:measured_thresh={:.2}:offset={:.2}:linear=true:print_format=json,alimiter=limit={:.4}:attack=5:release=50:level=false",
+            loudnorm_base(plan),
+            m.input_i,
+            m.input_tp,
+            m.input_lra,
+            m.input_thresh,
+            m.target_offset,
+            limit
+        )
+    };
+    let (fmt, codec): (&str, Vec<&str>) = if plan.preview {
+        // 預覽一律 mp3 q5：夠聽接縫，檔案小、編碼快
+        ("mp3", vec!["-c:a", "libmp3lame", "-q:a", "5"])
+    } else {
+        match plan.format.as_str() {
+            "wav" => ("wav", vec!["-c:a", "pcm_s16le"]),
+            "m4a" => ("mp4", vec!["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]),
+            _ => ("mp3", vec!["-c:a", "libmp3lame", "-q:a", "2"]),
+        }
     };
     let mut c = proc::cmd(&bins.ffmpeg);
     c.args(["-nostdin", "-hide_banner", "-nostats", "-loglevel", "info", "-progress", "pipe:1", "-y", "-i"]);
@@ -599,9 +614,15 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
         }
         let total = total_out_frames(&plan);
         cut_to_wav(&app, &bins, &src, &plan, &wav_path, &job_id, &cancel).await?;
-        emit_progress(&app, &job_id, "measure", 0.0);
-        let m = measure(&bins, &wav_path, &plan, &cancel).await?;
-        emit_progress(&app, &job_id, "measure", 100.0);
+        // 預覽跳過量測那一趟（30 分鐘素材要幾十秒），直接進編碼
+        let m = if plan.preview {
+            LoudnormStats::default()
+        } else {
+            emit_progress(&app, &job_id, "measure", 0.0);
+            let m = measure(&bins, &wav_path, &plan, &cancel).await?;
+            emit_progress(&app, &job_id, "measure", 100.0);
+            m
+        };
         let (oi, otp) = encode(&app, &bins, &wav_path, &plan, &m, &out_part, total, &job_id, &cancel).await?;
         tokio::fs::rename(&out_part, &out_path).await?;
         Ok((oi, otp, m.input_i))
@@ -632,6 +653,7 @@ mod tests {
             format: "wav".into(),
             out_path: String::new(),
             channels: 1,
+            preview: false,
         }
     }
 

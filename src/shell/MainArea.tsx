@@ -13,6 +13,7 @@ import AudioPlayer from "../preview/AudioPlayer";
 import { playRange } from "../preview/playerRef";
 import { useEffectPreview } from "../preview/useEffectPreview";
 import TransportBar from "../preview/TransportBar";
+import PreviewBar from "../preview/PreviewBar";
 import { useSkipPlayback } from "../preview/useSkipPlayback";
 import { useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
@@ -234,6 +235,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
           ) : (
             <TranscriptPlaceholder mediaId={mediaId} onAnalyze={onAnalyze} onOpenSettings={onOpenSettings} />
           )}
+          {mediaId && transcript && !reviewing && <PreviewBar mediaId={mediaId} />}
           {reviewing && mediaId && <ReviewMode mediaId={mediaId} onExit={() => setReviewing(false)} />}
         </>
       )}

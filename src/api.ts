@@ -162,6 +162,8 @@ export interface RenderPlan {
   format: "mp3" | "m4a" | "wav";
   out_path: string;
   channels: number;
+  /** 預覽模式：跳過 loudnorm 兩趟，只做 limiter + mp3 q5。 */
+  preview?: boolean;
 }
 export interface RenderProgress {
   job_id: string;

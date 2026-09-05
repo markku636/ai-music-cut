@@ -21,6 +21,11 @@ export interface RenderOptions {
   outPath: string;
   leveling: boolean;
   targetLufs: number;
+  /**
+   * 預覽模式：剪接完全一樣，只跳過響度正規化的兩趟（改成 limiter + mp3 q5）。
+   * 不會寫進「最近一次輸出」—— 驗收要對的是成品，不是預覽檔。
+   */
+  preview?: boolean;
 }
 
 function sep(p: string): string {
@@ -85,6 +90,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       joins,
       // 只當 fallback：joins[].ms 都帶了實際值，Rust 端只有在遇到舊 plan（ms=0）時才會用到它。
       crossfade_ms: DEFAULT_EDL_OPTIONS.crossfadeMs,
+      preview: opts.preview === true,
       target_lufs: opts.targetLufs,
       true_peak_dbtp: -1.5,
       format: opts.format,
@@ -139,7 +145,8 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
   unDone();
   void api.clientLog(`[render] done ok=${r.ok} err=${r.error ?? ""} lufs=${r.output_lufs ?? ""}`).catch(() => {});
   if (r.ok) {
-    if (r.out_path)
+    // 預覽檔不算「最近一次輸出」：驗收要對的是成品
+    if (r.out_path && !opts.preview)
       useVerify.getState().setLastOutput(mediaId, {
         path: r.out_path,
         expectedOutMs: built.expectedOutMs,

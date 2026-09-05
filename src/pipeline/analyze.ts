@@ -12,6 +12,7 @@ import { toast } from "../ui";
 import { restoreDecisions, type StoredAnalysis } from "./persist";
 import { ensureLocalAnalysis } from "./waveform";
 import { runRulesFor } from "./rules";
+import { withVramRetry } from "./gpu";
 import { isAbort, sleep, withBackoff } from "./retry";
 
 export interface AnalyzeOptions {
@@ -89,7 +90,7 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
       }
       step(t("上傳到 ttls 轉寫…"), null, "", "transcribe");
       ttlsJobId = await withBackoff(
-        () => api.ttlsTranscribeStart(prep.upload_path, settings.asr_language, settings.asr_model, settings.hotwords),
+        () => withVramRetry(() => api.ttlsTranscribeStart(prep.upload_path, settings.asr_language, settings.asr_model, settings.hotwords), (m) => step(m, null, "", "transcribe")),
         {
           signal: ac.signal,
           onRetry: (n, d, e) => {

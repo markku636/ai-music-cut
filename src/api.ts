@@ -185,6 +185,14 @@ export interface SeparateStem {
   bytes: number;
 }
 
+/** POST /v1/gpu/release 的結果。 */
+export interface GpuRelease {
+  ok: boolean;
+  before_free_mb: number;
+  after_free_mb: number;
+  freed_mb: number;
+}
+
 /** ACE-Step 音樂生成送單參數（對齊伺服器 MusicRequest）。 */
 export interface MusicOpts {
   prompt: string;
@@ -289,6 +297,8 @@ export const api = {
   ttlsSeparate: (jobId: string, path: string, stems: string, targetFormat: string, outDir: string | null) =>
     invoke<SeparateStem[]>("ttls_separate", { jobId, path, stems, targetFormat, outDir }),
   /** ACE-Step 配樂：送單 → 輪詢 → 下載候選（非同步，30 秒～數分鐘）。 */
+  /** 顯存不夠時請伺服器讓位（預設停掉音樂服務）。 */
+  ttlsGpuRelease: (musicAction: "stop" | "none" = "stop") => invoke<GpuRelease>("ttls_gpu_release", { musicAction }),
   ttlsMusicStart: (opts: MusicOpts) => invoke<string>("ttls_music_start", { opts }),
   ttlsMusicStyleStart: (opts: MusicStyleOpts) => invoke<string>("ttls_music_style_start", { opts }),
   ttlsMusicPoll: (jobId: string) => invoke<MusicJobInfo>("ttls_music_poll", { jobId }),

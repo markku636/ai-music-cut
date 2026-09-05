@@ -409,3 +409,34 @@ pub async fn music_style_start(http: &reqwest::Client, base: &str, opts: &MusicS
         .map(String::from)
         .ok_or_else(|| AppError::Ttls { status: 202, detail: "回應缺少 job_id".into() })
 }
+
+// ---------------- GPU 記憶體釋放（同一張卡被 TTS 池 / ACE-Step 佔滿時） ----------------
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct GpuRelease {
+    pub ok: bool,
+    pub before_free_mb: f64,
+    pub after_free_mb: f64,
+    pub freed_mb: f64,
+}
+
+/// POST /v1/gpu/release：清快取 / 停音樂服務，把顯存讓給 whisper。
+/// music_action: "stop"（停 ACE-Step，最有效）| "none"（只清快取）。
+pub async fn gpu_release(http: &reqwest::Client, base: &str, music_action: &str) -> AppResult<GpuRelease> {
+    let body = serde_json::json!({ "music_action": music_action });
+    let r = authed(http, reqwest::Method::POST, format!("{}/v1/gpu/release", base_url(base)))?
+        .json(&body)
+        .timeout(Duration::from_secs(120))
+        .send()
+        .await?;
+    if !r.status().is_success() {
+        return Err(err_from(r).await);
+    }
+    let v: serde_json::Value = r.json().await?;
+    Ok(GpuRelease {
+        ok: v["ok"].as_bool().unwrap_or(false),
+        before_free_mb: v["before_free_mb"].as_f64().unwrap_or(0.0),
+        after_free_mb: v["after_free_mb"].as_f64().unwrap_or(0.0),
+        freed_mb: v["freed_mb"].as_f64().unwrap_or(0.0),
+    })
+}

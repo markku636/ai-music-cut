@@ -76,6 +76,7 @@ pub fn run() {
             commands::ttls_transcribe_start,
             commands::ttls_separate,
             commands::media_clip,
+            commands::ttls_gpu_release,
             commands::ttls_music_start,
             commands::ttls_music_style_start,
             commands::ttls_music_poll,

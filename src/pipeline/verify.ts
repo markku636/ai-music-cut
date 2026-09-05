@@ -11,6 +11,7 @@ import { useProject } from "../store/project";
 import { useVerify } from "../store/verify";
 import { toast } from "../ui";
 import { edlFor } from "./rules";
+import { withVramRetry } from "./gpu";
 import { isAbort, sleep, withBackoff } from "./retry";
 import { useTranscript } from "../store/transcript";
 import { useSettings } from "../store/settings";
@@ -89,7 +90,7 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
     if (canceled) throw new Error("canceled");
 
     step(t("上傳到 ttls 轉寫…"));
-    ttlsJobId = await withBackoff(() => api.ttlsTranscribeStart(prep.upload_path, settings.asr_language, settings.asr_model, settings.hotwords), {
+    ttlsJobId = await withBackoff(() => withVramRetry(() => api.ttlsTranscribeStart(prep.upload_path, settings.asr_language, settings.asr_model, settings.hotwords), (m) => step(m)), {
       onRetry: (n, d, e) => step(t("等待 ttls"), null, `${errMessage(e)}（${Math.round(d / 1000)}s，${n}/6）`),
     });
     const startedAt = Date.now();

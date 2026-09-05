@@ -373,6 +373,13 @@ pub async fn media_clip(
     Ok(out.to_string_lossy().into_owned())
 }
 
+/// 顯存不夠時請伺服器釋放（停音樂服務 / 清快取）。
+#[tauri::command]
+pub async fn ttls_gpu_release(state: State<'_, AppState>, music_action: Option<String>) -> AppResult<ttls::GpuRelease> {
+    let base = state.base_url();
+    ttls::gpu_release(&state.http, &base, music_action.as_deref().unwrap_or("stop")).await
+}
+
 // ---------------- ACE-Step 音樂生成 ----------------
 
 #[tauri::command]

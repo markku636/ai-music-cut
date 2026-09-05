@@ -21,7 +21,10 @@ AI Podcast / 音訊粗剪桌面工具（Tauri 2 + React 18），也有 CLI。丟
 ## 需求
 
 - Windows 10/11（macOS / Linux 可自行建置，見 `.github/workflows/release.yml`）
-- [ffmpeg 7+](https://ffmpeg.org/)（在 PATH，或在設定指定路徑）
+- **ffmpeg**：Windows 安裝檔已內建（LGPL 版，見 [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)），裝好就能用。
+  - 你自己裝的優先：解析順序是「設定裡的自訂路徑 → 系統 PATH → 內建 → 常見安裝位置」，狀態列會顯示現在用的是哪一個。
+  - macOS / Linux 目前不內建，需自行安裝 [ffmpeg 7+](https://ffmpeg.org/)（deb / rpm 已宣告套件相依）。
+  - 從原始碼建置時，內建版靠 `node scripts/fetch-ffmpeg.mjs`（URL 與 sha256 釘在 `scripts/ffmpeg-manifest.json`）；不跑也能開發，只是會退回 PATH。
 - ttls API key（設定 → 伺服器；**只存 OS 鑰匙圈，不進任何檔案**）——沒有金鑰也能看波形、手動剪、輸出
 - 選用：[Claude Code](https://claude.com/claude-code) CLI 已登入（AI 判讀 / AI 助手；預設模型 sonnet，可在設定改）
 

@@ -1,0 +1,19 @@
+{
+  "_comment": [
+    "內建進 Windows 安裝檔的 ffmpeg。三個要求：",
+    "1) 釘死在不可變的 tag（BtbN 的 `latest` 是滾動 tag，會被重新上傳 → build 不可重現）。",
+    "2) 必須是 LGPL 版：GPL build 內建進來會讓整個 app 被 GPL 感染。",
+    "3) 必須是 shared（動態連結）：LGPL 靜態連結要另外提供可重新連結的目標檔，太麻煩。",
+    "換版本時三個欄位一起改，sha256 用 `node scripts/fetch-ffmpeg.mjs --print-sha` 取得。"
+  ],
+  "version": "n8.1.2-50-g1a748fe2cd",
+  "license": "LGPL-2.1-or-later",
+  "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-04-14-01/ffmpeg-n8.1.2-50-g1a748fe2cd-win64-lgpl-shared-8.1.zip",
+  "sha256": "d4a0db2e182e6d1535a022523d329daf8daff9d69db88d5aa569732005cffa91",
+  "sourceUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-04-14-01",
+  "upstreamSourceUrl": "https://git.ffmpeg.org/ffmpeg.git",
+  "buildScriptsUrl": "https://github.com/BtbN/FFmpeg-Builds",
+  "zipDir": "bin",
+  "skip": ["ffplay.exe"],
+  "requireConfigureFlags": ["--enable-libmp3lame", "--enable-shared"]
+}

@@ -4,6 +4,7 @@ import { api, errMessage, type AppSettings } from "../api";
 import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
 import { pickDirectory, pickOpenFile, toast } from "../ui";
 import { useT } from "../i18n";
+import { ffmpegSourceLabel } from "../ffmpegSource";
 import { useSettings } from "../store/settings";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -161,7 +162,14 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
         </Section>
 
         <Section title={t("工具")}>
-          <Field label="ffmpeg" hint={ffmpeg?.found ? `${ffmpeg.version} · ${ffmpeg.ffmpeg_path}` : t("找不到 ffmpeg；請安裝或指定 ffmpeg.exe / 其所在資料夾")}>
+          <Field
+            label="ffmpeg"
+            hint={
+              ffmpeg?.found
+                ? `${ffmpeg.version} · ${ffmpegSourceLabel(ffmpeg.source)} · ${ffmpeg.ffmpeg_path}`
+                : t("找不到 ffmpeg；請安裝或指定 ffmpeg.exe / 其所在資料夾")
+            }
+          >
             <div className="flex gap-2">
               <Input
                 ref={ffmpegInputRef}

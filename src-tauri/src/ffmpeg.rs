@@ -14,8 +14,23 @@ pub struct FfmpegBins {
     pub ffmpeg: String,
     pub ffprobe: String,
     pub version: String,
-    /// custom / path / common
+    /// custom / path / bundled / common
     pub source: String,
+}
+
+/// 安裝檔內建的 ffmpeg 在 resource_dir 底下的相對位置。
+/// tauri 的 `bundle.resources` 會保留來源目錄結構，所以 `src-tauri/resources/ffmpeg/`
+/// 進到安裝目錄後就是 `<resource_dir>/resources/ffmpeg/`。
+const BUNDLED_SUBDIR: [&str; 2] = ["resources", "ffmpeg"];
+
+/// 內建版的候選目錄。抽成純函式才測得到 —— 這條路徑對不上時的症狀是
+/// 「安裝完還是說找不到 ffmpeg」，而且完全沒有錯誤訊息可查。
+pub fn bundled_candidate(resource_dir: &Path) -> PathBuf {
+    let mut p = resource_dir.to_path_buf();
+    for seg in BUNDLED_SUBDIR {
+        p.push(seg);
+    }
+    p
 }
 
 fn exe(name: &str) -> String {
@@ -92,8 +107,12 @@ fn common_dirs() -> Vec<PathBuf> {
     v
 }
 
-/// 解析順序：使用者自訂路徑 → PATH（where/which）→ 常見安裝目錄。ffprobe 必須與 ffmpeg 同目錄。
-pub async fn resolve(custom: Option<&str>) -> Option<FfmpegBins> {
+/// 解析順序：使用者自訂路徑 → PATH（where/which）→ 安裝檔內建 → 常見安裝目錄。
+/// ffprobe 必須與 ffmpeg 同目錄（`sibling_probe`）。
+///
+/// 內建版刻意排在 PATH 之後：使用者自己裝了新版 / 自訂 build 就該用他的，
+/// 內建的只是「什麼都沒有時也能開箱即用」的保底。
+pub async fn resolve(custom: Option<&str>, bundled_dir: Option<&Path>) -> Option<FfmpegBins> {
     if let Some(c) = custom.map(str::trim).filter(|s| !s.is_empty()) {
         if let Some(b) = try_candidate(PathBuf::from(c), "custom").await {
             return Some(b);
@@ -101,6 +120,11 @@ pub async fn resolve(custom: Option<&str>) -> Option<FfmpegBins> {
     }
     for p in proc::which("ffmpeg").await {
         if let Some(b) = try_candidate(PathBuf::from(p), "path").await {
+            return Some(b);
+        }
+    }
+    if let Some(d) = bundled_dir {
+        if let Some(b) = try_candidate(d.to_path_buf(), "bundled").await {
             return Some(b);
         }
     }
@@ -247,5 +271,24 @@ mod tests {
         let empty = dir.join("e.bin");
         std::fs::write(&empty, b"").unwrap();
         assert_eq!(fingerprint(empty.to_str().unwrap()).unwrap().len(), 64);
+    }
+
+    #[test]
+    fn bundled_candidate_matches_tauri_resource_layout() {
+        // bundle.resources 保留來源目錄結構 → <resource_dir>/resources/ffmpeg
+        let got = bundled_candidate(Path::new("C:/Program Files/AI Music Cut"));
+        assert!(got.ends_with(Path::new("resources").join("ffmpeg")), "{got:?}");
+        assert!(got.starts_with("C:/Program Files/AI Music Cut"));
+    }
+
+    #[tokio::test]
+    async fn bundled_is_skipped_when_dir_has_no_ffmpeg() {
+        // 目錄存在但裡面沒有 ffmpeg → 不能回傳半套結果，要往下一個候選找
+        let dir = std::env::temp_dir().join(format!("aicut-bundled-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(try_candidate(dir.clone(), "bundled").await.is_none());
+        // 只有 ffmpeg 沒有 ffprobe 也一樣不算數（sibling_probe）
+        std::fs::write(dir.join(exe("ffmpeg")), b"not a real exe").unwrap();
+        assert!(try_candidate(dir, "bundled").await.is_none());
     }
 }

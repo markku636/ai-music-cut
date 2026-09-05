@@ -53,6 +53,20 @@ jobs:
       - name: Install frontend deps
         run: npm ci --legacy-peer-deps
 
+      # Windows 安裝檔內建 LGPL 版 ffmpeg（URL + sha256 釘死在 scripts/ffmpeg-manifest.json）。
+      # 對不上就讓 build 失敗 —— 寧可沒有安裝檔，也不要出一個來路不明或授權有問題的。
+      # macOS / Linux 這輪不內建：沒有可信的 LGPL 發布來源，而且 macOS 未簽章的子程序會被
+      # Gatekeeper 擋下；deb / rpm 改用套件相依（見 tauri.conf.json 的 bundle.linux）。
+      - name: Fetch bundled ffmpeg (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: node scripts/fetch-ffmpeg.mjs
+
+      - name: Smoke-test bundled ffmpeg (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          ./src-tauri/resources/ffmpeg/ffmpeg.exe -hide_banner -version
+          ./src-tauri/resources/ffmpeg/ffprobe.exe -hide_banner -version
+
       - name: Build & release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -60,7 +74,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "AI Music Cut ${{ github.ref_name }}"
-          releaseBody: "See README for setup (ffmpeg, ttls API key, Claude Code CLI)."
+          releaseBody: "Windows installer bundles FFmpeg (LGPL); macOS/Linux still need ffmpeg on PATH. See README for ttls API key and Claude Code CLI setup."
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

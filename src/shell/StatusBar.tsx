@@ -3,6 +3,7 @@ import { APP_NAME } from "../brand";
 import { useT } from "../i18n";
 import { usePlayback } from "../store/playback";
 import { useProject } from "../store/project";
+import { ffmpegSourceLabel, shortFfmpegVersion } from "../ffmpegSource";
 import { useSettings } from "../store/settings";
 import { formatMs } from "../time";
 
@@ -41,10 +42,11 @@ export default function StatusBar({ onOpenSettings }: { onOpenSettings: (focus?:
         type="button"
         onClick={() => onOpenSettings("ffmpeg")}
         className="flex items-center gap-1.5 shrink-0 hover:text-fg/70"
-        title={ffmpeg?.found ? `${ffmpeg.ffmpeg_path}` : t("找不到 ffmpeg，點擊到設定指定路徑")}
+        title={ffmpeg?.found ? `ffmpeg ${ffmpeg.version}
+${ffmpegSourceLabel(ffmpeg.source)}：${ffmpeg.ffmpeg_path}` : t("找不到 ffmpeg，點擊到設定指定路徑")}
       >
         <Dot ok={!!ffmpeg?.found} />
-        {ffmpeg?.found ? `ffmpeg ${ffmpeg.version ?? ""}` : t("找不到 ffmpeg")}
+        {ffmpeg?.found ? `ffmpeg ${shortFfmpegVersion(ffmpeg.version)} · ${ffmpegSourceLabel(ffmpeg.source)}` : t("找不到 ffmpeg")}
       </button>
       <button
         type="button"

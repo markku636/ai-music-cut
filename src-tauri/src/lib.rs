@@ -31,6 +31,15 @@ pub fn run() {
                 tauri::async_runtime::block_on(store::read_json(&handle, store::SETTINGS_FILE))
                     .unwrap_or_default();
             *handle.state::<AppState>().settings.write() = loaded;
+            // 安裝檔內建的 ffmpeg（bundle.resources）。dev 時 resource_dir 是 src-tauri，
+            // 那裡也剛好有 resources/ffmpeg（fetch-ffmpeg.mjs 放的），所以本機也能測到同一條路徑。
+            {
+                let dir = app.path().resource_dir().ok().map(|r| ffmpeg::bundled_candidate(&r));
+                if let Some(d) = dir.filter(|d| d.is_dir()) {
+                    eprintln!("[ffmpeg] bundled dir: {}", d.display());
+                    *handle.state::<AppState>().bundled_ffmpeg.write() = Some(d);
+                }
+            }
             // 內建 MCP server（loopback + 隨機 token）；綁不到 port 只影響 AI 助手，不擋 App 啟動。
             {
                 let bridge = handle.state::<AppState>().mcp.clone();

@@ -21,6 +21,8 @@ pub struct AppState {
     pub agent_jobs: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
     /// 內建 MCP server 橋接（port / token / 工具目錄 / 等待中的工具呼叫）。
     pub mcp: Arc<crate::mcp::McpBridge>,
+    /// 安裝檔內建的 ffmpeg 目錄（setup 時從 resource_dir 算出；dev / 未內建時為 None）。
+    pub bundled_ffmpeg: Arc<RwLock<Option<std::path::PathBuf>>>,
 }
 
 impl AppState {
@@ -35,6 +37,7 @@ impl AppState {
             cancel_flags: Arc::new(Mutex::new(HashMap::new())),
             agent_jobs: Arc::new(Mutex::new(HashMap::new())),
             mcp: Arc::new(crate::mcp::McpBridge::new()),
+            bundled_ffmpeg: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -44,7 +47,8 @@ impl AppState {
             return Ok(b);
         }
         let custom = self.settings.read().ffmpeg_path.clone();
-        let b = ffmpeg::resolve(custom.as_deref())
+        let bundled = self.bundled_ffmpeg.read().clone();
+        let b = ffmpeg::resolve(custom.as_deref(), bundled.as_deref())
             .await
             .ok_or_else(|| AppError::Ffmpeg("找不到 ffmpeg / ffprobe，請安裝或在設定指定路徑".into()))?;
         *self.ffmpeg.lock() = Some(b.clone());
@@ -144,7 +148,8 @@ pub async fn ffmpeg_detect(state: State<'_, AppState>, custom: Option<String>) -
     let custom = custom
         .filter(|s| !s.trim().is_empty())
         .or_else(|| state.settings.read().ffmpeg_path.clone());
-    match ffmpeg::resolve(custom.as_deref()).await {
+    let bundled = state.bundled_ffmpeg.read().clone();
+    match ffmpeg::resolve(custom.as_deref(), bundled.as_deref()).await {
         Some(b) => {
             *state.ffmpeg.lock() = Some(b.clone());
             Ok(FfmpegStatus {

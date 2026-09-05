@@ -28,3 +28,6 @@ outputs/
 .aicut-cache/
 # CLI bundle（npm run cli:build 產生）
 dist-cli/
+# 內建 ffmpeg（CI 用 scripts/fetch-ffmpeg.mjs 依 manifest 抓，138 MB 不進版控）
+src-tauri/resources/ffmpeg/*
+!src-tauri/resources/ffmpeg/README.txt

@@ -25,6 +25,7 @@ import Timeline, { type WaveMenuInfo } from "../timeline/Timeline";
 import WaveContextMenu, { type MenuItem } from "../timeline/WaveContextMenu";
 import TranscriptEditor from "../transcript/TranscriptEditor";
 import TranscriptPlaceholder from "../transcript/TranscriptPlaceholder";
+import ReviewMode from "../decisions/ReviewMode";
 import StyleDialog from "../dialogs/StyleDialog";
 import Splitter from "./Splitter";
 import { useResizable } from "./useResizable";
@@ -55,6 +56,8 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   const removeCandidate = useDecisions((s) => s.removeCandidate);
   const [menu, setMenu] = useState<WaveMenuInfo | null>(null);
   const [styleFor, setStyleFor] = useState<{ startMs: number; endMs: number } | null>(null);
+  const reviewing = useDecisions((s) => s.reviewing);
+  const setReviewing = useDecisions((s) => s.setReviewing);
   const loopSel = useTimeline((s) => s.loopSelection);
   const toggleLoop = useTimeline((s) => s.toggleLoop);
   const zoomToSelection = useTimeline((s) => s.zoomToSelection);
@@ -231,6 +234,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
           ) : (
             <TranscriptPlaceholder mediaId={mediaId} onAnalyze={onAnalyze} onOpenSettings={onOpenSettings} />
           )}
+          {reviewing && mediaId && <ReviewMode mediaId={mediaId} onExit={() => setReviewing(false)} />}
         </>
       )}
     </div>

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, ListChecks, Play, X } from "lucide-react";
+import { candidateText } from "./group";
+import { useTranscript } from "../store/transcript";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState } from "../analysis/types";
 import { useT } from "../i18n";
 import { playRange } from "../preview/playerRef";
@@ -87,7 +89,9 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
   const selectedIds = useDecisions((s) => s.selectedIds);
   const select = useDecisions((s) => s.select);
   const decide = useDecisions((s) => s.decide);
-  const bulk = useDecisions((s) => s.bulk);
+  const bulkIds = useDecisions((s) => s.bulkIds);
+  const setReviewing = useDecisions((s) => s.setReviewing);
+  const words = useTranscript((s) => (mediaId ? s.byMedia[mediaId]?.words ?? EMPTY_W : EMPTY_W));
   const aggressiveness = useProject((s) => s.aggressiveness);
   const setAggressiveness = useProject((s) => s.setAggressiveness);
   const seek = usePlayback((s) => s.seek);
@@ -203,11 +207,20 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
             </button>
           ))}
         </div>
+        <button
+          type="button"
+          disabled={!mediaId || !counts.byState.pending}
+          onClick={() => setReviewing(true)}
+          title={t("一次一筆、鍵盤決定並自動前進（Esc 離開）")}
+          className="w-full h-7 text-xs rounded-sm bg-accent/15 border border-accent/40 text-accent hover:bg-accent/25 disabled:opacity-40 disabled:border-fg/10 disabled:text-fg/40 disabled:bg-transparent"
+        >
+          {t("開始審核（{n} 筆待決）", { n: counts.byState.pending })}
+        </button>
         <div className="flex gap-1">
           <button
             type="button"
             disabled={!mediaId || !visible.length}
-            onClick={() => mediaId && bulk(mediaId, (c) => visible.includes(c), "accepted", t("批次接受"))}
+            onClick={() => mediaId && bulkIds(mediaId, visible.map((c) => c.id), "accepted", t("批次接受"))}
             className="flex-1 h-7 text-xs rounded-sm border border-fg/10 hover:bg-success/10 text-fg/70 disabled:opacity-40"
           >
             {t("全部接受（{n}）", { n: visible.length })}
@@ -215,7 +228,7 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
           <button
             type="button"
             disabled={!mediaId || !visible.length}
-            onClick={() => mediaId && bulk(mediaId, (c) => visible.includes(c), "rejected", t("批次拒絕"))}
+            onClick={() => mediaId && bulkIds(mediaId, visible.map((c) => c.id), "rejected", t("批次拒絕"))}
             className="flex-1 h-7 text-xs rounded-sm border border-fg/10 hover:bg-danger/10 text-fg/70 disabled:opacity-40"
           >
             {t("全部拒絕（{n}）", { n: visible.length })}
@@ -262,11 +275,18 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-xs ${KIND_CLASS[c.kind]}`}>{t(KIND_LABEL[c.kind])}</span>
                   <span className="mono text-[11px] text-fg/45">{formatMs(c.startMs, { millis: false })}</span>
                   <span className="mono text-[10px] text-fg/30">{((c.endMs - c.startMs) / 1000).toFixed(2)}s</span>
+                  <span className="mono text-[10px] text-fg/25" title={t("規則分數（越高越該剪）")}>
+                    {c.score.toFixed(2)}
+                  </span>
                   <Badge tone={st === "auto" ? "accent" : st === "accepted" ? "success" : st === "rejected" ? "neutral" : "warning"} className="ml-auto">
                     {t(st === "auto" ? "自動" : st === "accepted" ? "接受" : st === "rejected" ? "拒絕" : "待決")}
                   </Badge>
                 </div>
-                <div className="mt-1 text-xs text-fg/70 leading-snug">{c.reason}</div>
+                {(() => {
+                  const text = candidateText(c, words);
+                  return text ? <div className="mt-1 text-sm text-fg/90 leading-snug break-words line-clamp-1">「{text}」</div> : null;
+                })()}
+                <div className="mt-0.5 text-xs text-fg/60 leading-snug line-clamp-2">{c.reason}</div>
                 {d?.reason && d.origin === "llm" && <div className="mt-0.5 text-[11px] text-info/80">AI：{d.reason}</div>}
                 <div className="mt-1.5 flex items-center gap-1">
                   <IconButton icon={Play} label={t("預聽")} iconSize={13} box="w-6 h-6" onClick={(e) => { e.stopPropagation(); preview(c); }} />
@@ -304,4 +324,5 @@ export default function DecisionPanel({ mediaId, analysisState, onRerunRules }: 
 }
 
 const EMPTY_C: Candidate[] = [];
+const EMPTY_W: never[] = [];
 const EMPTY_D: Record<string, never> = {};

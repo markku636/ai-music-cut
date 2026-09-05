@@ -163,7 +163,7 @@ export default function App() {
     void useSettings.getState().load();
     // React 已掛載 → 撤掉 index.html 的靜態骨架屏。
     document.getElementById("boot-splash")?.remove();
-    // dev 煙霧測試：AICUT_DEV_OPEN=<音檔> [AICUT_DEV_ANALYZE=1] npm run tauri dev
+    // dev 煙霧測試：AICUT_DEV_OPEN=<音檔> [AICUT_DEV_ANALYZE=1 AICUT_DEV_REVIEW=1 …] npm run tauri dev
     void (async () => {
       if (devAutoOpened) return; // React StrictMode 會跑兩次 effect
       devAutoOpened = true;
@@ -183,6 +183,7 @@ export default function App() {
             await runRender(id, { format: "mp3", outPath: defaultOutPath(m, "mp3", null), leveling: true, targetLufs: -16 }).catch(log("render"));
           }
         }
+        if (await api.devEnv("AICUT_DEV_REVIEW").catch(() => null)) useDecisions.getState().setReviewing(true);
         const ask = await api.devEnv("AICUT_DEV_ASK").catch(() => null);
         if (ask) {
           useAssistant.getState().setOpen(true);

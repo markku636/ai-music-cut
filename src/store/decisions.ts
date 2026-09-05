@@ -26,6 +26,8 @@ interface DecisionsStore {
   effects: Record<string, AudioEffect[]>;
   selectedIds: string[];
   filter: DecisionFilter;
+  /** 審核模式（一次一筆、鍵盤決定並自動前進）。 */
+  reviewing: boolean;
   past: Patch[];
   future: Patch[];
 
@@ -43,8 +45,15 @@ interface DecisionsStore {
   updateEffect: (mediaId: string, id: string, patch: Partial<Omit<AudioEffect, "id">>) => void;
   removeEffect: (mediaId: string, id: string) => void;
   bulk: (mediaId: string, pred: (c: Candidate, d: Decision | undefined) => boolean, state: DecisionState, label?: string) => number;
+  /**
+   * 直接對一串 id 下決定。取代 `bulk(c => visible.includes(c))` —— 那個寫法每筆都要掃一次
+   * visible 陣列，80 個候選就是 6400 次比較，而且呼叫端還得先算出整個 visible。
+   * 一樣走 commit()，所以整批仍然是「一筆 undo」。
+   */
+  bulkIds: (mediaId: string, ids: string[], state: DecisionState, label?: string) => number;
   select: (ids: string[]) => void;
   setFilter: (f: Partial<DecisionFilter>) => void;
+  setReviewing: (v: boolean) => void;
   undo: () => void;
   redo: () => void;
   clear: (mediaId: string) => void;
@@ -89,6 +98,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     effects: {},
     selectedIds: [],
     filter: { kinds: null, states: null },
+    reviewing: false,
     past: [],
     future: [],
 
@@ -203,8 +213,18 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       return ids.length;
     },
 
+    bulkIds: (mediaId, ids, state, label) => {
+      if (!ids.length) return 0;
+      const known = new Set((get().candidates[mediaId] ?? []).map((c) => c.id));
+      const use = ids.filter((id) => known.has(id));
+      if (!use.length) return 0;
+      get().decide(mediaId, use, state, { label: label ?? `批次${state === "accepted" ? "接受" : "拒絕"} ${use.length} 筆` });
+      return use.length;
+    },
+
     select: (ids) => set({ selectedIds: ids }),
     setFilter: (f) => set((s) => ({ filter: { ...s.filter, ...f } })),
+    setReviewing: (v) => set({ reviewing: v }),
 
     undo: () => {
       const p = get().past[get().past.length - 1];

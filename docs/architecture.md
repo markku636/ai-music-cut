@@ -77,6 +77,9 @@
    `Overlay {lane, mediaId, srcIn/srcOut, outStartMs, gainDb, fadeIn/Out, points[]}` 掛在 decisions store（undo）與專案檔。
    **位置釘在成品時間**，不是來源時間 —— 使用者是在剪好的節目上決定「開場音樂放這裡」，
    之後再多剪掉幾個贅字，音樂不該跟著往前跑。時間軸畫的時候用 `mapOutToSrc` 換回來源時間才對得上波形。
+   成品長度是「主聲軌與所有配樂之中最晚結束的那一個」（`outputDurationWithOverlays`）——
+   片尾曲會在最後一句話之後才播完，成品要蓋得住它，不然音樂會在講完的那一刻被硬切且不報錯。
+   TS 與 Rust 兩邊都要算同一個長度，否則驗收會誤報「成品長度不對」。
    混音在 `run()` 裡插在 **cut 之後、measure 之前** —— loudnorm 要對的是使用者聽到的那一份（含配樂），
    先量主聲軌再加音樂的話成品會比目標響度大。
 

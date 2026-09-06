@@ -200,3 +200,19 @@ export function envelopeGain(o: Overlay, ms: number, lenMs: number): number {
   if (o.fadeOutMs > 0 && ms > lenMs - o.fadeOutMs) g *= Math.min(1, Math.max(0, (lenMs - ms) / o.fadeOutMs));
   return g;
 }
+
+/**
+ * 成品實際會有多長：主聲軌與所有配樂 / 音效之中最晚結束的那一個。
+ *
+ * 片尾曲會在最後一句話**之後**才播完，成品必須長到蓋得住它 —— 不然音樂會在講完的
+ * 那一刻被硬切掉，而且不會有任何錯誤訊息。驗收（音訊比對）也吃這個長度，
+ * 兩邊算的不一樣就會誤報「成品長度不對」。
+ */
+export function outputDurationWithOverlays(mainOutMs: number, overlays: Overlay[]): number {
+  let end = mainOutMs;
+  for (const o of overlays) {
+    const e = o.outStartMs + overlayLengthMs(o);
+    if (e > end) end = e;
+  }
+  return end;
+}

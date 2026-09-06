@@ -5,6 +5,7 @@ import type { Edl } from "../analysis/edl/build";
 import { DEFAULT_EDL_OPTIONS } from "../analysis/edl/build";
 import { buildChapters, toFfmetadata, type Chapter } from "../analysis/chapters";
 import { clipOverlays, clipUnits } from "../analysis/clip";
+import { outputDurationWithOverlays } from "../analysis/overlays";
 import { mapSrcToOut } from "../analysis/edl/map";
 import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
 import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
@@ -109,18 +110,18 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   const channels = Math.max(1, Math.min(2, media.probe?.audio?.channels ?? 1));
   const effects = (useDecisions.getState().effects[mediaId] ?? []).map((e) => ({ kind: e.kind, start_ms: e.startMs, end_ms: e.endMs, db: e.db ?? 0 }));
   // 章節：標記是釘在來源上的，要換算成成品時間才寫進檔案
-  const expectedOutMs = planOutDurationMs(
+  const mainOutMs = planOutDurationMs(
     segs.map((sg) => ({ startMs: sg.src_start_ms, endMs: sg.src_end_ms })),
     joins,
   );
   // 章節只寫進完整成品：一段 60 秒的預告不需要章節，而且時間軸原點不一樣
-  const chapters = opts.rangeMs ? [] : buildChapters(useDecisions.getState().markers[mediaId] ?? [], edl, { outDurationMs: expectedOutMs });
+  const chapters = opts.rangeMs ? [] : buildChapters(useDecisions.getState().markers[mediaId] ?? [], edl, { outDurationMs: mainOutMs });
   // 墊樂 / 音效。**先夾再轉成 RenderOverlay** —— 夾的邏輯用的是 store 的欄位名，
   // 而且只輸出一段時要連來源進出點一起移（不然音樂會從頭重播）。
   // 配樂的位置是成品時間，所以要先知道選取起點落在成品的哪裡。
   const storeOverlays = useDecisions.getState().overlays[mediaId] ?? [];
   const outOffsetMs = opts.rangeMs ? mapSrcToOut(edl.keeps, opts.rangeMs.startMs) : 0;
-  const kept = opts.rangeMs ? clipOverlays(storeOverlays, outOffsetMs, expectedOutMs) : storeOverlays;
+  const kept = opts.rangeMs ? clipOverlays(storeOverlays, outOffsetMs, mainOutMs) : storeOverlays;
   const clipped: RenderOverlay[] = [];
   for (const o of kept) {
     const srcMedia = proj.media.find((m) => m.id === o.mediaId);
@@ -160,7 +161,8 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     edl,
     units: units.length,
     gains,
-    expectedOutMs,
+    // 片尾曲可能比最後一句話還晚結束 —— 驗收要對的是成品實際長度
+    expectedOutMs: outputDurationWithOverlays(mainOutMs, kept),
     chapters,
   };
 }

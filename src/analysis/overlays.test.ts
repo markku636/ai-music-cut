@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_DUCK, ENV_MIN_DB, envDbToY, envYToDb, envelopeDb, envelopeGain, mergeRegions, planDuck, voiceRegionsInOutput, type Overlay } from "./overlays";
+import { DEFAULT_DUCK, ENV_MIN_DB, envDbToY, envYToDb, envelopeDb, envelopeGain, mergeRegions, outputDurationWithOverlays, planDuck, voiceRegionsInOutput, type Overlay } from "./overlays";
 
 function clip(outStartMs: number, lenMs: number): Overlay {
   return {
@@ -190,5 +190,28 @@ describe("音量包絡（與 Rust 的 mix.rs 對拍）", () => {
 
   it("非常低的 dB 是靜音，不是一個很小的數字", () => {
     expect(envelopeGain(mk(-96, []), 0, 10000)).toBe(0);
+  });
+});
+
+describe("outputDurationWithOverlays", () => {
+  const clip2 = (outStartMs: number, lenMs: number): Overlay => ({
+    id: "ov", lane: "music", mediaId: "m", srcInMs: 0, srcOutMs: lenMs, outStartMs, gainDb: 0, fadeInMs: 0, fadeOutMs: 0,
+  });
+
+  it("片尾曲比最後一句話晚結束時，成品要跟著變長", () => {
+    // 主聲軌 30 秒，片尾曲從 28 秒開始播 10 秒 → 成品 38 秒
+    expect(outputDurationWithOverlays(30000, [clip2(28000, 10000)])).toBe(38000);
+  });
+
+  it("配樂完全在裡面就不影響長度", () => {
+    expect(outputDurationWithOverlays(30000, [clip2(5000, 10000)])).toBe(30000);
+  });
+
+  it("沒有配樂就是主聲軌的長度", () => {
+    expect(outputDurationWithOverlays(30000, [])).toBe(30000);
+  });
+
+  it("取最晚結束的那一個", () => {
+    expect(outputDurationWithOverlays(30000, [clip2(28000, 5000), clip2(10000, 40000)])).toBe(50000);
   });
 });

@@ -177,7 +177,7 @@ pub async fn mix_overlays(
 ) -> AppResult<u64> {
     let ch = plan.channels.max(1) as usize;
     let mut reader = hound::WavReader::open(in_wav).map_err(|e| AppError::Io(format!("讀取 concat.wav 失敗：{e}")))?;
-    let total_frames = reader.len() as u64 / ch as u64;
+    let main_frames = reader.len() as u64 / ch as u64;
 
     let spec = hound::WavSpec {
         channels: ch as u16,
@@ -202,6 +202,10 @@ pub async fn mix_overlays(
         .collect();
     ovs.sort_by_key(|(_, s, _)| *s);
 
+    // 片尾曲會在最後一句話**之後**才播完 —— 成品要長到蓋得住它，
+    // 否則音樂會在講完的那一刻被硬切掉（而且不會有任何錯誤）。
+    let total_frames = ovs.iter().map(|(_, _, e)| *e).chain(std::iter::once(main_frames)).max().unwrap_or(main_frames);
+
     // idx → (起 frame, 迄 frame)，避免在逐 frame 的迴圈裡做線性搜尋
     let mut span: HashMap<usize, (u64, u64)> = HashMap::new();
     for (i, s0, e0) in &ovs {
@@ -220,9 +224,14 @@ pub async fn mix_overlays(
             return Err(AppError::Canceled);
         }
         for s in frame.iter_mut() {
-            let v = match samples.next() {
-                Some(Ok(x)) => x,
-                _ => 0.0,
+            // 主聲軌播完之後補靜音（片尾曲還在播）
+            let v = if t < main_frames {
+                match samples.next() {
+                    Some(Ok(x)) => x,
+                    _ => 0.0,
+                }
+            } else {
+                0.0
             };
             // 配樂 stem：主聲軌靜音，但仍然要把樣本讀掉（不然時間軸會錯位）
             *s = if plan.mute_main { 0.0 } else { v };

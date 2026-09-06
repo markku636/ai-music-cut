@@ -64,6 +64,8 @@ function num(f: Record<string, string | true>, k: string, d: number): number {
 }
 
 const log = (s: string) => process.stderr.write(`${s}\n`);
+/** 會被忽略的東西一定要出聲：安靜地少東西最難發現（檔案有產出、長度也對，只是音樂不見了）。 */
+const warn = (s: string) => process.stderr.write(`\u26a0 ${s}\n`);
 const fmtMs = (ms: number) => {
   const t = Math.max(0, Math.floor(ms));
   const m = Math.floor(t / 60000);
@@ -179,6 +181,14 @@ interface Analysis {
   effects: AudioEffect[];
   /** App 裡用刀片切的切點。沒讀的話 CLI 會剪出跟 App 不一樣長度的成品。 */
   splits: SplitPoint[];
+  /**
+   * CLI **做不到**的東西有幾個。
+   *
+   * CLI 的剪接器是 ffmpeg 的 atrim + concat，沒有 App 那套逐 frame 混音，也不寫章節。
+   * 專案裡有配樂 / 章節時，CLI 產出的東西會跟 App 不一樣 —— 這種「安靜地少東西」
+   * 最難發現（檔案有產出、長度也對，只是音樂不見了），所以一定要出聲。
+   */
+  unsupported: { overlays: number; chapters: number };
 }
 
 async function analyze(file: string, ff: Ffmpeg, flags: Record<string, string | true>): Promise<Analysis> {
@@ -206,7 +216,7 @@ async function analyze(file: string, ff: Ffmpeg, flags: Record<string, string | 
     log(`AI 判讀完成：剪 ${applied}、不剪 ${dropped}、新增建議 ${r.added.length}${r.failed ? `（${r.failed} 個視窗失敗）` : ""}`);
     for (const w of r.warnings.slice(0, 5)) log(`  ! ${w}`);
   }
-  return { transcript, candidates, decisions, effects: [], splits: [] };
+  return { transcript, candidates, decisions, effects: [], splits: [], unsupported: { overlays: 0, chapters: 0 } };
 }
 
 function summarizeKinds(cands: Candidate[]): string {
@@ -220,7 +230,18 @@ async function loadProject(p: string): Promise<Analysis & { mediaPath: string | 
     media?: { id: string; path: string }[];
     activeMediaId?: string | null;
     settings?: { aggressiveness?: number; targetLufs?: number };
-    analysis?: Record<string, { transcript?: Transcript; candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[]; splits?: SplitPoint[] }>;
+    analysis?: Record<
+      string,
+      {
+        transcript?: Transcript;
+        candidates?: Candidate[];
+        decisions?: DecisionMap;
+        effects?: AudioEffect[];
+        splits?: SplitPoint[];
+        overlays?: { lane: string }[];
+        markers?: { kind: string }[];
+      }
+    >;
   };
   const id = doc.activeMediaId ?? doc.media?.[0]?.id;
   const rec = id ? doc.analysis?.[id] : undefined;
@@ -232,6 +253,10 @@ async function loadProject(p: string): Promise<Analysis & { mediaPath: string | 
     decisions: rec.decisions ?? {},
     effects: rec.effects ?? [],
     splits: rec.splits ?? [],
+    unsupported: {
+      overlays: rec.overlays?.length ?? 0,
+      chapters: (rec.markers ?? []).filter((m) => m.kind === "chapter").length,
+    },
     mediaPath: media?.path ?? null,
     aggressiveness: doc.settings?.aggressiveness ?? 50,
     targetLufs: doc.settings?.targetLufs ?? -16,
@@ -317,7 +342,14 @@ async function cmdCut(args: Args): Promise<void> {
     file = file || p.mediaPath || "";
     if (!args.flags.aggressiveness) aggr = p.aggressiveness;
     if (!args.flags.lufs) lufs = p.targetLufs;
-    log(`專案：${a.candidates.length} 個候選、${a.effects.length} 個效果（沿用 App 決策）`);
+    log(`專案：${a.candidates.length} 個候選、${a.effects.length} 個效果、${a.splits.length} 個切點（沿用 App 決策）`);
+    // 安靜地少東西最難發現（檔案有產出、長度也對，只是音樂不見了），所以講清楚
+    if (a.unsupported.overlays > 0) {
+      warn(`這個專案有 ${a.unsupported.overlays} 段配樂 / 音效，**CLI 不會把它們混進去** —— 需要配樂請用 App 輸出。`);
+    }
+    if (a.unsupported.chapters > 0) {
+      warn(`這個專案有 ${a.unsupported.chapters} 個章節，**CLI 不會寫進成品** —— 需要章節請用 App 輸出。`);
+    }
   } else {
     if (!file) throw new Error("請給音檔路徑");
     a = await analyze(file, ff, args.flags);

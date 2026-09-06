@@ -68,7 +68,9 @@ node dist-cli/aicut.mjs style song.mp3 "acoustic guitar" --from 30 --to 60   # �
 node dist-cli/aicut.mjs verify ep12.m4a ep12_cut.mp3                       # ASR 驗收（有漏字 / 該剪沒剪 → exit code 2，可接 CI）
 ```
 
-金鑰：`--key`、環境變數 `AICUT_TTLS_API_KEY`、或專案根目錄 `.env.local`；不會印出、不寫進任何輸出。CLI 只做全域 loudnorm（沒有 App 的逐段平衡）。
+金鑰：`--key`、環境變數 `AICUT_TTLS_API_KEY`、或專案根目錄 `.env.local`；不會印出、不寫進任何輸出。
+
+**CLI 與 App 的差別**（`cut --project` 會逐項提醒，不會安靜地少東西）：CLI 的剪接器是 ffmpeg 的 `atrim` + `concat`，所以只做全域 loudnorm（沒有逐段平衡）、**不會混入配樂 / 音效**、**不會寫章節**。專案裡有這些東西時 CLI 會出聲說它跳過了什麼；需要完整成品請用 App 輸出。切點、手動剪輯、效果與決策則完全沿用。
 
 ## 開發
 

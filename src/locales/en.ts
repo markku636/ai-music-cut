@@ -836,6 +836,13 @@ const en: Catalog = {
   "移除配樂": "Remove music",
   "調整效果": "Adjust effect",
   "在波形上拖曳選一段 → 播放 / 剪掉 / 只保留（右鍵有更多）": "Drag on the waveform to select a range, then play / cut / keep only (right-click for more)",
+  // 人工標記與待辦（v0.45.0）
+  "在這裡下待辦": "Add a to-do here",
+  "下了待辦 {at}　到「索引」分頁寫要做什麼": "To-do added at {at} - write what to do in the Index tab",
+  "在播放線新增": "Add at playhead",
+  "M / Shift+M / Alt+M": "M / Shift+M / Alt+M",
+  "下標記 / 下章節（會寫進成品檔案）/ 下待辦": "Add marker / chapter (written into the export) / to-do",
+  // 人工標記與待辦（v0.45.0）
 };
 
 

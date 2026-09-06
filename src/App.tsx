@@ -379,14 +379,21 @@ export default function App() {
           if (sel) seekTo(sel.endMs);
         },
         nudge: (ms) => seekTo(Math.max(0, usePlayback.getState().currentMs + ms)),
-        addMarker: (chapter) => {
+        addMarker: (kind) => {
           const id = useProject.getState().activeMediaId;
           if (!id) return;
           const ms = usePlayback.getState().currentMs;
-          useDecisions.getState().addMarker(id, ms, chapter ? "chapter" : "standard");
-          // 章節要取名字才有用，直接把索引分頁叫出來
-          if (chapter) useUi.getState().setTab("index");
-          toast.info(chapter ? t("下了章節 {at}　到「索引」分頁取名字", { at: formatMs(ms, { millis: false }) }) : t("下了標記 {at}", { at: formatMs(ms, { millis: false }) }));
+          useDecisions.getState().addMarker(id, ms, kind);
+          // 章節與待辦都要取名字才有用，直接把索引分頁叫出來
+          if (kind !== "standard") useUi.getState().setTab("index");
+          const at = formatMs(ms, { millis: false });
+          toast.info(
+            kind === "chapter"
+              ? t("下了章節 {at}　到「索引」分頁取名字", { at })
+              : kind === "todo"
+                ? t("下了待辦 {at}　到「索引」分頁寫要做什麼", { at })
+                : t("下了標記 {at}", { at }),
+          );
         },
         stepMarker: (dir) => {
           const id = useProject.getState().activeMediaId;

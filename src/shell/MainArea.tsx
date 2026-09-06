@@ -235,6 +235,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
       { label: t("在這裡切一刀"), icon: Slice, shortcut: "B", onClick: () => void bladeAt(info.ms) },
       { label: t("在這裡下標記"), icon: Flag, shortcut: "M", onClick: () => mediaId && addMarker(mediaId, info.ms, "standard") },
       { label: t("在這裡下章節"), icon: BookMarked, shortcut: "Shift+M", onClick: () => mediaId && addMarker(mediaId, info.ms, "chapter") },
+      { label: t("在這裡下待辦"), icon: Check, shortcut: "Alt+M", onClick: () => mediaId && addMarker(mediaId, info.ms, "todo") },
       ...(otherMedia.length
         ? [
             { separator: true } as MenuItem,

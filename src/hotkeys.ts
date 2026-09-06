@@ -39,8 +39,8 @@ export interface HotkeyHandlers {
   gotoOut?: () => void;
   /** Alt+← / →：微調播放線（Shift 再細一級）。 */
   nudge?: (ms: number) => void;
-  /** M：下標記；Shift+M：下章節（會寫進成品檔案）。 */
-  addMarker?: (chapter: boolean) => void;
+  /** M：下標記；Shift+M：下章節（會寫進成品檔案）；Alt+M：下待辦。 */
+  addMarker?: (kind: "standard" | "chapter" | "todo") => void;
   /** Alt+[ / Alt+]：上 / 下一個標記。 */
   stepMarker?: (dir: 1 | -1) => void;
   escape?: () => void;
@@ -233,7 +233,8 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
         return;
       case "m":
       case "M":
-        h.addMarker?.(e.shiftKey);
+        // Alt+M 是待辦：M 已經是標記、Shift+M 已經是章節，第三種只剩 Alt
+        h.addMarker?.(e.altKey ? "todo" : e.shiftKey ? "chapter" : "standard");
         return;
       case "a":
       case "A":

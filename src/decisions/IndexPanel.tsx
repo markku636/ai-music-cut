@@ -4,7 +4,7 @@
 // 波形只看得到「現在這一段」，找東西只能拖著捲軸掃 —— 索引把整條時間軸攤成一份
 // 可以搜尋、可以篩選的清單，點一下就跳過去。章節在這裡改標題，因為那是會寫進
 // 成品檔案的東西，不該只能在波形上用 tooltip 摸。
-import { BookMarked, Check, Flag, ListTree, Scissors, Search, SquareDashed, Trash, Volume2, X } from "lucide-react";
+import { BookMarked, Check, Flag, ListTree, Plus, Scissors, Search, SquareDashed, Trash, Volume2, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { AudioEffect } from "../analysis/effects";
 import { effectLabel } from "../analysis/effects";
@@ -66,6 +66,8 @@ export default function IndexPanel({
   const updateMarker = useDecisions((s) => s.updateMarker);
   const removeMarker = useDecisions((s) => s.removeMarker);
   const seek = usePlayback((s) => s.seek);
+  const addMarker = useDecisions((s) => s.addMarker);
+  const currentMs = usePlayback((s) => s.currentMs);
   const setFocusSeam = useTimeline((s) => s.setFocusSeam);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<RowKind | "all">("all");
@@ -129,6 +131,33 @@ export default function IndexPanel({
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="p-2 border-b border-fg/10 space-y-1.5">
+        {/*
+          在播放線新增。快捷鍵（M / Shift+M / Alt+M）本來就有，但只有看過說明的人知道 ——
+          待辦尤其埋得深：類型、勾選、篩選都做好了，卻沒有任何地方能直接新增一個。
+        */}
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] uppercase tracking-wide text-fg/35 mr-0.5">{t("在播放線新增")}</span>
+          {(
+            [
+              { kind: "standard" as MarkerKind, icon: Flag, label: t("標記"), sc: "M" },
+              { kind: "chapter" as MarkerKind, icon: BookMarked, label: t("章節"), sc: "Shift+M" },
+              { kind: "todo" as MarkerKind, icon: Check, label: t("待辦"), sc: "Alt+M" },
+            ]
+          ).map((b) => (
+            <button
+              key={b.kind}
+              type="button"
+              disabled={!mediaId}
+              onClick={() => mediaId && addMarker(mediaId, currentMs, b.kind)}
+              title={`${b.label}（${b.sc}）`}
+              className="inline-flex items-center gap-1 rounded-sm px-1.5 h-6 text-[11px] text-fg/65 hover:bg-fg/10 hover:text-fg disabled:opacity-40 disabled:pointer-events-none"
+            >
+              <Plus size={11} />
+              <b.icon size={12} />
+              {b.label}
+            </button>
+          ))}
+        </div>
         <div className="relative">
           <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-fg/35" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("搜尋標記 / 章節 / 接縫…")} className="pl-7" />

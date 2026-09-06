@@ -26,6 +26,8 @@ export interface HotkeyHandlers {
   blade?: () => void;
   /** N：吸附開關。 */
   toggleSnap?: () => void;
+  /** Shift+S：滑過波形就聽得到（Final Cut 的 audio skimming）。 */
+  toggleSkim?: () => void;
   /** Shift+Delete：提起（留白靜音，不關洞）。 */
   liftSelection?: () => void;
   /** J / K / L 轉盤。slow = 按住 K 的時候點的（0.5x）。 */
@@ -163,8 +165,11 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
         h.toolSeek?.();
         return;
       case "s":
-      case "S":
         h.toolSelect?.();
+        return;
+      case "S":
+        // Final Cut 的 audio skimming 就是 Shift+S；S 本身在這裡已經是「選取工具」
+        h.toggleSkim?.();
         return;
       case "t":
       case "T":

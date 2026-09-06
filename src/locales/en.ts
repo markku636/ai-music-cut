@@ -701,6 +701,10 @@ const en: Catalog = {
   "三項都關著，沒有東西可以比較": "All three are off, so there is nothing to compare",
   "修聲在響度正規化之前套用，輸出與預覽都會生效。": "Cleanup is applied before loudness normalisation, and affects both exports and previews.",
   "修聲（降噪 / 去隆隆 / 齒音）": "Clean up audio (noise, rumble, sibilance)",
+  // skimming（v0.36.0）
+  "滑過就聽得到（開，Shift+S）": "Skimming on (Shift+S)",
+  "滑過波形就聽得到（Shift+S）": "Hear the waveform as you move over it (Shift+S)",
+  "滑過波形就聽得到（skimming）開關": "Toggle skimming (hear the waveform as you move over it)",
 };
 
 

@@ -22,6 +22,7 @@ const ROWS: [string, string][] = [
   ["Ctrl+Z / Ctrl+Y", "復原 / 重做"],
   ["Ctrl+A", "全選（整段變成時間選取）"],
   ["Ctrl+F", "在逐字稿裡找字（找到可整集一次剪掉）"],
+  ["Shift+S", "滑過波形就聽得到（skimming）開關"],
   ["Ctrl+O / Ctrl+S", "開啟音檔 / 儲存專案"],
   ["Ctrl+= / Ctrl+- / Ctrl+0", "時間軸縮放 / 適配"],
   ["Ctrl+滾輪 / 滾輪", "以游標為中心縮放 / 放大後水平捲動"],

@@ -9,7 +9,9 @@ import type { Overlay } from "../analysis/overlays";
 import { wavesurferPeaks, type LocalAnalysis } from "../analysis/peaks";
 import { isActiveState, type Candidate, type CandidateKind, type DecisionMap, type Marker } from "../analysis/types";
 import { getPlayer } from "../preview/playerRef";
+import { setSkimSource, skimTo, stopSkim } from "../preview/skimPlayer";
 import { usePlayback } from "../store/playback";
+import { useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
 import { useTheme } from "../theme";
 import { formatMs } from "../time";
@@ -184,6 +186,8 @@ export default function Timeline(props: TimelineProps) {
   const themeId = useTheme((s) => s.themeId);
   const followMode = usePlayback((s) => s.followMode);
   const tool = useTimeline((s) => s.tool);
+  const skim = useTimeline((s) => s.skim);
+  const playing = usePlayback((s) => s.playing);
   const selection = useTimeline((s) => s.selection);
   const waveH = Math.max(40, height - 16 - RULER_H);
 
@@ -427,6 +431,30 @@ export default function Timeline(props: TimelineProps) {
     }
   }, [analysis, props.effects, themeId]);
 
+  useEffect(() => {
+    const m = useProject.getState().media.find((x) => x.id === props.mediaId);
+    setSkimSource(skim && !playing && m ? m.path : null);
+    return stopSkim;
+  }, [skim, playing, props.mediaId]);
+
+  // 游標的 x → 來源時間（skim 與右鍵選單共用同一條換算）
+  const msAtClientX = (clientX: number): number | null => {
+    const ws = wsRef.current;
+    const box = boxRef.current;
+    if (!ws || !box) return null;
+    const s = useTimeline.getState();
+    const px = s.pxPerSec ?? s.fitPxPerSec;
+    const x = clientX - box.getBoundingClientRect().left;
+    return Math.max(0, Math.min(durationMs, ((ws.getScroll() + x) / px) * 1000));
+  };
+
+  // 滑過就聽得到。正在播的時候不做 —— 那會變成兩個聲音疊在一起
+  const onPointerMove = (ev: React.PointerEvent<HTMLDivElement>) => {
+    if (!skim || ev.buttons !== 0) return;
+    const ms = msAtClientX(ev.clientX);
+    if (ms !== null) skimTo(ms, durationMs);
+  };
+
   const onContextMenu = (ev: React.MouseEvent<HTMLDivElement>) => {
     const ws = wsRef.current;
     const box = boxRef.current;
@@ -479,7 +507,7 @@ export default function Timeline(props: TimelineProps) {
   return (
     <div className="relative h-full px-2 py-2 overflow-hidden" style={{ height }}>
       <div className="relative w-full h-full">
-        <div ref={boxRef} className="w-full h-full" onContextMenu={onContextMenu} />
+        <div ref={boxRef} className="w-full h-full" onContextMenu={onContextMenu} onPointerMove={onPointerMove} onPointerLeave={stopSkim} />
         <BeatGridOverlay ws={wsInstance} height={waveH + RULER_H} />
         <TrimHandles ws={wsInstance} height={waveH + RULER_H} seams={props.seams} onOpenMenu={props.onSeamMenu} />
         <MarkerOverlay ws={wsInstance} markers={props.markers} onMove={props.onMarkerMove} onMenu={props.onMarkerMenu} />

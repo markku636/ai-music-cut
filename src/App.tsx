@@ -391,6 +391,7 @@ export default function App() {
           if (m?.probe) useTimeline.getState().setSelection({ startMs: 0, endMs: m.probe.duration_ms });
         },
         findText: () => useUi.getState().setTranscriptSearch(true),
+        toggleSkim: () => useTimeline.getState().toggleSkim(),
       }),
     [],
   );

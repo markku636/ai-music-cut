@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Crosshair, FastForward, Hand, Maximize2, MousePointer2, MoveHorizontal, Music2, Pause, Play, Rewind, Scissors, SquareDashed, Target, Unlink, ZoomIn, ZoomOut } from "lucide-react";
+import { Crosshair, Ear, FastForward, Hand, Maximize2, MousePointer2, MoveHorizontal, Music2, Pause, Play, Rewind, Scissors, SquareDashed, Target, Unlink, ZoomIn, ZoomOut } from "lucide-react";
 import { IconButton, Segmented } from "../ui/index";
 import { useT } from "../i18n";
 import { usePlayback } from "../store/playback";
@@ -35,6 +35,8 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
   const setDownbeatAt = useTimeline((s) => s.setDownbeatAt);
   const tap = useTimeline((s) => s.tap);
   const setTool = useTimeline((s) => s.setTool);
+  const skim = useTimeline((s) => s.skim);
+  const toggleSkim = useTimeline((s) => s.toggleSkim);
   const removedMs = cuts.reduce((s, c) => s + (c.endMs - c.startMs), 0);
   const editedNow = editedTimeAt(cuts, currentMs);
   // 窄版（主區 < 620px）：工具切換只留圖示、縮放讀數收起，避免換行擠成兩三列
@@ -101,6 +103,12 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
         ]}
       />
       <SnapMenu hasGrid={!!beatGrid} />
+      <IconButton
+        icon={Ear}
+        label={skim ? t("滑過就聽得到（開，Shift+S）") : t("滑過波形就聽得到（Shift+S）")}
+        active={skim}
+        onClick={toggleSkim}
+      />
       {beatGrid && (
         <span className="flex items-center gap-0.5">
           <button

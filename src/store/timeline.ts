@@ -68,6 +68,9 @@ interface TimelineStore {
   toggleBeats: () => void;
   /** 吸附總開關（N）。 */
   toggleSnap: () => void;
+  /** 滑過波形就聽得到（Final Cut 的 audio skimming，Shift+S）。 */
+  skim: boolean;
+  toggleSkim: () => void;
   setSnapKind: (kind: keyof SnapEnabled, on: boolean) => void;
   setSnapSources: (src: SnapSources) => void;
   /** 吸附一個時間值（拖曳接縫 / 切刀 / 微調都走這支），順便記下吸到哪。 */
@@ -166,6 +169,8 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   gridOverride: NO_OVERRIDE,
   taps: [],
   showBeats: readBool("aicut:showBeats", true),
+  // 預設關著：滑鼠經過波形就出聲，沒預期到的人會被嚇到，要自己打開才算同意
+  skim: readBool("aicut:skim", false),
   snap: {
     enabled: readBool("aicut:snapEnabled", true),
     beats: readBool("aicut:snapBeats", true),
@@ -216,6 +221,11 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     set((s) => {
       writeBool("aicut:snapEnabled", !s.snap.enabled);
       return { snap: { ...s.snap, enabled: !s.snap.enabled }, lastSnapHit: null };
+    }),
+  toggleSkim: () =>
+    set((s) => {
+      writeBool("aicut:skim", !s.skim);
+      return { skim: !s.skim };
     }),
   setSnapKind: (kind, on) =>
     set((s) => {

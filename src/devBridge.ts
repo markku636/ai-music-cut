@@ -10,6 +10,7 @@ import { currentGain } from "./preview/previewGain";
 import { tickCount, tickRunning } from "./preview/ticker";
 import { useDecisions } from "./store/decisions";
 import { usePlayback } from "./store/playback";
+import { skimStatus, skimTo } from "./preview/skimPlayer";
 import { useProject } from "./store/project";
 import { useTimeline } from "./store/timeline";
 import { bladeAt, seamsOfEdl, setSeamPause, trimSeam, type SeamInfo } from "./timeline/trimActions";
@@ -45,6 +46,8 @@ export interface DevBridge {
   trimSeam: typeof trimSeam;
   liftSelection: typeof liftSelection;
   setSeamPause: typeof setSeamPause;
+  skimStatus: typeof skimStatus;
+  skimTo: typeof skimTo;
   seams: () => SeamInfo[];
 }
 
@@ -97,6 +100,11 @@ export function installDevBridge() {
     trimSeam,
     liftSelection,
     setSeamPause,
+    // skim 的狀態一定要從**這裡**讀。手動 import("/src/preview/skimPlayer.ts") 會拿到
+    // 另一個模組實例（Vite 給 App 的是帶 ?t= 的 HMR 網址），模組層的 srcPath / el 不共用，
+    // 量起來永遠是「沒有音源」。
+    skimStatus,
+    skimTo,
     seams: () => {
       const id = useProject.getState().activeMediaId;
       return id ? seamsOfEdl(edlFor(id)) : [];

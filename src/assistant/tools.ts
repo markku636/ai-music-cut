@@ -285,7 +285,14 @@ export const TOOLS: ToolSpec[] = [
         `AI 助手：逐字稿剪除「${q}」`,
         `AI：剪掉「${q}」×${picked.length}`,
       );
-      return { query: q, cut: picked.length, added, removedMs: Math.round(totalMs(picked)) };
+      return {
+        query: q,
+        cut: picked.length,
+        added,
+        removedMs: Math.round(totalMs(picked)),
+        // 重試同一個查詢時講清楚「已經剪過了」，否則模型會以為沒生效而一直重打
+        note: added === 0 ? "這些段落先前就已經剪掉了，這次沒有變動" : undefined,
+      };
     },
   },
   {

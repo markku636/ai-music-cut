@@ -145,6 +145,27 @@ describe("addManualCuts（逐字稿批次剪除）", () => {
     expect(useDecisions.getState().candidates.m).toHaveLength(3);
   });
 
+  it("重複剪同一段不留下空的 undo —— 助手重試時最容易踩到", () => {
+    useDecisions.getState().addManualCuts("m", cuts);
+    expect(useDecisions.getState().past).toHaveLength(1);
+    // 第二次一模一樣的指令：沒有東西可改，就不該多一筆 undo
+    expect(useDecisions.getState().addManualCuts("m", cuts)).toBe(0);
+    expect(useDecisions.getState().past).toHaveLength(1);
+    // 按一次 Ctrl+Z 就要真的回到沒剪的狀態，不是還原一個空操作
+    useDecisions.getState().undo();
+    expect(useDecisions.getState().candidates.m ?? []).toHaveLength(0);
+  });
+
+  it("先前被拒絕的同一段，再剪一次要生效", () => {
+    useDecisions.getState().addManualCuts("m", [cuts[0]]);
+    const id = useDecisions.getState().candidates.m[0].id;
+    useDecisions.getState().decide("m", [id], "rejected");
+    const depth = useDecisions.getState().past.length;
+    expect(useDecisions.getState().addManualCuts("m", [cuts[0]])).toBe(0);
+    expect(useDecisions.getState().decisions.m[id].state).toBe("accepted");
+    expect(useDecisions.getState().past).toHaveLength(depth + 1);
+  });
+
   it("空陣列不留下 undo 紀錄", () => {
     expect(useDecisions.getState().addManualCuts("m", [])).toBe(0);
     expect(useDecisions.getState().past).toHaveLength(0);

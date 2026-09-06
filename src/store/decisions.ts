@@ -264,10 +264,12 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       const dec: DecisionMap = { ...(get().decisions[mediaId] ?? {}) };
       const at = now();
       let added = 0;
+      let changed = false;
       for (const cut of cuts) {
         const id = candidateId("manual", cut.startMs, cut.endMs, "user");
         // 同一段已經有候選就只是改決定，不要生出兩筆相同範圍的候選
         if (!byId.has(id)) added++;
+        if (!byId.has(id) || dec[id]?.state !== "accepted") changed = true;
         byId.set(id, {
           id,
           kind: "manual",
@@ -281,6 +283,10 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         });
         dec[id] = { state: "accepted", origin: "user", at };
       }
+      // 全部都已經剪掉了 → 不要留下一筆什麼都沒改的 undo。
+      // 助手重試同一個指令時最容易踩到：使用者按一次 Ctrl+Z 看起來沒反應，
+      // 實際上是還原了一個空操作（blade_at 當年也是這樣咬人的）。
+      if (!changed) return 0;
       commit(mediaId, label, { candidates: [...byId.values()].sort((a, b) => a.startMs - b.startMs), decisions: dec });
       return added;
     },

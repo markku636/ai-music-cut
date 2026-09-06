@@ -138,3 +138,25 @@ export function voiceRegionsInOutput(regions: Region[], keeps: { srcStartMs: num
   }
   return mergeRegions(out, 0);
 }
+
+/**
+ * 音量控制點畫在幾 dB 的範圍內。
+ *
+ * 0 到 −24 dB：閃避常用的深度是 −6 ~ −12，畫在這個範圍裡拖曳的解析度剛好。
+ * 再寬的話 1 px 就是 1 dB 以上，手會抖；再窄一點深的閃避就頂到底看不出差別。
+ */
+export const ENV_MIN_DB = -24;
+
+/** 控制點的 dB → lane 內的 y（0 dB 在上緣、ENV_MIN_DB 在下緣）。 */
+export function envDbToY(db: number, h: number, pad = 3): number {
+  const f = Math.min(1, Math.max(0, db / ENV_MIN_DB));
+  return pad + f * Math.max(1, h - pad * 2 - 2);
+}
+
+/** y → dB（envDbToY 的反函式，夾在 [ENV_MIN_DB, 0]）。 */
+export function envYToDb(y: number, h: number, pad = 3): number {
+  const f = Math.min(1, Math.max(0, (y - pad) / Math.max(1, h - pad * 2 - 2)));
+  // `|| 0` 是為了把 -0 正規化成 0：Math.round(0 * -24) 會給 -0，
+  // 之後任何 === 0 的比較都還好，但寫進專案檔會變成 "-0"，diff 看起來像有改動。
+  return Math.round(f * ENV_MIN_DB) || 0;
+}

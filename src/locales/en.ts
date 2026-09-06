@@ -559,6 +559,7 @@ const en: Catalog = {
   "在這裡放配樂：{name}": "Add music here: {name}",
   "在這裡放音效：{name}": "Add SFX here: {name}",
   "已加入{lane}：{name}": "Added {lane}: {name}",
+  "控制點 {db} dB（上下拖曳改音量、左右拖曳改時間、右鍵移除）": "{db} dB point (drag up/down for volume, left/right for time, right-click to remove)",
 };
 
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_DUCK, mergeRegions, planDuck, voiceRegionsInOutput, type Overlay } from "./overlays";
+import { DEFAULT_DUCK, ENV_MIN_DB, envDbToY, envYToDb, mergeRegions, planDuck, voiceRegionsInOutput, type Overlay } from "./overlays";
 
 function clip(outStartMs: number, lenMs: number): Overlay {
   return {
@@ -114,5 +114,27 @@ describe("voiceRegionsInOutput", () => {
 
   it("完全落在剪除區的人聲會消失", () => {
     expect(voiceRegionsInOutput([{ startMs: 3000, endMs: 4000 }], keeps)).toEqual([]);
+  });
+});
+
+describe("音量控制點的 dB ↔ 像素", () => {
+  const H = 34;
+
+  it("0 dB 在上緣、ENV_MIN_DB 在下緣", () => {
+    expect(envDbToY(0, H)).toBeLessThan(envDbToY(ENV_MIN_DB, H));
+    expect(envDbToY(0, H)).toBe(3);
+  });
+
+  it("來回換算會回到原值（拖曳不會每次都掉一點）", () => {
+    for (const db of [0, -3, -6, -9, -12, -18, -24]) {
+      expect(envYToDb(envDbToY(db, H), H)).toBe(db);
+    }
+  });
+
+  it("超出範圍會夾住，不會跑到 lane 外面", () => {
+    expect(envDbToY(12, H)).toBe(envDbToY(0, H));
+    expect(envDbToY(-99, H)).toBe(envDbToY(ENV_MIN_DB, H));
+    expect(envYToDb(-50, H)).toBe(0);
+    expect(envYToDb(9999, H)).toBe(ENV_MIN_DB);
   });
 });

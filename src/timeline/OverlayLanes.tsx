@@ -8,29 +8,34 @@ import { useEffect, useRef, useState } from "react";
 import type WaveSurfer from "wavesurfer.js";
 import type { Edl } from "../analysis/edl/build";
 import { mapOutToSrc } from "../analysis/edl/map";
-import { LANE_LABEL, overlayLengthMs, type Overlay, type OverlayLane } from "../analysis/overlays";
+import { envDbToY, envYToDb, LANE_LABEL, overlayLengthMs, type Overlay, type OverlayLane } from "../analysis/overlays";
 import { useT } from "../i18n";
 import { useTimeline } from "../store/timeline";
 import { formatMs } from "../time";
 
 const LANES: OverlayLane[] = ["music", "sfx"];
-export const LANE_H = 20;
+export const LANE_H = 34;
 
 const LANE_STYLE: Record<OverlayLane, string> = {
   music: "bg-sky-500/25 border-sky-400/50 hover:bg-sky-500/35",
   sfx: "bg-emerald-500/25 border-emerald-400/50 hover:bg-emerald-500/35",
 };
 
-type DragKind = "move" | "in" | "out";
+type DragKind = "move" | "in" | "out" | "point";
 
 interface DragState {
   id: string;
   kind: DragKind;
   startX: number;
+  startY: number;
   outStartMs: number;
   srcInMs: number;
   srcOutMs: number;
   deltaMs: number;
+  /** kind = point 時：拖第幾個控制點，以及它現在的值。 */
+  pointIndex?: number;
+  pointMs?: number;
+  pointDb?: number;
 }
 
 export default function OverlayLanes({
@@ -55,6 +60,8 @@ export default function OverlayLanes({
   const [drag, setDrag] = useState<DragState | null>(null);
   const dragRef = useRef(drag);
   dragRef.current = drag;
+  const overlaysRef = useRef(overlays);
+  overlaysRef.current = overlays;
   const px = pxPerSec ?? fitPx;
 
   useEffect(() => {
@@ -70,13 +77,43 @@ export default function OverlayLanes({
     const onMove = (e: MouseEvent) => {
       const d = dragRef.current;
       if (!d) return;
-      setDrag({ ...d, deltaMs: ((e.clientX - d.startX) / px) * 1000 });
+      const deltaMs = ((e.clientX - d.startX) / px) * 1000;
+      if (d.kind !== "point" || d.pointIndex == null) {
+        setDrag({ ...d, deltaMs });
+        return;
+      }
+      const cur = overlaysRef.current.find((x) => x.id === d.id);
+      const pts = cur?.points ?? [];
+      const len = Math.max(1, (cur?.srcOutMs ?? 0) - (cur?.srcInMs ?? 0));
+      const base = pts[d.pointIndex];
+      if (!base) return;
+      // 左右不能越過鄰居，否則排序之後控制點會互相穿過去
+      const lo = d.pointIndex > 0 ? pts[d.pointIndex - 1].ms + 1 : 0;
+      const hi = d.pointIndex < pts.length - 1 ? pts[d.pointIndex + 1].ms - 1 : len;
+      const ms = Math.round(Math.min(hi, Math.max(lo, base.ms + deltaMs)));
+      const db = envYToDb(envDbToY(base.db, LANE_H) + (e.clientY - d.startY), LANE_H);
+      setDrag({ ...d, deltaMs, pointMs: ms, pointDb: db });
     };
     const onUp = () => {
       const d = dragRef.current;
       setDrag(null);
-      if (!d || Math.abs(d.deltaMs) < 1) return;
+      if (!d) return;
+      // 控制點常常是「只上下拖」（只改音量、時間不動），所以不能用水平位移當門檻 ——
+      // 那會讓純垂直的拖曳整個被吃掉，看起來像拖不動。
+      if (d.kind !== "point" && Math.abs(d.deltaMs) < 1) return;
       const delta = Math.round(d.deltaMs);
+      if (d.kind === "point") {
+        if (d.pointIndex == null) return;
+        const cur = overlaysRef.current.find((x) => x.id === d.id);
+        if (!cur?.points) return;
+        const base = cur.points[d.pointIndex];
+        const ms = d.pointMs ?? base.ms;
+        const db = d.pointDb ?? base.db;
+        if (base.ms === ms && base.db === db) return; // 沒動到就不要留一筆空的 undo
+        const pts = cur.points.map((p, i) => (i === d.pointIndex ? { ms, db } : p)).sort((x, y) => x.ms - y.ms);
+        onChange(d.id, { points: pts }, "調整音量控制點");
+        return;
+      }
       if (d.kind === "move") onChange(d.id, { outStartMs: Math.max(0, d.outStartMs + delta) }, "移動配樂");
       else if (d.kind === "in") onChange(d.id, { srcInMs: Math.max(0, Math.min(d.srcOutMs - 200, d.srcInMs + delta)) }, "修剪配樂");
       else onChange(d.id, { srcOutMs: Math.max(d.srcInMs + 200, d.srcOutMs + delta) }, "修剪配樂");
@@ -132,9 +169,17 @@ export default function OverlayLanes({
                     e.preventDefault();
                     e.stopPropagation();
                     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                    // Alt+點：在這個位置補一個控制點（沒有曲線的話就從這裡開始畫）
+                    if (e.altKey) {
+                      const ms = Math.round(((e.clientX - rect.left) / Math.max(1, rect.width)) * lenMs);
+                      const db = envYToDb(e.clientY - rect.top, LANE_H);
+                      const next = [...(o.points ?? []), { ms, db }].sort((x, y) => x.ms - y.ms);
+                      onChange(o.id, { points: next }, "新增音量控制點");
+                      return;
+                    }
                     const edge = 6;
                     const kind: DragKind = e.clientX - rect.left < edge ? "in" : rect.right - e.clientX < edge ? "out" : "move";
-                    setDrag({ id: o.id, kind, startX: e.clientX, outStartMs: o.outStartMs, srcInMs: o.srcInMs, srcOutMs: o.srcOutMs, deltaMs: 0 });
+                    setDrag({ id: o.id, kind, startX: e.clientX, startY: e.clientY, outStartMs: o.outStartMs, srcInMs: o.srcInMs, srcOutMs: o.srcOutMs, deltaMs: 0 });
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -145,23 +190,59 @@ export default function OverlayLanes({
                   <span className="absolute inset-y-0 left-0 w-1.5 cursor-w-resize bg-fg/10" />
                   <span className="absolute inset-y-0 right-0 w-1.5 cursor-e-resize bg-fg/10" />
                   <span className="block px-2 text-[9px] leading-[17px] whitespace-nowrap text-fg/75 select-none cursor-grab">{label}</span>
-                  {/* 閃避曲線：直接畫在音樂條上，看得到哪裡被壓下去 */}
-                  {o.points && o.points.length > 1 && w > 20 && (
-                    <svg className="absolute inset-0 pointer-events-none" viewBox={`0 0 ${Math.round(w)} ${LANE_H}`} preserveAspectRatio="none">
-                      <polyline
-                        points={o.points
-                          .map((p) => {
-                            const px2 = (p.ms / Math.max(1, lenMs)) * w;
-                            const py = 2 + Math.min(1, Math.max(0, -p.db / 24)) * (LANE_H - 6);
-                            return `${px2.toFixed(1)},${py.toFixed(1)}`;
-                          })
-                          .join(" ")}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1"
-                        className="text-fg/55"
-                      />
-                    </svg>
+                  {/* 閃避曲線 + 可拖曳的控制點（Final Cut 的橡皮筋） */}
+                  {o.points && o.points.length > 0 && w > 16 && (
+                    <>
+                      <svg className="absolute inset-0 pointer-events-none overflow-visible" width={w} height={LANE_H}>
+                        <polyline
+                          points={o.points.map((p) => `${((drag?.id === o.id && drag.kind === "point" && drag.pointIndex === o.points!.indexOf(p) ? drag.pointMs ?? p.ms : p.ms) / Math.max(1, lenMs)) * w},${envDbToY(drag?.id === o.id && drag.kind === "point" && drag.pointIndex === o.points!.indexOf(p) ? drag.pointDb ?? p.db : p.db, LANE_H)}`).join(" ")}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.5"
+                          className="text-amber-300/90"
+                        />
+                      </svg>
+                      {o.points.map((p, pi) => {
+                        const dragging = drag?.id === o.id && drag.kind === "point" && drag.pointIndex === pi;
+                        const pms = dragging ? drag.pointMs ?? p.ms : p.ms;
+                        const pdb = dragging ? drag.pointDb ?? p.db : p.db;
+                        const cx = (pms / Math.max(1, lenMs)) * w;
+                        if (cx < -6 || cx > w + 6) return null;
+                        return (
+                          <span
+                            key={pi}
+                            role="button"
+                            tabIndex={-1}
+                            title={t("控制點 {db} dB（上下拖曳改音量、左右拖曳改時間、右鍵移除）", { db: pdb })}
+                            onMouseDown={(e) => {
+                              if (e.button !== 0) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDrag({
+                                id: o.id,
+                                kind: "point",
+                                startX: e.clientX,
+                                startY: e.clientY,
+                                outStartMs: o.outStartMs,
+                                srcInMs: o.srcInMs,
+                                srcOutMs: o.srcOutMs,
+                                deltaMs: 0,
+                                pointIndex: pi,
+                                pointMs: p.ms,
+                                pointDb: p.db,
+                              });
+                            }}
+                            onContextMenu={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onChange(o.id, { points: o.points!.filter((_, i) => i !== pi) }, "移除音量控制點");
+                            }}
+                            className={`absolute w-2 h-2 -ml-1 -mt-1 rounded-full border cursor-ns-resize ${dragging ? "bg-amber-300 border-amber-200" : "bg-amber-300/80 border-amber-200/70 hover:bg-amber-200"}`}
+                            style={{ left: cx, top: envDbToY(pdb, LANE_H) }}
+                          />
+                        );
+                      })}
+                    </>
                   )}
                 </div>
               );

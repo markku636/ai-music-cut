@@ -160,3 +160,43 @@ export function envYToDb(y: number, h: number, pad = 3): number {
   // 之後任何 === 0 的比較都還好，但寫進專案檔會變成 "-0"，diff 看起來像有改動。
   return Math.round(f * ENV_MIN_DB) || 0;
 }
+
+/**
+ * 片段內某個時間點的增益（dB）。控制點之間**在 dB 域**線性內插。
+ *
+ * ⚠️ 這條公式在 `src-tauri/src/mix.rs` 有一份逐字對應的實作（`envelope_db` / `overlay_gain`）。
+ * 這裡是**即時試聽**用的，那邊是**成品混音**用的 —— 兩邊算出來的曲線必須一樣，
+ * 否則「試聽覺得剛好」的閃避深度到了成品會變成另一個值，而那是最難查的那種問題。
+ * 兩邊的單元測試用同一組數字釘住。
+ */
+export function envelopeDb(o: Overlay, ms: number): number {
+  const base = o.gainDb;
+  const pts = o.points ?? [];
+  if (!pts.length) return base;
+  if (ms <= pts[0].ms) return base + pts[0].db;
+  const last = pts[pts.length - 1];
+  if (ms >= last.ms) return base + last.db;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (ms >= a.ms && ms <= b.ms) {
+      const span = b.ms - a.ms;
+      const f = span <= 0 ? 0 : (ms - a.ms) / span;
+      return base + a.db + (b.db - a.db) * f;
+    }
+  }
+  return base;
+}
+
+/** dB → 線性倍率（−90 dB 以下直接當靜音）。 */
+export function dbToLinear(db: number): number {
+  return db <= -90 ? 0 : Math.pow(10, db / 20);
+}
+
+/** 片段在 ms 處的總增益（含淡入淡出）。與 mix.rs 的 `overlay_gain` 對應。 */
+export function envelopeGain(o: Overlay, ms: number, lenMs: number): number {
+  let g = dbToLinear(envelopeDb(o, ms));
+  if (o.fadeInMs > 0 && ms < o.fadeInMs) g *= Math.min(1, Math.max(0, ms / o.fadeInMs));
+  if (o.fadeOutMs > 0 && ms > lenMs - o.fadeOutMs) g *= Math.min(1, Math.max(0, (lenMs - ms) / o.fadeOutMs));
+  return g;
+}

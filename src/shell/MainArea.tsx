@@ -20,6 +20,7 @@ import PreviewBar from "../preview/PreviewBar";
 import PrecisionTrim from "../preview/PrecisionTrim";
 import { useSkipPlayback } from "../preview/useSkipPlayback";
 import { useShuttle } from "../preview/useShuttle";
+import { useOverlayMonitor } from "../preview/useOverlayMonitor";
 import { useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
 import { selectActiveMedia, useProject } from "../store/project";
@@ -149,6 +150,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   }, [local, transcript, setBeatGrid]);
   useSkipPlayback(cuts);
   useShuttle();
+  useOverlayMonitor(overlays, edl);
   useEffectPreview(effects);
 
   // 開檔 / 切換媒體：波形立刻算（只需 ffmpeg；快取命中幾乎即時）。失敗留在 job 裡由 placeholder 顯示。

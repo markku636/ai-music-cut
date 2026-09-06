@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_DUCK, ENV_MIN_DB, envDbToY, envYToDb, mergeRegions, planDuck, voiceRegionsInOutput, type Overlay } from "./overlays";
+import { DEFAULT_DUCK, ENV_MIN_DB, envDbToY, envYToDb, envelopeDb, envelopeGain, mergeRegions, planDuck, voiceRegionsInOutput, type Overlay } from "./overlays";
 
 function clip(outStartMs: number, lenMs: number): Overlay {
   return {
@@ -136,5 +136,59 @@ describe("音量控制點的 dB ↔ 像素", () => {
     expect(envDbToY(-99, H)).toBe(envDbToY(ENV_MIN_DB, H));
     expect(envYToDb(-50, H)).toBe(0);
     expect(envYToDb(9999, H)).toBe(ENV_MIN_DB);
+  });
+});
+
+// 這一組數字與 src-tauri/src/mix.rs 的 mix::tests 是同一組 —— 即時試聽與成品混音
+// 算出來的曲線必須一樣，不然「試聽覺得剛好」的閃避到成品會變成另一個深度。
+describe("音量包絡（與 Rust 的 mix.rs 對拍）", () => {
+  const mk = (gainDb: number, points: { ms: number; db: number }[], fadeInMs = 0, fadeOutMs = 0): Overlay => ({
+    id: "ov",
+    lane: "music",
+    mediaId: "m",
+    srcInMs: 0,
+    srcOutMs: 10000,
+    outStartMs: 0,
+    gainDb,
+    fadeInMs,
+    fadeOutMs,
+    points,
+  });
+
+  it("沒有控制點就是固定音量", () => {
+    const o = mk(-6, []);
+    expect(envelopeDb(o, 0)).toBe(-6);
+    expect(envelopeDb(o, 5000)).toBe(-6);
+  });
+
+  it("控制點在 dB 域線性內插（相對基準的增減）", () => {
+    const o = mk(-6, [
+      { ms: 1000, db: 0 },
+      { ms: 2000, db: -12 },
+    ]);
+    expect(envelopeDb(o, 1000)).toBe(-6);
+    expect(envelopeDb(o, 2000)).toBe(-18);
+    expect(envelopeDb(o, 1500)).toBeCloseTo(-12, 9);
+  });
+
+  it("範圍外維持頭尾控制點的值", () => {
+    const o = mk(0, [
+      { ms: 1000, db: -3 },
+      { ms: 2000, db: -9 },
+    ]);
+    expect(envelopeDb(o, 0)).toBe(-3);
+    expect(envelopeDb(o, 99999)).toBe(-9);
+  });
+
+  it("淡入淡出乘在包絡上", () => {
+    const o = mk(0, [], 1000, 1000);
+    expect(envelopeGain(o, 0, 10000)).toBeCloseTo(0, 6);
+    expect(envelopeGain(o, 500, 10000)).toBeCloseTo(0.5, 6);
+    expect(envelopeGain(o, 5000, 10000)).toBeCloseTo(1, 6);
+    expect(envelopeGain(o, 9500, 10000)).toBeCloseTo(0.5, 6);
+  });
+
+  it("非常低的 dB 是靜音，不是一個很小的數字", () => {
+    expect(envelopeGain(mk(-96, []), 0, 10000)).toBe(0);
   });
 });

@@ -89,6 +89,15 @@
    閃避（`planDuck`）刻意產生**控制點**而不是接壓縮器：壓縮器聽起來不對的時候只能轉 threshold / ratio 猜，
    剪輯師要的是「這一句底下再低 3 dB」—— 那是拖一個點的事。內插在 **dB 域**做，0 → −12 dB 才聽起來等速。
 
+5i. **配樂即時試聽**（`preview/overlayMonitor.ts`）：每個片段一個自己的 `<audio>`，
+   跟著主聲軌對時。三件事：① 主聲軌播的是**來源**時間（而且會跳過剪掉的段落），
+   配樂的位置卻釘在**成品**時間，所以每一幀要 `mapSrcToOut` 換算；② 不能每幀都 seek
+   （解碼器會重新定位而卡頓），偏移超過 90 ms 才校正；③ 這是監聽不是成品 ——
+   兩個 `<audio>` 對不到樣本，成品的精準混音在 mix.rs 那一趟。
+   **包絡公式在 TS 與 Rust 各一份**（`envelopeGain` / `overlay_gain`），
+   兩邊用同一組數字寫測試釘住：不然「試聽覺得剛好」的閃避深度到成品會變成另一個值。
+   只在「有配樂 ∧ 正在播」時訂閱 ticker —— ticker 沒有訂閱者才會停，長期掛著等於暫停時也在跑 rAF。
+
 6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
 7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。

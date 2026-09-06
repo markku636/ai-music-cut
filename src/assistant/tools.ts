@@ -8,6 +8,9 @@ import { fillerCandidates, findText, totalMs } from "../analysis/textSearch";
 import { describeCleanup, estimateCleanup, isCleanupActive, normalizeCleanup, CLEANUP_OFF } from "../analysis/cleanup";
 import { useCleanup } from "../store/cleanup";
 import { useHighlights } from "../store/highlights";
+import { useShowNotes } from "../store/showNotes";
+import { generateShowNotes } from "../pipeline/shownotes";
+import { stamp, toMarkdown } from "../analysis/shownotes";
 import { normalizeRanges, reelSourceMs } from "../analysis/reel";
 
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutput } from "../analysis/overlays";
@@ -297,6 +300,41 @@ export const TOOLS: ToolSpec[] = [
         removedMs: Math.round(totalMs(picked)),
         // 重試同一個查詢時講清楚「已經剪過了」，否則模型會以為沒生效而一直重打
         note: added === 0 ? "這些段落先前就已經剪掉了，這次沒有變動" : undefined,
+      };
+    },
+  },
+  {
+    name: "get_show_notes",
+    description:
+      "拿這一集已經產好的節目筆記（摘要 / 章節 / 節錄 / 關鍵字）。時間戳是**成品**時間。還沒產過就回 null，這時可以用 write_show_notes 產一份。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      const x = ctxMedia();
+      const n = useShowNotes.getState().get(x.media.id);
+      if (!n) return { notes: null, note: "還沒有節目筆記" };
+      return {
+        summary: n.summary,
+        chapters: n.chapters.map((c) => ({ at: stamp(c.outMs), outMs: Math.round(c.outMs), title: c.title })),
+        quotes: n.quotes.map((q) => ({ at: stamp(q.outMs), text: q.text })),
+        keywords: n.keywords,
+        markdown: toMarkdown(n, { title: x.media.name }),
+      };
+    },
+  },
+  {
+    name: "write_show_notes",
+    description:
+      "讀這一集的逐字稿寫節目筆記（摘要 / 章節 / 節錄 / 關鍵字），存進專案。需要逐字稿。時間戳會自動換算成成品時間，被剪掉的段落不會被算進去。已經有的話會覆蓋。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: async () => {
+      const x = ctxMedia();
+      const n = await generateShowNotes(x.media.id);
+      useShowNotes.getState().set(x.media.id, n);
+      return {
+        summary: n.summary,
+        chapters: n.chapters.map((c) => ({ at: stamp(c.outMs), title: c.title })),
+        quotes: n.quotes.length,
+        keywords: n.keywords,
       };
     },
   },

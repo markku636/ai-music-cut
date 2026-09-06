@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { BookMarked, Copy, FileText, RefreshCw, Save, Sparkles } from "lucide-react";
 import { api, errMessage } from "../api";
-import { stamp, toMarkdown, type ShowNotes } from "../analysis/shownotes";
+import { stamp, toMarkdown } from "../analysis/shownotes";
 import { Button, EmptyState, Modal, Spinner } from "../ui/index";
 import { copyToClipboard, toast } from "../ui";
 import { useT } from "../i18n";
@@ -12,6 +12,7 @@ import { mapOutToSrc } from "../analysis/edl/map";
 import { useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
 import { useProject } from "../store/project";
+import { useShowNotes } from "../store/showNotes";
 
 /**
  * 節目筆記：剪完之後要貼到部落格 / RSS 的那一份，交給地端 claude 寫。
@@ -25,7 +26,9 @@ export default function ShowNotesDialog({ mediaId, onClose }: { mediaId: string;
   const media = useProject((s) => s.media.find((m) => m.id === mediaId) ?? null);
   const setChapters = useDecisions((s) => s.setChapters);
   const seek = usePlayback((s) => s.seek);
-  const [notes, setNotes] = useState<ShowNotes | null>(null);
+  // 已經產過就直接顯示 —— 重跑一次要 claude 讀完整集，不該因為關掉視窗就重來
+  const notes = useShowNotes((s) => s.byMedia[mediaId] ?? null);
+  const setNotes = useShowNotes((s) => s.set);
   const [busy, setBusy] = useState(false);
 
   const md = useMemo(() => (notes ? toMarkdown(notes, { title: media?.name }) : ""), [notes, media]);
@@ -33,7 +36,7 @@ export default function ShowNotesDialog({ mediaId, onClose }: { mediaId: string;
   const run = async () => {
     setBusy(true);
     try {
-      setNotes(await generateShowNotes(mediaId));
+      setNotes(mediaId, await generateShowNotes(mediaId));
     } catch (e) {
       toast.error(errMessage(e));
     } finally {

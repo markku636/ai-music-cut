@@ -71,6 +71,12 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       continue;
     }
     const j = edl.joins.find((x) => x.afterKeepId === units[i].keepId);
+    if (j?.kind === "seam") {
+      // 刀片切點：直接對接。**不可以**落到下面的 crossfade 分支 —— crossfade 是重疊，
+      // 兩段各會被吃掉半個重疊長度，使用者只是切一刀卻聽到少了一塊。
+      joins.push({ kind: "seam", ms: 0 });
+      continue;
+    }
     if (j?.kind === "gap") {
       // per-join 的淡出 / 淡入（EDL 的 fade policy 決定）；沒有就讓 Rust 用預設值
       joins.push({ kind: "gap", ms: j.ms, fade_out_ms: j.fadeOutMs, fade_in_ms: j.fadeInMs });

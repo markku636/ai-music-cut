@@ -12,6 +12,7 @@ import SettingsDialog, { type SettingsFocus } from "./dialogs/SettingsDialog";
 import VerifyDialog from "./dialogs/VerifyDialog";
 import ShortcutsHelp from "./dialogs/ShortcutsHelp";
 import { installHotkeys } from "./hotkeys";
+import { bladeAtPlayhead, liftSelection } from "./timeline/trimActions";
 import { runAnalyze } from "./pipeline/analyze";
 import { runJudge } from "./pipeline/judge";
 import { runVerify } from "./pipeline/verify";
@@ -293,6 +294,19 @@ export default function App() {
         end: () => seekTo(Number.MAX_SAFE_INTEGER),
         toolSeek: () => useTimeline.getState().setTool("seek"),
         toolSelect: () => useTimeline.getState().setTool("select"),
+        toolTrim: () => useTimeline.getState().setTool("trim"),
+        blade: () => {
+          const r = bladeAtPlayhead();
+          if (r === null) toast.info(t("這裡切不了：太靠近既有的接縫，或落在已剪掉的區段裡"));
+          else toast.info(r ? t("切了一刀") : t("移除切點"));
+        },
+        toggleSnap: () => {
+          useTimeline.getState().toggleSnap();
+          toast.info(useTimeline.getState().snap.enabled ? t("吸附：開") : t("吸附：關"));
+        },
+        liftSelection: () => {
+          if (!liftSelection()) toast.info(t("先選一段再提起"));
+        },
         escape: () => clearSelection(),
         selectAll: () => {
           const m = selectActiveMedia(useProject.getState());

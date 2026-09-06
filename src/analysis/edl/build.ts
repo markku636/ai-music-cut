@@ -1,6 +1,7 @@
 // EDL（Edit Decision List）：由已接受的候選算出「保留段」清單，含自然度守門。
 // 純函式、無 DOM；probe 提供能量最低點（Rust 波形桶）供邊界貼齊，測試可用 midpoint 假件。
-import type { Candidate, DecisionMap, Sentence, VadRegion, Word } from "../types";
+import type { Candidate, DecisionMap, Sentence, SplitPoint, VadRegion, Word } from "../types";
+import { applySplits } from "./split";
 import { effectiveXfFrames, effectiveXfMs, framesToMs, msToFrames } from "./joins";
 import { DEFAULT_BREATH_OPTIONS, planBreath, type BreathContext, type BreathOptions } from "./breath";
 import { chooseJoin, DEFAULT_FADE_POLICY, type FadePolicy } from "./fade";
@@ -66,6 +67,16 @@ export interface Removal {
   candidateIds: string[];
   /** 有字（語音）在裡面 → 接點是語音接語音。 */
   speech: boolean;
+  /**
+   * 這段的邊界是人親手放的（手動剪除，或拖過候選 / 接縫把手）。
+   *
+   * 人放的邊界照著用，不做 ±30 ms 的能量最低點搜尋、也不回填呼吸 ——
+   * 那兩段是為了讓「AI 提的候選」落在安靜處，套在明確的拖曳上就變成跟使用者作對：
+   * 拖 300 ms 卻剪掉 377 ms，捲動修剪更會因為兩邊各自重新貼齊而改變成品總長，
+   * 而「總長不變」正是捲動修剪存在的意義。
+   * ±3 ms 的零交越微調仍然保留 —— 它幾乎不移動位置，但能擋掉切在波形中間的 click。
+   */
+  userRange: boolean;
 }
 
 export interface KeepSegment {
@@ -80,13 +91,23 @@ export interface KeepSegment {
 
 export interface Join {
   afterKeepId: number;
-  kind: "crossfade" | "gap";
-  /** crossfade：實際重疊長度（已夾過）；gap：room tone 長度。 */
+  /**
+   * seam = butt join（直接對接，不重疊也不插東西），刀片切點用。
+   *
+   * 切點造成的接縫**不能**落回 crossfade：crossfade 是「重疊」，兩段各被吃掉半個
+   * 重疊長度，切完聽起來就真的少一塊。而 pipeline/render.ts 對「相鄰兩個 keep 但
+   * 查不到 join」的處理正是退回預設 crossfade —— 所以切點一定要明確產生一個 join，
+   * 不能只把 keeps 斷開就算了。
+   */
+  kind: "crossfade" | "gap" | "seam";
+  /** crossfade：實際重疊長度（已夾過）；gap：room tone 長度；seam：恆為 0。 */
   ms: number;
   /** gap 接點的前段淡出 / 後段淡入（crossfade 不用）。 */
   fadeOutMs?: number;
   fadeInMs?: number;
   removedCandidateIds: string[];
+  /** 這個接縫是使用者切的刀（UI 要能認出來、右鍵才給「移除切點」）。 */
+  splitId?: string;
 }
 
 export interface EdlStats {
@@ -117,6 +138,8 @@ export interface EdlInput {
   sentences: Sentence[];
   vad: VadRegion[];
   durationMs: number;
+  /** 刀片切點（人工）。空的時候整條路徑與以前逐位元相同。 */
+  splits?: SplitPoint[];
 }
 
 const WORD_KINDS = new Set(["filler", "stutter", "restart", "unclear", "rambling", "off_topic", "redo"]);
@@ -139,7 +162,7 @@ export function mergeRanges<T extends { startMs: number; endMs: number }>(rs: T[
 }
 
 export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: DecisionMap, opts: EdlOptions = DEFAULT_EDL_OPTIONS, probe: EnergyProbe = MIDPOINT_PROBE): Edl {
-  const { words, sentences, vad, durationMs } = input;
+  const { words, sentences, vad, durationMs, splits = [] } = input;
   const active = candidates.filter((c) => isActiveState(decisions[c.id]?.state));
   const activeIds = new Set(active.map((c) => c.id));
   const cutWordIds = new Set<number>();
@@ -169,7 +192,7 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
     start = Math.max(0, start);
     end = Math.min(durationMs, end);
     if (end <= start) continue;
-    removals.push({ startMs: start, endMs: end, candidateIds: [c.id], speech: wordBased });
+    removals.push({ startMs: start, endMs: end, candidateIds: [c.id], speech: wordBased, userRange: c.source === "user" || c.meta?.userRange === true });
   }
 
   // 2) 邊界細修，三段式（由粗到細，每一段都不准越過安全窗）：
@@ -180,10 +203,12 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
   //       對得再準也還是切在字的中間。
   //    全程不 Math.round：這裡的小數在後面才會被 msToFrames 一次轉成 frame。
   for (const r of removals) {
-    const s2 = probe.minEnergyPointMs(r.startMs - opts.snapWindowMs, r.startMs + opts.snapWindowMs);
-    const e2 = probe.minEnergyPointMs(r.endMs - opts.snapWindowMs, r.endMs + opts.snapWindowMs);
-    if (Number.isFinite(s2) && s2 < r.endMs) r.startMs = Math.max(0, s2);
-    if (Number.isFinite(e2) && e2 > r.startMs) r.endMs = Math.min(durationMs, e2);
+    if (!r.userRange) {
+      const s2 = probe.minEnergyPointMs(r.startMs - opts.snapWindowMs, r.startMs + opts.snapWindowMs);
+      const e2 = probe.minEnergyPointMs(r.endMs - opts.snapWindowMs, r.endMs + opts.snapWindowMs);
+      if (Number.isFinite(s2) && s2 < r.endMs) r.startMs = Math.max(0, s2);
+      if (Number.isFinite(e2) && e2 > r.startMs) r.endMs = Math.min(durationMs, e2);
+    }
     if (probe.nearestZeroCrossMs) {
       const s3 = probe.nearestZeroCrossMs(r.startMs, opts.zeroCrossWindowMs);
       const e3 = probe.nearestZeroCrossMs(r.endMs, opts.zeroCrossWindowMs);
@@ -201,10 +226,13 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
       last.endMs = Math.max(last.endMs, r.endMs);
       last.candidateIds.push(...r.candidateIds);
       last.speech = last.speech || r.speech;
+      // 人碰過的區域整段都照著人的意思走（合併後沒辦法分別記兩個邊界的來源）
+      last.userRange = last.userRange || r.userRange;
     } else if (last && r.startMs - last.endMs < opts.mergeGapMs && !hasKeptWordBetween(words, cutWordIds, last.endMs, r.startMs)) {
       last.endMs = r.endMs;
       last.candidateIds.push(...r.candidateIds);
       last.speech = last.speech || r.speech;
+      last.userRange = last.userRange || r.userRange;
     } else merged.push({ ...r, candidateIds: r.candidateIds.slice() });
   }
   removals = merged;
@@ -251,6 +279,11 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
   const joinsMeta: { removal: Removal; gapMs: number; context: BreathContext }[] = [];
   const breathOpts: BreathOptions = { ...opts.breath, allowGapInsert: opts.allowGapInsert };
   for (const r of removals) {
+    if (r.userRange) {
+      // 人已經決定要拿掉哪一段了，這裡再「還一點回去」等於剪得比要求的少
+      joinsMeta.push({ removal: r, gapMs: 0, context: "within" });
+      continue;
+    }
     const b = planBreath(vad, sentences, words, r, breathOpts);
     r.startMs = b.startMs;
     r.endMs = b.endMs;
@@ -275,6 +308,12 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
   }
   pushKeep(cursor, durationMs);
 
+  // 6b) 刀片切點：把保留段再斷開（不剪掉任何東西）。放在補集之後、joins 之前 ——
+  //     切點會重新編號 keep.id，而 joins / splitUnits / render 的 units 全靠這個編號對位。
+  const split = applySplits(keeps, splits, opts.minKeepMs);
+  keeps.length = 0;
+  keeps.push(...split.keeps);
+
   // 7) joins + 輸出時間
   //
   // 兩趟：先決定每個接點的種類，再用 joins.ts 的公式算重疊與輸出時間。
@@ -283,6 +322,17 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
   for (let i = 0; i + 1 < keeps.length; i++) {
     const k = keeps[i];
     const next = keeps[i + 1];
+    // 切點造成的接縫：兩側是同一段連續的來源，沒有東西被剪掉。
+    // 對接（seam）＝原樣接回去；使用者要呼吸就插 room tone（gap）。
+    const seam = split.splitAfter.get(k.id);
+    if (seam) {
+      if (seam.gapMs > 0) {
+        joins.push({ afterKeepId: k.id, kind: "gap", ms: seam.gapMs, removedCandidateIds: [], fadeOutMs: opts.fade.gapFadeOutMs, fadeInMs: opts.fade.gapFadeInMs, splitId: seam.splitId });
+      } else {
+        joins.push({ afterKeepId: k.id, kind: "seam", ms: 0, removedCandidateIds: [], splitId: seam.splitId });
+      }
+      continue;
+    }
     const between = joinsMeta.filter((m) => m.removal.startMs >= k.srcEndMs - 1 && m.removal.endMs <= next.srcStartMs + 1);
     const ids = between.flatMap((m) => m.removal.candidateIds);
     const gapMs = Math.max(0, ...between.map((m) => m.gapMs));
@@ -307,6 +357,7 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
       const j = joins[i];
       if (!j) continue;
       if (j.kind === "gap") outFrames += msToFrames(j.ms);
+      else if (j.kind === "seam") continue; // 對接：不重疊也不插東西，輸出時鐘原樣往下走
       else outFrames -= effectiveXfFrames(j.ms, msToFrames(k.srcEndMs) - msToFrames(k.srcStartMs), msToFrames(keeps[i + 1].srcEndMs) - msToFrames(keeps[i + 1].srcStartMs));
     }
   }
@@ -326,7 +377,9 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
   }
   const keptMs = keeps.reduce((s, k) => s + (k.srcEndMs - k.srcStartMs), 0);
   const outMs = keeps.length ? keeps[keeps.length - 1].outEndMs : 0;
-  return { keeps, joins, stats: { removedMs, keptMs, outMs, cutCount: Math.max(0, keeps.length - 1), byKind }, downgrades, removals };
+  // 切點造成的接縫不算「剪了幾刀」—— 它沒有拿掉任何東西，計進去只會讓面板上的數字說謊。
+  const cutCount = joins.filter((j) => !j.splitId).length;
+  return { keeps, joins, stats: { removedMs, keptMs, outMs, cutCount, byKind }, downgrades, removals };
 }
 
 function hasKeptWordBetween(words: Word[], cutWordIds: Set<number>, fromMs: number, toMs: number): boolean {

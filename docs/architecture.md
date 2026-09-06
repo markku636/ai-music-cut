@@ -32,6 +32,24 @@
 3b. **人工剪輯**（`store/timeline.ts` + `timeline/selectionActions.ts`）：選取工具拖出 `selection` → 剪掉（manual 候選）/ 只保留 / 播放（可循環）；區段效果（`analysis/effects.ts`：mute / gain / fade_in / fade_out）以來源時間包絡定義，預聽用 `<audio>.volume`，輸出由 Rust 逐 frame 相乘（同一套 5 ms 邊緣平滑）。
 4. **AI 判讀**（`pipeline/judge.ts`）：候選句切視窗（前後 3 句語境）→ `claude -p --json-schema` → 驗證（代號→id、文字→字範圍）→ `applyJudge`。視窗雜湊快取進專案檔。
 5. **AI 助手**（`assistant/`）：`claude -p --output-format stream-json --mcp-config … --allowedTools mcp__aicut --permission-mode dontAsk`；Rust 內建 MCP server 把 `tools/call` 轉成 `mcp-tool-call` 事件，前端 handler 操作 store 後以 `mcp_tool_result` 回寫。
+5b. **刀片切點與修剪**（`analysis/edl/split.ts` / `trim.ts`、`timeline/trimActions.ts`）：
+   切點 `SplitPoint {id, ms, gapMs?}` 存在 `store/decisions.splits[mediaId]`（一併進 `Patch` 快照 → undo 免費），
+   進專案檔 `analysis[mediaId].splits`（選填，schemaVersion 維持 1）。`buildEdl` 步驟 6b 用切點把保留段斷開並**重新編號 keep.id**
+   （joins / splitUnits / render 的 units 全靠這個編號對位），步驟 7 為切點產生 `kind:"seam"`（butt join）或 `kind:"gap"`（留白）。
+   **切點一定要產生一個明確的 join** —— `pipeline/render.ts` 對「相鄰兩個 keep 但查不到 join」會退回預設 crossfade，
+   而 crossfade 是重疊，會真的吃掉聲音。修剪走 `planTrim`（漣漪只動最外側候選、捲動整批平移）與
+   `planSplitRipple`（切點上還沒有剪除區，只能開始往某一側吃）。
+
+5c. **人放的邊界照著用**（`build.ts` 的 `Removal.userRange`）：
+   手動剪除（`source === "user"`）與拖過邊界的候選（`meta.userRange`）**跳過** ±30 ms 能量最低點搜尋與呼吸回填 ——
+   那兩段是為了讓 AI 提的候選落在安靜處，套在明確的拖曳上就變成跟使用者作對（拖 300 ms 卻剪掉 377 ms，
+   捲動修剪還會因為兩邊各自重新貼齊而改變成品總長，而「總長不變」正是捲動修剪存在的意義）。
+   ±3 ms 零交越微調仍然保留，擋切在波形中間的 click。合併時 `userRange` 取 or：人碰過的區域整段照人的意思走。
+
+5d. **統一吸附**（`analysis/snap.ts`）：目標涵蓋接縫 / 句界 / 字界 / 播放線 / 頭尾，拍點用 `snapToBeat` 的公式算（週期性，不展開成陣列）。
+   `store/timeline.setSelection` 仍是唯一吸附入口，拖接縫與 `B` 切刀也走同一支 `snapMs`。容差 = 8 px 換算成 ms（上限 140 ms）。
+   目標由 `MainArea` 在 EDL / 逐字稿變動時攤平進 `snapTargets`；播放線每秒動 60 次，所以不進那份快取，算 context 時才附上去。
+
 6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
 7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。

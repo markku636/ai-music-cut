@@ -44,5 +44,11 @@ export function edlFor(mediaId: string): Edl | null {
     breath: breathFor(useProject.getState().aggressiveness),
     maxSentenceRemovalRatio: th.maxSentenceRemovalRatio,
   };
-  return buildEdl({ words: tr?.words ?? [], sentences: tr?.sentences ?? [], vad: tr?.vad ?? [], durationMs }, d.candidates[mediaId] ?? [], d.decisions[mediaId] ?? {}, opts, probe);
+  return buildEdl(
+    { words: tr?.words ?? [], sentences: tr?.sentences ?? [], vad: tr?.vad ?? [], durationMs, splits: d.splits[mediaId] ?? [] },
+    d.candidates[mediaId] ?? [],
+    d.decisions[mediaId] ?? {},
+    opts,
+    probe,
+  );
 }

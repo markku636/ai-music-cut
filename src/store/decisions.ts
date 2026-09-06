@@ -1,16 +1,23 @@
 import { create } from "zustand";
 import { effectLabel, type AudioEffect } from "../analysis/effects";
 import { thresholdsFor } from "../analysis/thresholds";
-import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState, type Opinion } from "../analysis/types";
+import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, splitPointId, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState, type Opinion, type SplitPoint } from "../analysis/types";
 import { resolveOpinions } from "../analysis/llm/resolve";
 import { useProject } from "./project";
 
 /** 一筆可復原的變更：某媒體的候選 + 決策整份快照（幾千筆內複製成本可忽略）。 */
+interface Snapshot {
+  candidates: Candidate[];
+  decisions: DecisionMap;
+  effects: AudioEffect[];
+  splits: SplitPoint[];
+}
+
 interface Patch {
   label: string;
   mediaId: string;
-  before: { candidates: Candidate[]; decisions: DecisionMap; effects: AudioEffect[] };
-  after: { candidates: Candidate[]; decisions: DecisionMap; effects: AudioEffect[] };
+  before: Snapshot;
+  after: Snapshot;
 }
 
 const MAX_HISTORY = 200;
@@ -25,6 +32,8 @@ interface DecisionsStore {
   decisions: Record<string, DecisionMap>;
   /** 區段效果（靜音 / 增益 / 淡入淡出），與候選共用 undo 歷史。 */
   effects: Record<string, AudioEffect[]>;
+  /** 刀片切點，同樣共用 undo 歷史。 */
+  splits: Record<string, SplitPoint[]>;
   selectedIds: string[];
   filter: DecisionFilter;
   /** 審核模式（一次一筆、鍵盤決定並自動前進）。 */
@@ -54,6 +63,13 @@ interface DecisionsStore {
   /** 人工拉邊界：改候選的時間範圍（id 不變）；標記 meta.userRange 讓規則重跑時保留人工調整。 */
   updateCandidateRange: (mediaId: string, id: string, startMs: number, endMs: number, wordIds?: number[]) => void;
   removeCandidate: (mediaId: string, id: string) => void;
+  /** 刀片：在 ms 切一刀。同位置（±toleranceMs）已有切點則移除，等於 toggle。回傳切完之後那裡有沒有切點。 */
+  toggleSplit: (mediaId: string, ms: number, toleranceMs?: number) => boolean;
+  /** 移動切點（修剪工具拖切點用）。 */
+  moveSplit: (mediaId: string, id: string, ms: number) => void;
+  /** 設定這一刀要插多長的留白（0 = 純對接）。 */
+  setSplitGap: (mediaId: string, id: string, gapMs: number) => void;
+  removeSplit: (mediaId: string, id: string) => void;
   addEffect: (mediaId: string, e: AudioEffect) => void;
   updateEffect: (mediaId: string, id: string, patch: Partial<Omit<AudioEffect, "id">>) => void;
   removeEffect: (mediaId: string, id: string) => void;
@@ -71,7 +87,7 @@ interface DecisionsStore {
   redo: () => void;
   clear: (mediaId: string) => void;
   /** 專案載入：直接放入（不記 undo）。 */
-  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[]) => void;
+  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[], splits?: SplitPoint[]) => void;
 }
 
 function now(): string {
@@ -87,18 +103,25 @@ export function defaultStateFor(c: Candidate, aggressiveness: number): DecisionS
 }
 
 export const useDecisions = create<DecisionsStore>((set, get) => {
-  const snapshot = (mediaId: string) => ({
+  const snapshot = (mediaId: string): Snapshot => ({
     candidates: get().candidates[mediaId] ?? [],
     decisions: get().decisions[mediaId] ?? {},
     effects: get().effects[mediaId] ?? [],
+    splits: get().splits[mediaId] ?? [],
   });
-  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions: DecisionMap; effects?: AudioEffect[] }, record = true) => {
+  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[]; splits?: SplitPoint[] }, record = true) => {
     const before = snapshot(mediaId);
-    const after = { candidates: next.candidates ?? before.candidates, decisions: next.decisions, effects: next.effects ?? before.effects };
+    const after: Snapshot = {
+      candidates: next.candidates ?? before.candidates,
+      decisions: next.decisions ?? before.decisions,
+      effects: next.effects ?? before.effects,
+      splits: next.splits ?? before.splits,
+    };
     set((s) => ({
       candidates: { ...s.candidates, [mediaId]: after.candidates },
       decisions: { ...s.decisions, [mediaId]: after.decisions },
       effects: { ...s.effects, [mediaId]: after.effects },
+      splits: { ...s.splits, [mediaId]: after.splits },
       past: record ? [...s.past.slice(-(MAX_HISTORY - 1)), { label, mediaId, before, after }] : s.past,
       future: record ? [] : s.future,
     }));
@@ -109,6 +132,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     candidates: {},
     decisions: {},
     effects: {},
+    splits: {},
     selectedIds: [],
     filter: { kinds: null, states: null },
     reviewing: false,
@@ -234,6 +258,38 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       set((s) => ({ selectedIds: s.selectedIds.filter((x) => x !== id) }));
     },
 
+    toggleSplit: (mediaId, ms, toleranceMs = 20) => {
+      const list = get().splits[mediaId] ?? [];
+      const at = Math.max(0, Math.round(ms));
+      const hit = list.find((s) => Math.abs(s.ms - at) <= toleranceMs);
+      if (hit) {
+        commit(mediaId, "移除切點", { splits: list.filter((s) => s.id !== hit.id) });
+        return false;
+      }
+      // id 帶位置只是為了看得懂；真正的唯一性靠下面的去重（同一毫秒不會有兩刀）
+      let id = splitPointId(at);
+      for (let n = 2; list.some((s) => s.id === id); n++) id = `${splitPointId(at)}#${n}`;
+      commit(mediaId, "切一刀", { splits: [...list, { id, ms: at }].sort((a, b) => a.ms - b.ms) });
+      return true;
+    },
+    moveSplit: (mediaId, id, ms) => {
+      const list = get().splits[mediaId] ?? [];
+      if (!list.some((s) => s.id === id)) return;
+      const next = list.map((s) => (s.id === id ? { ...s, ms: Math.max(0, Math.round(ms)) } : s)).sort((a, b) => a.ms - b.ms);
+      commit(mediaId, "移動切點", { splits: next });
+    },
+    setSplitGap: (mediaId, id, gapMs) => {
+      const list = get().splits[mediaId] ?? [];
+      if (!list.some((s) => s.id === id)) return;
+      const g = Math.max(0, Math.round(gapMs));
+      commit(mediaId, g > 0 ? `插入留白 ${g} ms` : "移除留白", { splits: list.map((s) => (s.id === id ? { ...s, gapMs: g } : s)) });
+    },
+    removeSplit: (mediaId, id) => {
+      const list = get().splits[mediaId] ?? [];
+      if (!list.some((s) => s.id === id)) return;
+      commit(mediaId, "移除切點", { splits: list.filter((s) => s.id !== id) });
+    },
+
     addEffect: (mediaId, e) => {
       const list = (get().effects[mediaId] ?? []).filter((x) => x.id !== e.id);
       commit(mediaId, `效果：${effectLabel(e)}`, { decisions: get().decisions[mediaId] ?? {}, effects: [...list, e].sort((a, b) => a.startMs - b.startMs) });
@@ -278,6 +334,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         candidates: { ...s.candidates, [p.mediaId]: p.before.candidates },
         decisions: { ...s.decisions, [p.mediaId]: p.before.decisions },
         effects: { ...s.effects, [p.mediaId]: p.before.effects },
+        splits: { ...s.splits, [p.mediaId]: p.before.splits ?? [] },
         past: s.past.slice(0, -1),
         future: [...s.future, p],
       }));
@@ -290,26 +347,30 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         candidates: { ...s.candidates, [p.mediaId]: p.after.candidates },
         decisions: { ...s.decisions, [p.mediaId]: p.after.decisions },
         effects: { ...s.effects, [p.mediaId]: p.after.effects },
+        splits: { ...s.splits, [p.mediaId]: p.after.splits ?? [] },
         future: s.future.slice(0, -1),
         past: [...s.past, p],
       }));
       useProject.getState().markDirty();
     },
-    load: (mediaId, candidates, decisions, effects = []) =>
+    load: (mediaId, candidates, decisions, effects = [], splits = []) =>
       set((s) => ({
         candidates: { ...s.candidates, [mediaId]: candidates },
         decisions: { ...s.decisions, [mediaId]: decisions },
         effects: { ...s.effects, [mediaId]: effects },
+        splits: { ...s.splits, [mediaId]: splits },
       })),
     clear: (mediaId) =>
       set((s) => {
         const candidates = { ...s.candidates };
         const decisions = { ...s.decisions };
         const effects = { ...s.effects };
+        const splits = { ...s.splits };
         delete candidates[mediaId];
         delete decisions[mediaId];
         delete effects[mediaId];
-        return { candidates, decisions, effects, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
+        delete splits[mediaId];
+        return { candidates, decisions, effects, splits, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
       }),
   };
 });

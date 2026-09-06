@@ -13,6 +13,8 @@ import { useTheme } from "../theme";
 import { formatMs } from "../time";
 import BeatGridOverlay from "./BeatGridOverlay";
 import PlayheadOverlay from "./PlayheadOverlay";
+import TrimHandles from "./TrimHandles";
+import type { SeamInfo } from "./trimActions";
 import TimelinePlaceholder from "./TimelinePlaceholder";
 
 /** 時間尺高度（TimelinePlugin，插在波形上方）。 */
@@ -143,6 +145,10 @@ export interface TimelineProps {
   onRangeChange: (id: string, startMs: number, endMs: number) => void;
   onRetry: () => void;
   onOpenSettings: (focus?: "key" | "ffmpeg") => void;
+  /** 目前 EDL 的接縫（修剪把手 / 切點記號）。 */
+  seams: SeamInfo[];
+  /** 右鍵接縫。 */
+  onSeamMenu: (seam: SeamInfo, x: number, y: number) => void;
 }
 
 /**
@@ -463,6 +469,7 @@ export default function Timeline(props: TimelineProps) {
       <div className="relative w-full h-full">
         <div ref={boxRef} className="w-full h-full" onContextMenu={onContextMenu} />
         <BeatGridOverlay ws={wsInstance} height={waveH + RULER_H} />
+        <TrimHandles ws={wsInstance} height={waveH + RULER_H} seams={props.seams} onOpenMenu={props.onSeamMenu} />
         <PlayheadOverlay ws={wsInstance} height={waveH + RULER_H} />
       </div>
       {hint && (

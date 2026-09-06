@@ -17,7 +17,7 @@ import type { AudioEffect } from "../src/analysis/effects";
 import { normalizeTranscript, type ServerTranscript } from "../src/analysis/normalize";
 import { runRulesAt } from "../src/analysis/rules";
 import { thresholdsFor } from "../src/analysis/thresholds";
-import { SUGGEST_ONLY_KINDS, isActiveState, KIND_LABEL, type Candidate, type DecisionMap, type DecisionState, type Transcript } from "../src/analysis/types";
+import { SUGGEST_ONLY_KINDS, isActiveState, KIND_LABEL, type Candidate, type DecisionMap, type DecisionState, type SplitPoint, type Transcript } from "../src/analysis/types";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../src/analysis/beats";
 import type { LocalAnalysis } from "../src/analysis/peaks";
 import { actualWords, expectedWords, verifyEdit, type VerifyReport } from "../src/analysis/verify";
@@ -177,6 +177,8 @@ interface Analysis {
   candidates: Candidate[];
   decisions: DecisionMap;
   effects: AudioEffect[];
+  /** App 裡用刀片切的切點。沒讀的話 CLI 會剪出跟 App 不一樣長度的成品。 */
+  splits: SplitPoint[];
 }
 
 async function analyze(file: string, ff: Ffmpeg, flags: Record<string, string | true>): Promise<Analysis> {
@@ -204,7 +206,7 @@ async function analyze(file: string, ff: Ffmpeg, flags: Record<string, string | 
     log(`AI 判讀完成：剪 ${applied}、不剪 ${dropped}、新增建議 ${r.added.length}${r.failed ? `（${r.failed} 個視窗失敗）` : ""}`);
     for (const w of r.warnings.slice(0, 5)) log(`  ! ${w}`);
   }
-  return { transcript, candidates, decisions, effects: [] };
+  return { transcript, candidates, decisions, effects: [], splits: [] };
 }
 
 function summarizeKinds(cands: Candidate[]): string {
@@ -218,7 +220,7 @@ async function loadProject(p: string): Promise<Analysis & { mediaPath: string | 
     media?: { id: string; path: string }[];
     activeMediaId?: string | null;
     settings?: { aggressiveness?: number; targetLufs?: number };
-    analysis?: Record<string, { transcript?: Transcript; candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[] }>;
+    analysis?: Record<string, { transcript?: Transcript; candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[]; splits?: SplitPoint[] }>;
   };
   const id = doc.activeMediaId ?? doc.media?.[0]?.id;
   const rec = id ? doc.analysis?.[id] : undefined;
@@ -229,6 +231,7 @@ async function loadProject(p: string): Promise<Analysis & { mediaPath: string | 
     candidates: rec.candidates ?? [],
     decisions: rec.decisions ?? {},
     effects: rec.effects ?? [],
+    splits: rec.splits ?? [],
     mediaPath: media?.path ?? null,
     aggressiveness: doc.settings?.aggressiveness ?? 50,
     targetLufs: doc.settings?.targetLufs ?? -16,
@@ -239,7 +242,7 @@ function edlOf(a: Analysis, durationMs: number, aggressiveness: number): Edl {
   const th = thresholdsFor(aggressiveness);
   const tr = a.transcript;
   return buildEdl(
-    { words: tr.words, sentences: tr.sentences, vad: tr.vad, durationMs: tr.durationMs || durationMs },
+    { words: tr.words, sentences: tr.sentences, vad: tr.vad, durationMs: tr.durationMs || durationMs, splits: a.splits },
     a.candidates,
     a.decisions,
     { ...DEFAULT_EDL_OPTIONS, maxSentenceRemovalRatio: th.maxSentenceRemovalRatio },

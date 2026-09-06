@@ -144,3 +144,25 @@ export const KIND_LABEL: Record<CandidateKind, string> = {
 
 /** 這些類型永遠只當「建議」，不自動套用（需求 3：讓使用者決定）。 */
 export const SUGGEST_ONLY_KINDS: ReadonlySet<CandidateKind> = new Set(["unclear", "rambling", "off_topic", "redo"]);
+
+/**
+ * 刀片切點：在來源時間軸上「切一刀」。
+ *
+ * 切點本身**不剪掉任何東西** —— 它把一個保留段斷成兩個，接縫用 butt join（seam），
+ * 聽起來與沒切一樣。它的用途是「先立一個可以抓的把手」：切完才能對這一刀做漣漪 /
+ * 捲動修剪，或在這裡插一段留白當呼吸。跟 Final Cut 的刀片同一個意思。
+ *
+ * 刻意不做成 Candidate：候選那一套背後接著規則層、雙 agent 判讀、審核佇列與驗收，
+ * 而切點沒有「要不要剪」的語意，混進去只會讓那些流程多長出一堆例外。
+ */
+export interface SplitPoint {
+  id: string;
+  /** 來源時間（ms）。 */
+  ms: number;
+  /** > 0 時在此插入留白（room tone），走 Join.kind = "gap"。 */
+  gapMs?: number;
+}
+
+export function splitPointId(ms: number): string {
+  return `split:${Math.round(ms)}`;
+}

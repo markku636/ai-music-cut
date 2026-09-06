@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Crop, Music, Palette, Play, Repeat, Scissors, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, X, ZoomIn } from "lucide-react";
+import { Check, Crop, Music, Palette, Play, Repeat, Scissors, Slice, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
 import type { AudioEffect } from "../analysis/effects";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
 import { activeRanges } from "../analysis/edl/build";
-import { isActiveState, type Candidate, type DecisionMap } from "../analysis/types";
+import { isActiveState, type Candidate, type DecisionMap, type SplitPoint } from "../analysis/types";
 import { EmptyState, Button } from "../ui/index";
 import { useT } from "../i18n";
 import { restoreAnalysis } from "../pipeline/analyze";
@@ -24,6 +24,8 @@ import SelectionBar from "../timeline/SelectionBar";
 import { addEffectOnSelection, applyCandidateRange, clearSelection, cutSelection, keepOnlySelection, removeEffect, updateEffectRange } from "../timeline/selectionActions";
 import Timeline, { type WaveMenuInfo } from "../timeline/Timeline";
 import WaveContextMenu, { type MenuItem } from "../timeline/WaveContextMenu";
+import { bladeAt, liftSelection, removeSeamSplit, seamsOfEdl, setSeamPause, type SeamInfo } from "../timeline/trimActions";
+import { formatMs } from "../time";
 import TranscriptEditor from "../transcript/TranscriptEditor";
 import TranscriptPlaceholder from "../transcript/TranscriptPlaceholder";
 import ReviewMode from "../decisions/ReviewMode";
@@ -34,6 +36,7 @@ import { useResizable } from "./useResizable";
 const EMPTY_C: Candidate[] = [];
 const EMPTY_D: DecisionMap = {};
 const EMPTY_E: AudioEffect[] = [];
+const EMPTY_S: SplitPoint[] = [];
 const GAIN_STEPS = [6, 3, -3, -6, -12];
 
 export interface MainAreaProps {
@@ -51,6 +54,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   const candidates = useDecisions((s) => (mediaId ? s.candidates[mediaId] ?? EMPTY_C : EMPTY_C));
   const decisions = useDecisions((s) => (mediaId ? s.decisions[mediaId] ?? EMPTY_D : EMPTY_D));
   const effects = useDecisions((s) => (mediaId ? s.effects[mediaId] ?? EMPTY_E : EMPTY_E));
+  const splits = useDecisions((s) => (mediaId ? s.splits[mediaId] ?? EMPTY_S : EMPTY_S));
   const selectedIds = useDecisions((s) => s.selectedIds);
   const aggressiveness = useProject((s) => s.aggressiveness);
   const select = useDecisions((s) => s.select);
@@ -78,11 +82,32 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   // edlFor 從 store 直接讀（getState），所以 lint 看不出它依賴什麼；
   // 這些 dep 就是「該重算」的訊號，刻意留著。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const edl = useMemo(() => (mediaId ? edlFor(mediaId) : null), [mediaId, candidates, decisions, aggressiveness, local, transcript]);
+  const edl = useMemo(() => (mediaId ? edlFor(mediaId) : null), [mediaId, candidates, decisions, splits, aggressiveness, local, transcript]);
   const cuts = useMemo(
     () => edl?.removals.map((r) => ({ startMs: r.startMs, endMs: r.endMs })) ?? activeRanges(candidates, decisions),
     [edl, candidates, decisions],
   );
+  const seams = useMemo(() => seamsOfEdl(edl), [edl]);
+  // 段落之間補呼吸用的常見長度；0 = 拿掉留白，回到直接對接
+  const PAUSE_STEPS: number[] = [0, 200, 500, 1000];
+  const [seamMenu, setSeamMenu] = useState<{ seam: SeamInfo; x: number; y: number } | null>(null);
+  // 吸附目標：接縫（EDL 的保留段邊界，含刀片切點）+ 句界 + 字界 + 頭尾。
+  // 只在 EDL / 逐字稿變動時攤平一次，拖曳過程中直接用。
+  const setSnapSources = useTimeline((s) => s.setSnapSources);
+  useEffect(() => {
+    const seams: number[] = [];
+    for (const k of edl?.keeps ?? []) {
+      seams.push(k.srcStartMs);
+      seams.push(k.srcEndMs);
+    }
+    setSnapSources({
+      seams,
+      sentences: transcript?.sentences ?? [],
+      words: transcript?.words ?? [],
+      durationMs: active?.probe?.duration_ms ?? transcript?.durationMs ?? 0,
+    });
+  }, [edl, transcript, active?.probe?.duration_ms, setSnapSources]);
+
   // 波形一好就算拍點（純 JS、5 ms 桶自相關；語音信心低會回 null → 不顯示網格）
   const setBeatGrid = useTimeline((s) => s.setBeatGrid);
   useEffect(() => {
@@ -142,6 +167,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
         { label: t("循環播放"), icon: Repeat, checked: loopSel, onClick: toggleLoop },
         { separator: true },
         { label: t("剪掉"), icon: Scissors, shortcut: "Delete", danger: true, onClick: () => void cutSelection() },
+        { label: t("提起（留白靜音，不關洞）"), icon: VolumeX, shortcut: "Shift+Delete", onClick: () => void liftSelection() },
         { label: t("只保留（頭尾剪掉）"), icon: Crop, onClick: () => void keepOnlySelection() },
         { separator: true },
         { label: t("改成另一種曲風…"), icon: Palette, onClick: () => setStyleFor({ startMs: selection.startMs, endMs: selection.endMs }) },
@@ -157,6 +183,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
     }
     return [
       { label: t("從這裡播放"), icon: Play, onClick: () => { seek(info.ms); playRange(info.ms, dur, { skip: true }); } },
+      { label: t("在這裡切一刀"), icon: Slice, shortcut: "B", onClick: () => void bladeAt(info.ms) },
       { separator: true },
       { label: t("從開頭選到這裡"), icon: SquareDashed, onClick: () => setSelection({ startMs: 0, endMs: info.ms }) },
       { label: t("從這裡選到結尾"), icon: SquareDashed, onClick: () => setSelection({ startMs: info.ms, endMs: dur }) },
@@ -164,6 +191,30 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
       { separator: true },
       { label: t("整段適配"), icon: ZoomIn, shortcut: "Ctrl+0", onClick: fitZoom },
     ];
+  };
+
+  const seamMenuItems = (s: SeamInfo): MenuItem[] => {
+    const around = () => playRange(Math.max(0, s.srcBeforeMs - 1200), s.srcAfterMs + 1200, { skip: true });
+    const items: MenuItem[] = [
+      { label: s.splitId ? t("切點 {at}", { at: formatMs(s.srcBeforeMs, { millis: true }) }) : t("接縫 {at}", { at: formatMs(s.srcBeforeMs, { millis: true }) }), disabled: true },
+      { separator: true },
+      { label: t("巡這個接縫（前後各 1.2 秒）"), icon: Play, onClick: around },
+      { label: t("選取這個接縫附近"), icon: SquareDashed, onClick: () => setSelection({ startMs: Math.max(0, s.srcBeforeMs - 600), endMs: s.srcAfterMs + 600 }) },
+    ];
+    if (s.splitId) {
+      items.push(
+        { separator: true },
+        ...PAUSE_STEPS.map<MenuItem>((ms) => ({
+          label: ms === 0 ? t("不留白（直接對接）") : t("插入留白 {ms} ms", { ms }),
+          icon: ms === 0 ? Scissors : Wind,
+          checked: Math.round(s.gapMs) === ms,
+          onClick: () => setSeamPause(s.afterKeepId, ms),
+        })),
+        { separator: true },
+        { label: t("移除切點"), icon: Trash, danger: true, onClick: () => removeSeamSplit(s.afterKeepId) },
+      );
+    }
+    return items;
   };
 
   const toggleCandidate = (id: string) => {
@@ -201,11 +252,14 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
               effects={effects}
               onEffectChange={updateEffectRange}
               onContextMenu={setMenu}
+              seams={seams}
+              onSeamMenu={(seam, x, y) => setSeamMenu({ seam, x, y })}
               onRetry={() => void ensureLocalAnalysis(active.id).catch(() => {})}
               onOpenSettings={onOpenSettings}
             />
             <SelectionBar onStyle={(s, e) => setStyleFor({ startMs: s, endMs: e })} />
             {menu && <WaveContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
+            {seamMenu && <WaveContextMenu x={seamMenu.x} y={seamMenu.y} items={seamMenuItems(seamMenu.seam)} onClose={() => setSeamMenu(null)} />}
             {styleFor && mediaId && <StyleDialog mediaId={mediaId} startMs={styleFor.startMs} endMs={styleFor.endMs} onClose={() => setStyleFor(null)} />}
           </div>
           <Splitter axis="y" onPointerDown={timeline.onPointerDown} />

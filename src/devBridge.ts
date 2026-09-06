@@ -12,6 +12,8 @@ import { useDecisions } from "./store/decisions";
 import { usePlayback } from "./store/playback";
 import { useProject } from "./store/project";
 import { useTimeline } from "./store/timeline";
+import { bladeAt, seamsOfEdl, setSeamPause, trimSeam, type SeamInfo } from "./timeline/trimActions";
+import { liftSelection } from "./timeline/trimActions";
 
 export interface DevBridge {
   playRange: typeof playRange;
@@ -38,6 +40,12 @@ export interface DevBridge {
   edlFor: typeof edlFor;
   buildRenderPlan: typeof buildRenderPlan;
   runRender: typeof runRender;
+  /** R10 剪輯工具組：刀片 / 修剪 / 提起 / 接縫清單（CDP 量測用）。 */
+  bladeAt: typeof bladeAt;
+  trimSeam: typeof trimSeam;
+  liftSelection: typeof liftSelection;
+  setSeamPause: typeof setSeamPause;
+  seams: () => SeamInfo[];
 }
 
 export function installDevBridge() {
@@ -85,5 +93,13 @@ export function installDevBridge() {
     edlFor,
     buildRenderPlan,
     runRender,
+    bladeAt,
+    trimSeam,
+    liftSelection,
+    setSeamPause,
+    seams: () => {
+      const id = useProject.getState().activeMediaId;
+      return id ? seamsOfEdl(edlFor(id)) : [];
+    },
   };
 }

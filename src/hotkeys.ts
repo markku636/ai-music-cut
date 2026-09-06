@@ -19,9 +19,16 @@ export interface HotkeyHandlers {
   zoomFit?: () => void;
   home?: () => void;
   end?: () => void;
-  /** 時間軸工具：V 定位、S 選取；Esc 清除選取。 */
+  /** 時間軸工具：V 定位、S 選取、T 修剪；Esc 清除選取。 */
   toolSeek?: () => void;
   toolSelect?: () => void;
+  toolTrim?: () => void;
+  /** B：在播放線切一刀（刀片）。 */
+  blade?: () => void;
+  /** N：吸附開關。 */
+  toggleSnap?: () => void;
+  /** Shift+Delete：提起（留白靜音，不關洞）。 */
+  liftSelection?: () => void;
   escape?: () => void;
   /** Space：由 App 決定播選取或播放 / 暫停；未提供則播放 / 暫停。 */
   space?: () => void;
@@ -132,6 +139,18 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
       case "S":
         h.toolSelect?.();
         return;
+      case "t":
+      case "T":
+        h.toolTrim?.();
+        return;
+      case "b":
+      case "B":
+        h.blade?.();
+        return;
+      case "n":
+      case "N":
+        h.toggleSnap?.();
+        return;
       case " ":
         e.preventDefault();
         if (h.space) h.space();
@@ -180,7 +199,9 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
         return;
       case "Delete":
       case "Backspace":
-        h.deleteSelection?.();
+        // Shift = 提起（不關洞，只靜音），與剪掉的差別是後面整串不會往前跑
+        if (e.shiftKey) h.liftSelection?.();
+        else h.deleteSelection?.();
         return;
       case "p":
       case "P":

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Crosshair, FastForward, Hand, Magnet, Maximize2, MousePointer2, Music2, Pause, Play, Rewind, Scissors, SquareDashed, Target, Unlink, ZoomIn, ZoomOut } from "lucide-react";
+import { Crosshair, FastForward, Hand, Maximize2, MousePointer2, MoveHorizontal, Music2, Pause, Play, Rewind, Scissors, SquareDashed, Target, Unlink, ZoomIn, ZoomOut } from "lucide-react";
 import { IconButton, Segmented } from "../ui/index";
 import { useT } from "../i18n";
 import { usePlayback } from "../store/playback";
 import { useTimeline, type TimelineTool } from "../store/timeline";
 import { formatMs } from "../time";
+import SnapMenu from "./SnapMenu";
 import { seekBy, togglePlay } from "./playerRef";
 import { editedTimeAt, type Range } from "./skip";
 
@@ -27,8 +28,6 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
   const beatGrid = useTimeline((s) => s.beatGrid);
   const showBeats = useTimeline((s) => s.showBeats);
   const toggleBeats = useTimeline((s) => s.toggleBeats);
-  const snapBeats = useTimeline((s) => s.snapBeats);
-  const toggleSnap = useTimeline((s) => s.toggleSnap);
   const scaleGrid = useTimeline((s) => s.scaleGrid);
   const setDownbeatAt = useTimeline((s) => s.setDownbeatAt);
   const tap = useTimeline((s) => s.tap);
@@ -73,8 +72,10 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
         options={[
           { value: "seek", label: narrow ? "" : t("定位"), icon: MousePointer2, title: t("定位：拖曳也是移動播放位置（V）") },
           { value: "select", label: narrow ? "" : t("選取"), icon: SquareDashed, title: t("選取（預設）：點一下定位、拖曳選一段，再播放 / 剪掉 / 只保留（S）") },
+          { value: "trim", label: narrow ? "" : t("修剪"), icon: MoveHorizontal, title: t("修剪（T）：抓接縫左右推 —— 中間＝捲動（總長不變），兩側＝漣漪（後面跟著位移）") },
         ]}
       />
+      <SnapMenu hasGrid={!!beatGrid} />
       {beatGrid && (
         <span className="flex items-center gap-0.5">
           <button
@@ -86,7 +87,6 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
             <Music2 size={13} />
             {narrow ? beatGrid.bpm : `${beatGrid.bpm} BPM`}
           </button>
-          <IconButton icon={Magnet} label={snapBeats ? t("選取貼齊拍點（開）") : t("選取貼齊拍點（關）")} active={snapBeats} onClick={toggleSnap} />
           <button type="button" onClick={() => scaleGrid(0.5)} title={t("拍子太密 → 減半（÷2）")} className="h-7 px-1.5 rounded-sm text-[11px] mono text-fg/55 hover:bg-fg/5">
             ÷2
           </button>

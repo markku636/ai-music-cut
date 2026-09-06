@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { BookOpen, Bug, Copy, ExternalLink, FileText, Info, RefreshCw } from "lucide-react";
 import { api } from "../api";
-import { APP_NAME, REPO_URL } from "../brand";
+import { APP_NAME, REPO_URL, TOOL_PAGE_URL } from "../brand";
 import { Button, Modal } from "../ui/index";
 import Icon from "../ui/Icon";
 import { copyToClipboard } from "../ui";
@@ -50,7 +50,7 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
   const open = (url: string) => void api.openExternal(url).catch(() => {});
   const links: { icon: typeof ExternalLink; label: string; url: string }[] = [
     { icon: ExternalLink, label: t("GitHub 專案"), url: REPO_URL },
-    { icon: BookOpen, label: t("作者部落格"), url: "https://blog.markkulab.net" },
+    { icon: BookOpen, label: t("作者部落格"), url: TOOL_PAGE_URL },
     { icon: FileText, label: t("變更紀錄"), url: `https://github.com/${REPO}/blob/main/CHANGELOG.md` },
     { icon: Bug, label: t("回報問題"), url: `https://github.com/${REPO}/issues/new` },
   ];
@@ -81,7 +81,9 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
           {check.phase === "update" && (
             <button
               type="button"
-              onClick={() => open(check.info.url)}
+              // 導到部落格的工具頁，不是 GitHub Release ——
+              // 那一頁有安裝說明與截圖，Release 頁對非工程師只是一串檔名。
+              onClick={() => open(TOOL_PAGE_URL)}
               className="text-sm font-medium text-accent hover:underline inline-flex items-center gap-1.5"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-accent" aria-hidden />

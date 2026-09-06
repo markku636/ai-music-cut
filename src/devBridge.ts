@@ -11,6 +11,10 @@ import { tickCount, tickRunning } from "./preview/ticker";
 import { useDecisions } from "./store/decisions";
 import { usePlayback } from "./store/playback";
 import { skimStatus, skimTo } from "./preview/skimPlayer";
+import { useCleanup } from "./store/cleanup";
+import { useHighlights } from "./store/highlights";
+import { useShowNotes } from "./store/showNotes";
+import { useTranscript } from "./store/transcript";
 import { useProject } from "./store/project";
 import { useTimeline } from "./store/timeline";
 import { bladeAt, seamsOfEdl, setSeamPause, trimSeam, type SeamInfo } from "./timeline/trimActions";
@@ -48,6 +52,10 @@ export interface DevBridge {
   setSeamPause: typeof setSeamPause;
   skimStatus: typeof skimStatus;
   skimTo: typeof skimTo;
+  cleanup: typeof useCleanup;
+  highlights: typeof useHighlights;
+  showNotes: typeof useShowNotes;
+  transcript: typeof useTranscript;
   seams: () => SeamInfo[];
 }
 
@@ -105,6 +113,13 @@ export function installDevBridge() {
     // 量起來永遠是「沒有音源」。
     skimStatus,
     skimTo,
+    // 這幾個 store 一定要從**這裡**拿。自動化腳本手動 import("/src/store/x.ts") 會拿到
+    // 另一個模組實例（熱更新之後 App 用的是帶 ?t= 的網址），寫進去的值 App 根本讀不到 ——
+    // 量出來像是功能壞了，其實是在對一個平行世界說話。
+    cleanup: useCleanup,
+    highlights: useHighlights,
+    showNotes: useShowNotes,
+    transcript: useTranscript,
     seams: () => {
       const id = useProject.getState().activeMediaId;
       return id ? seamsOfEdl(edlFor(id)) : [];

@@ -166,6 +166,149 @@ async fn write_sidecar(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(p)
 }
 
+/// 安裝套件那一步要跑的參數。**用 `python -m pip` 而不是 `pip`**：
+/// 機器上常常有好幾個 python，`pip` 指到的不一定是我們偵測到的那一個 ——
+/// 裝完之後 import 不到才是最難查的失敗。
+pub fn install_args() -> Vec<String> {
+    // --progress-bar off：pip 的進度條是 \r 覆寫的，逐行讀會變成一堆亂碼
+    [
+        "-m", "pip", "install", "-U", "--progress-bar", "off",
+        "--disable-pip-version-check", "faster-whisper",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
+/// 使用者可以挑的模型。名字直接餵給 faster-whisper，大小是給人判斷用的估計值。
+pub const MODELS: &[(&str, &str)] = &[
+    ("small", "~0.5 GB"),
+    ("medium", "~1.5 GB"),
+    ("large-v3-turbo", "~1.6 GB"),
+    ("large-v3", "~3 GB"),
+];
+
+pub fn is_known_model(name: &str) -> bool {
+    MODELS.iter().any(|(m, _)| *m == name)
+}
+
+/// 先下載模型的那一步。用 faster-whisper 自己的 `download_model`，
+/// **不要**用 `WhisperModel(...)` 觸發下載 —— 那會順便把 ctranslate2 載進來初始化，
+/// 在沒有 GPU 的機器上多花好幾十秒，而我們這一步只想要把檔案抓下來。
+pub fn model_download_script(model: &str) -> String {
+    format!(
+        "import sys\n\
+         try:\n\
+         \x20   from faster_whisper.utils import download_model\n\
+         except Exception as e:\n\
+         \x20   print('找不到 faster_whisper：%s' % e); sys.exit(3)\n\
+         print('開始下載模型 {m}（第一次會比較久）')\n\
+         p = download_model('{m}')\n\
+         print('模型已就緒：%s' % p)\n"
+    , m = model)
+}
+
+#[derive(Serialize, Clone)]
+struct InstallEvent {
+    job_id: String,
+    /// "step" | "line" | "done"
+    kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    step: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ok: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    code: Option<i32>,
+}
+
+fn emit(app: &AppHandle, job_id: &str, kind: &str, step: Option<&str>, line: Option<String>, ok: Option<bool>, code: Option<i32>) {
+    let _ = app.emit(
+        "local-asr-install",
+        InstallEvent {
+            job_id: job_id.to_string(),
+            kind: kind.to_string(),
+            step: step.map(|s| s.to_string()),
+            line,
+            ok,
+            code,
+        },
+    );
+}
+
+/// 跑一個子行程，把 stdout / stderr 逐行送到前端；回傳結束碼。
+async fn run_streaming(app: &AppHandle, job_id: &str, step: &str, py: &str, args: &[String]) -> AppResult<Option<i32>> {
+    emit(app, job_id, "step", Some(step), None, None, None);
+    let mut cmd = proc::cmd(py);
+    for a in args {
+        cmd.arg(a);
+    }
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    let mut child = cmd.spawn().map_err(|e| AppError::Agent(format!("啟動 python 失敗：{e}")))?;
+
+    let mut tasks = Vec::new();
+    // stdout 與 stderr 都要收：pip 把警告與錯誤寫在 stderr，只讀 stdout 會漏掉失敗原因
+    if let Some(out) = child.stdout.take() {
+        let (a, j) = (app.clone(), job_id.to_string());
+        tasks.push(tokio::spawn(async move {
+            let mut lines = BufReader::new(out).lines();
+            while let Ok(Some(l)) = lines.next_line().await {
+                emit(&a, &j, "line", None, Some(l), None, None);
+            }
+        }));
+    }
+    if let Some(err) = child.stderr.take() {
+        let (a, j) = (app.clone(), job_id.to_string());
+        tasks.push(tokio::spawn(async move {
+            let mut lines = BufReader::new(err).lines();
+            while let Ok(Some(l)) = lines.next_line().await {
+                emit(&a, &j, "line", None, Some(l), None, None);
+            }
+        }));
+    }
+    let status = child.wait().await.map_err(|e| AppError::Agent(format!("執行失敗：{e}")))?;
+    for t in tasks {
+        let _ = t.await;
+    }
+    Ok(status.code())
+}
+
+/// 依使用者在設定裡勾的項目安裝。**選什麼是 UI 決定的，這裡只負責執行** ——
+/// 把「要裝什麼」寫死在 Rust 裡的話，換一個模型就得重新發一版。
+///
+/// - `package`：裝 / 更新 faster-whisper 套件（會帶進 ctranslate2、tokenizers 等，幾百 MB）
+/// - `model`：順便把模型抓下來。不指定的話，第一次分析時才下載 ——
+///   那時候使用者正等著看結果，卻卡在一個沒有進度的下載上。
+pub async fn install(app: AppHandle, job_id: String, package: bool, model: Option<String>) -> AppResult<bool> {
+    let py = python_bin().await.ok_or_else(|| AppError::Agent("找不到 python，無法安裝".into()))?;
+    let mut ok = true;
+
+    if package {
+        let code = run_streaming(&app, &job_id, "package", &py, &install_args()).await?;
+        if code != Some(0) {
+            emit(&app, &job_id, "done", None, None, Some(false), code);
+            return Ok(false);
+        }
+    }
+
+    if let Some(m) = model.as_deref().filter(|m| !m.trim().is_empty()) {
+        if !is_known_model(m) {
+            return Err(AppError::Agent(format!("不認得的模型：{m}")));
+        }
+        let args = vec!["-c".to_string(), model_download_script(m)];
+        let code = run_streaming(&app, &job_id, "model", &py, &args).await?;
+        ok = code == Some(0);
+        if !ok {
+            emit(&app, &job_id, "done", None, None, Some(false), code);
+            return Ok(false);
+        }
+    }
+
+    emit(&app, &job_id, "done", None, None, Some(ok), Some(0));
+    Ok(ok)
+}
+
 /// 跑一次本機轉寫。事件走 `local-asr` （與 ttls 那條路的進度分開，前端各自處理）。
 pub async fn transcribe(app: AppHandle, job_id: String, audio_path: String, model: String, language: String) -> AppResult<serde_json::Value> {
     let py = python_bin().await.ok_or_else(|| AppError::Agent("找不到 python，無法用本機辨識".into()))?;
@@ -239,6 +382,61 @@ mod tests {
     fn sidecar_reports_missing_package_instead_of_crashing() {
         // 沒安裝時要回一個看得懂的訊息，不是 traceback
         assert!(SIDECAR.contains("faster-whisper 未安裝"));
+    }
+
+    #[test]
+    fn install_uses_python_dash_m_pip() {
+        // 裸 `pip` 可能指到另一個 python —— 裝完 import 不到是最難查的失敗
+        let a = install_args();
+        assert_eq!(a[0], "-m");
+        assert_eq!(a[1], "pip");
+        assert!(a.contains(&"faster-whisper".to_string()));
+    }
+
+    #[test]
+    fn install_turns_off_the_progress_bar() {
+        // pip 的進度條是 \r 覆寫的，逐行讀會變成亂碼
+        let a = install_args();
+        let i = a.iter().position(|x| x == "--progress-bar").expect("要有 --progress-bar");
+        assert_eq!(a[i + 1], "off");
+    }
+
+    #[test]
+    fn model_list_is_ordered_small_to_large() {
+        // 畫面上要讓人一眼看出「越下面越大越準」
+        let names: Vec<&str> = MODELS.iter().map(|(m, _)| *m).collect();
+        assert_eq!(names, vec!["small", "medium", "large-v3-turbo", "large-v3"]);
+        assert!(MODELS.iter().all(|(_, size)| size.contains("GB")));
+    }
+
+    #[test]
+    fn only_known_models_are_accepted() {
+        assert!(is_known_model("large-v3"));
+        assert!(!is_known_model("large-v3; rm -rf /"));
+        assert!(!is_known_model(""));
+    }
+
+    #[test]
+    fn download_script_uses_download_model_not_whispermodel() {
+        // WhisperModel(...) 會順便把 ctranslate2 載進來初始化，這一步只想抓檔案
+        let sc = model_download_script("large-v3");
+        assert!(sc.contains("download_model"));
+        assert!(!sc.contains("WhisperModel"));
+        assert!(sc.contains("large-v3"));
+    }
+
+    #[test]
+    fn download_script_reports_a_missing_package_instead_of_a_traceback() {
+        assert!(model_download_script("small").contains("\u{627e}\u{4e0d}\u{5230} faster_whisper"));
+    }
+
+    #[test]
+    fn install_hint_matches_what_we_actually_run() {
+        // 畫面上給人看的那一行，跟真的跑的東西不能不一樣
+        let hint = install_command();
+        for token in ["pip", "install", "faster-whisper"] {
+            assert!(hint.contains(token), "install_hint 少了 {token}");
+        }
     }
 
     #[test]

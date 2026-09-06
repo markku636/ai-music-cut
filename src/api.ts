@@ -199,6 +199,18 @@ export interface CleanupPlan {
 }
 
 /** 本機辨識的可用狀態。 */
+/** `local-asr-install` 事件：安裝過程逐行回報。 */
+export interface LocalAsrInstallEvent {
+  job_id: string;
+  /** "step"（換一個階段）| "line"（一行輸出）| "done" */
+  kind: "step" | "line" | "done";
+  /** kind==="step" 時："package" | "model" */
+  step?: string;
+  line?: string;
+  ok?: boolean;
+  code?: number;
+}
+
 export interface LocalAsrStatus {
   python: boolean;
   python_version: string | null;
@@ -398,6 +410,13 @@ export const api = {
   claudeDetect: () => invoke<ClaudeStatus>("claude_detect"),
   codexDetect: () => invoke<ClaudeStatus>("codex_detect"),
   localAsrDetect: () => invoke<LocalAsrStatus>("local_asr_detect"),
+  /** 可以選的模型與大小估計：[名稱, "~3 GB"]。 */
+  localAsrModels: () => invoke<[string, string][]>("local_asr_models"),
+  /** 安裝套件那一步實際會執行的參數（畫面上先給人看過再按）。 */
+  localAsrInstallCommand: () => invoke<string[]>("local_asr_install_command"),
+  /** 依使用者勾的項目安裝；輸出走 `local-asr-install` 事件。 */
+  localAsrInstall: (jobId: string, pkg: boolean, model: string | null) =>
+    invoke<boolean>("local_asr_install", { jobId, package: pkg, model }),
   /** 本機 faster-whisper 轉寫；回傳與 ttls 相同形狀的逐字稿。 */
   localAsrTranscribe: (jobId: string, audioPath: string, model: string, language: string) =>
     invoke<unknown>("local_asr_transcribe", { jobId, audioPath, model, language }),

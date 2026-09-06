@@ -542,7 +542,15 @@ export default function App() {
         <RightRail mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} onRerunRules={rerunRules} onVerify={openVerify} seams={railSeams} effects={railEffects} />
       </div>
       <StatusBar onOpenSettings={openSettings} />
-      <SettingsDialog open={settingsOpen} focus={settingsFocus} onClose={() => setSettingsOpen(false)} />
+      <SettingsDialog
+        open={settingsOpen}
+        focus={settingsFocus}
+        onClose={() => setSettingsOpen(false)}
+        onOpenPrompts={() => {
+          setSettingsOpen(false);
+          setPromptsOpen(true);
+        }}
+      />
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
       {renderOpen && active && (

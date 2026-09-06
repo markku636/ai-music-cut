@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { Cog } from "lucide-react";
-import { api, errMessage, type AppSettings, type LocalAsrStatus } from "../api";
+import { BookMarked, Cog, ScrollText } from "lucide-react";
+import { api, errMessage, type AppSettings } from "../api";
 import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
-import { copyToClipboard, pickDirectory, pickOpenFile, toast } from "../ui";
+import { pickDirectory, pickOpenFile, toast } from "../ui";
 import { useT } from "../i18n";
 import { ffmpegSourceLabel } from "../ffmpegSource";
 import { useUi, type Density } from "../store/ui";
 import { useSettings } from "../store/settings";
+import { parseHotwords } from "../analysis/hotwords";
+import HotwordsDialog from "./HotwordsDialog";
+import LocalAsrSetup from "./LocalAsrSetup";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -19,10 +22,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export type SettingsFocus = "key" | "ffmpeg" | null;
 
-export default function SettingsDialog({ open, focus = null, onClose }: { open: boolean; focus?: SettingsFocus; onClose: () => void }) {
+export default function SettingsDialog({
+  open,
+  focus = null,
+  onClose,
+  onOpenPrompts,
+}: {
+  open: boolean;
+  focus?: SettingsFocus;
+  onClose: () => void;
+  onOpenPrompts: () => void;
+}) {
   const t = useT();
   const keyInputRef = useRef<HTMLInputElement>(null);
   const ffmpegInputRef = useRef<HTMLInputElement>(null);
+  const [hotwordsOpen, setHotwordsOpen] = useState(false);
   const [highlight, setHighlight] = useState<SettingsFocus>(null);
 
   // 從 banner / 流程列 / 狀態列進來：等 modal 進場後捲到該欄位、聚焦並高亮 1.5 秒
@@ -112,7 +126,12 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
     }
   };
 
+  const hotwords = parseHotwords(draft.hotwords);
+  const hotwordCount = hotwords.length;
+  const hotwordPreview = hotwords.slice(0, 4).join("、") + (hotwordCount > 4 ? "…" : "");
+
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -164,45 +183,47 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
           </Button>
         </Section>
 
-        <Section title={t("工具")}>
-          <Field
-            label="ffmpeg"
-            hint={
-              ffmpeg?.found
-                ? `${ffmpeg.version} · ${ffmpegSourceLabel(ffmpeg.source)} · ${ffmpeg.ffmpeg_path}`
-                : t("找不到 ffmpeg；請安裝或指定 ffmpeg.exe / 其所在資料夾")
-            }
-          >
-            <div className="flex gap-2">
-              <Input
-                ref={ffmpegInputRef}
-                value={draft.ffmpeg_path ?? ""}
-                onChange={(e) => patch({ ffmpeg_path: e.target.value })}
-                placeholder={t("留空＝自動偵測（PATH）")}
-                className={`flex-1 transition-shadow ${highlight === "ffmpeg" ? "ring-2 ring-accent" : ""}`}
-                spellCheck={false}
-              />
-              <Button
-                variant="ghost"
-                onClick={async () => {
-                  const p = await pickOpenFile([{ name: "ffmpeg", extensions: ["exe", "*"] }]);
-                  if (p) patch({ ffmpeg_path: p });
-                }}
-              >
-                …
-              </Button>
-              <Button onClick={() => void detectFfmpeg()} loading={busy === "ffmpeg"}>
-                {t("偵測")}
+        <Section title={t("逐字稿（辨識）")}>
+          <FormGrid>
+            <Field
+              label={t("逐字稿來源")}
+              hint={t("ttls 是把音檔上傳到伺服器轉寫；本機是用你電腦上的 faster-whisper，不上傳、不需要金鑰，但第一次會下載模型。")}
+            >
+              <Select value={draft.asr_source || "ttls"} onChange={(e) => void commit({ asr_source: e.target.value })}>
+                <option value="ttls">{t("ttls 伺服器（上傳）")}</option>
+                <option value="local">{t("本機 faster-whisper（不上傳）")}</option>
+              </Select>
+            </Field>
+            {(draft.asr_source || "ttls") === "local" && <LocalAsrSetup />}
+            <Field label={t("辨識語言")}>
+              <Select value={draft.asr_language} onChange={(e) => void commit({ asr_language: e.target.value })}>
+                <option value="zh">中文（zh/en 混講）</option>
+                <option value="en">English</option>
+                <option value="ja">日本語</option>
+                <option value="auto">auto</option>
+              </Select>
+            </Field>
+            <Field label={t("辨識模型")}>
+              <Select value={draft.asr_model} onChange={(e) => void commit({ asr_model: e.target.value })}>
+                <option value="auto">auto（依 VRAM 選）</option>
+                <option value="large-v3">large-v3（最準）</option>
+                <option value="large-v3-turbo">large-v3-turbo（快）</option>
+              </Select>
+            </Field>
+          </FormGrid>
+          <Field label={t("領域詞")} hint={t("人名 / 產品名 / 術語 —— 讓辨識器聽得對。跟「贅字管理」相反：那個決定哪些字要剪掉。")}>
+            <div className="flex items-center gap-2">
+              <span className="flex-1 truncate text-[12px] text-fg/55" title={draft.hotwords}>
+                {hotwordCount ? t("{n} 個詞：{list}", { n: hotwordCount, list: hotwordPreview }) : t("還沒有領域詞")}
+              </span>
+              <Button variant="ghost" icon={BookMarked} onClick={() => setHotwordsOpen(true)}>
+                {t("維護")}
               </Button>
             </div>
           </Field>
-          <Field label={t("介面密度")} hint={t("大螢幕用「寬鬆」讀起來比較不吃力；筆電用「緊湊」可以多看到幾列")}>
-            <Select value={density} onChange={(e) => setDensity(e.target.value as Density)}>
-              <option value="compact">{t("緊湊")}</option>
-              <option value="normal">{t("標準")}</option>
-              <option value="comfortable">{t("寬鬆")}</option>
-            </Select>
-          </Field>
+        </Section>
+
+        <Section title={t("AI")}>
           <Field
             label={t("結構化產出的後端")}
             hint={t("AI 判讀、審核、節目筆記走哪個 CLI。AI 助手不受影響 —— 它要透過 App 內建的 MCP server 操作剪輯，而 codex 要連上那個 server 得改你自己的 config.toml，所以助手一律走 claude。")}
@@ -245,6 +266,21 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
               <option value="opus">opus</option>
             </Select>
           </Field>
+          <FormGrid>
+            <Field label={t("AI 判讀")}>
+              <label className="flex items-center gap-2 h-7 text-sm">
+                <input type="checkbox" checked={draft.judge_enabled} onChange={(e) => void commit({ judge_enabled: e.target.checked })} />
+                {t("分析後自動用 Claude 判讀自然度")}
+              </label>
+            </Field>
+          </FormGrid>
+          <Field label={t("提示詞")} hint={t("剪輯 / 審核 / 節目筆記 / 助手四個角色的系統提示詞，可以直接改。")}>
+            <div className="flex">
+              <Button variant="ghost" icon={ScrollText} onClick={onOpenPrompts}>
+                {t("維護提示詞")}
+              </Button>
+            </div>
+          </Field>
         </Section>
 
         <Section title={t("分析")}>
@@ -260,40 +296,40 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
                 className="w-full accent-[rgb(var(--c-accent))]"
               />
             </Field>
-            <Field label={t("AI 判讀")}>
-              <label className="flex items-center gap-2 h-7 text-sm">
-                <input type="checkbox" checked={draft.judge_enabled} onChange={(e) => void commit({ judge_enabled: e.target.checked })} />
-                {t("分析後自動用 Claude 判讀自然度")}
-              </label>
-            </Field>
-            <Field
-              label={t("逐字稿來源")}
-              hint={t("ttls 是把音檔上傳到伺服器轉寫；本機是用你電腦上的 faster-whisper，不上傳、不需要金鑰，但第一次會下載模型。")}
-            >
-              <Select value={draft.asr_source || "ttls"} onChange={(e) => void commit({ asr_source: e.target.value })}>
-                <option value="ttls">{t("ttls 伺服器（上傳）")}</option>
-                <option value="local">{t("本機 faster-whisper（不上傳）")}</option>
-              </Select>
-            </Field>
-            {(draft.asr_source || "ttls") === "local" && <LocalAsrStatusRow />}
-            <Field label={t("辨識語言")}>
-              <Select value={draft.asr_language} onChange={(e) => void commit({ asr_language: e.target.value })}>
-                <option value="zh">中文（zh/en 混講）</option>
-                <option value="en">English</option>
-                <option value="ja">日本語</option>
-                <option value="auto">auto</option>
-              </Select>
-            </Field>
-            <Field label={t("辨識模型")}>
-              <Select value={draft.asr_model} onChange={(e) => void commit({ asr_model: e.target.value })}>
-                <option value="auto">auto（依 VRAM 選）</option>
-                <option value="large-v3">large-v3（最準）</option>
-                <option value="large-v3-turbo">large-v3-turbo（快）</option>
-              </Select>
-            </Field>
           </FormGrid>
-          <Field label={t("領域詞（hotwords，逗號分隔）")} hint={t("產品名 / 人名 / 術語，提升辨識率")}>
-            <Input value={draft.hotwords} onChange={(e) => patch({ hotwords: e.target.value })} onBlur={() => void commit({ hotwords: draft.hotwords })} />
+        </Section>
+
+        <Section title={t("音訊工具")}>
+          <Field
+            label="ffmpeg"
+            hint={
+              ffmpeg?.found
+                ? `${ffmpeg.version} · ${ffmpegSourceLabel(ffmpeg.source)} · ${ffmpeg.ffmpeg_path}`
+                : t("找不到 ffmpeg；請安裝或指定 ffmpeg.exe / 其所在資料夾")
+            }
+          >
+            <div className="flex gap-2">
+              <Input
+                ref={ffmpegInputRef}
+                value={draft.ffmpeg_path ?? ""}
+                onChange={(e) => patch({ ffmpeg_path: e.target.value })}
+                placeholder={t("留空＝自動偵測（PATH）")}
+                className={`flex-1 transition-shadow ${highlight === "ffmpeg" ? "ring-2 ring-accent" : ""}`}
+                spellCheck={false}
+              />
+              <Button
+                variant="ghost"
+                onClick={async () => {
+                  const p = await pickOpenFile([{ name: "ffmpeg", extensions: ["exe", "*"] }]);
+                  if (p) patch({ ffmpeg_path: p });
+                }}
+              >
+                …
+              </Button>
+              <Button onClick={() => void detectFfmpeg()} loading={busy === "ffmpeg"}>
+                {t("偵測")}
+              </Button>
+            </div>
           </Field>
         </Section>
 
@@ -328,61 +364,18 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
             </Field>
           </FormGrid>
         </Section>
+        <Section title={t("外觀")}>
+          <Field label={t("介面密度")} hint={t("大螢幕用「寬鬆」讀起來比較不吃力；筆電用「緊湊」可以多看到幾列")}>
+            <Select value={density} onChange={(e) => setDensity(e.target.value as Density)}>
+              <option value="compact">{t("緊湊")}</option>
+              <option value="normal">{t("標準")}</option>
+              <option value="comfortable">{t("寬鬆")}</option>
+            </Select>
+          </Field>
+        </Section>
       </div>
     </Modal>
-  );
-}
-
-/**
- * 本機辨識的可用狀態。
- *
- * 刻意**現場探測**而不是相信設定值：使用者可能在別的地方裝好了 python 套件，
- * 也可能剛移除。這一格要回答的是「現在按下分析會不會動」，不是「我以為裝了沒」。
- */
-function LocalAsrStatusRow() {
-  const t = useT();
-  const [st, setSt] = useState<LocalAsrStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const probe = async () => {
-    setBusy(true);
-    try {
-      setSt(await api.localAsrDetect());
-    } catch {
-      setSt(null);
-    } finally {
-      setBusy(false);
-    }
-  };
-  useEffect(() => {
-    void probe();
-  }, []);
-
-  const ready = st?.python && st?.faster_whisper;
-  return (
-    <div className="rounded-md border border-fg/10 px-3 py-2 text-[11px] space-y-1.5">
-      <div className="flex items-center gap-2">
-        <span className={ready ? "text-success" : "text-warning"}>{ready ? t("可以使用") : t("尚未就緒")}</span>
-        <span className="text-fg/45">
-          {st ? `Python ${st.python ? (st.python_version ?? "OK") : t("找不到")} · faster-whisper ${st.faster_whisper ? "OK" : t("未安裝")}` : t("檢查中…")}
-        </span>
-        <Button size="sm" variant="ghost" className="ml-auto" loading={busy} onClick={() => void probe()}>
-          {t("重新檢查")}
-        </Button>
-      </div>
-      {st && !st.python && <div className="text-fg/60">{t("先安裝 Python 3.9 以上，並確認它在 PATH 上。")}</div>}
-      {st && st.python && !st.faster_whisper && (
-        <div className="space-y-1">
-          <div className="text-fg/60">{t("在終端機執行這一行，裝好之後按「重新檢查」：")}</div>
-          <div className="flex items-center gap-1">
-            <code className="flex-1 rounded bg-inset px-2 py-1 font-mono text-[11px] select-all">{st.install_hint}</code>
-            <Button size="sm" variant="ghost" onClick={() => void copyToClipboard(st.install_hint, t("已複製"))}>
-              {t("複製")}
-            </Button>
-          </div>
-          <div className="text-fg/45">{t("第一次分析時會自動下載模型（large-v3 約 1 GB），之後就不用了。沒有顯示卡也跑得動，只是比較慢。")}</div>
-        </div>
-      )}
-    </div>
+    {hotwordsOpen && <HotwordsDialog onClose={() => setHotwordsOpen(false)} />}
+    </>
   );
 }

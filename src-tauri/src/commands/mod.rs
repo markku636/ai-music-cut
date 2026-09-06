@@ -493,6 +493,29 @@ pub async fn local_asr_detect() -> crate::local_asr::LocalAsrStatus {
     crate::local_asr::detect().await
 }
 
+/// 一鍵安裝 faster-whisper（`python -m pip install`）；輸出逐行走 `local-asr-install` 事件。
+#[tauri::command]
+pub async fn local_asr_install(
+    app: tauri::AppHandle,
+    job_id: String,
+    package: bool,
+    model: Option<String>,
+) -> Result<bool, crate::error::AppError> {
+    crate::local_asr::install(app, job_id, package, model).await
+}
+
+/// 安裝時實際會執行的參數 —— 畫面上要先給人看過再按。
+#[tauri::command]
+pub fn local_asr_install_command() -> Vec<String> {
+    crate::local_asr::install_args()
+}
+
+/// 可以選的模型與大小估計（給設定畫面畫下拉用）。
+#[tauri::command]
+pub fn local_asr_models() -> Vec<(String, String)> {
+    crate::local_asr::MODELS.iter().map(|(m, s)| (m.to_string(), s.to_string())).collect()
+}
+
 /// 用本機 faster-whisper 轉寫；回傳與 ttls 相同形狀的逐字稿文件。
 #[tauri::command]
 pub async fn local_asr_transcribe(

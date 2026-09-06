@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Film, Play, Square, Star, Trash } from "lucide-react";
-import { normalizeRanges, reelProblem, reelSourceMs, REEL_CROSSFADE_MS } from "../analysis/reel";
-import { Button, EmptyState, IconButton, Input, Modal } from "../ui/index";
+import { normalizeRanges, reelProblem, reelSourceMs, REEL_BED_GAIN_DB, REEL_CROSSFADE_MS } from "../analysis/reel";
+import { Button, EmptyState, Field, IconButton, Input, Modal, Select } from "../ui/index";
 import { useT } from "../i18n";
 import { isRangePlaying, playRange, stopRange } from "../preview/playerRef";
 import { useHighlights } from "../store/highlights";
+import { useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
 import { formatMs } from "../time";
 
@@ -14,7 +15,15 @@ import { formatMs } from "../time";
  * 一集剪完之後要丟社群的，通常不是一整段連續的 60 秒，而是散在各處的三五句。
  * 「只輸出這一段」處理不了那個 —— 這裡把挑好的幾段串成一支預告，專案完全不動。
  */
-export default function HighlightsDialog({ mediaId, onExport, onClose }: { mediaId: string; onExport: () => void; onClose: () => void }) {
+export default function HighlightsDialog({
+  mediaId,
+  onExport,
+  onClose,
+}: {
+  mediaId: string;
+  onExport: (bedMediaId: string | null) => void;
+  onClose: () => void;
+}) {
   const t = useT();
   const list = useHighlights((s) => s.byMedia[mediaId] ?? []);
   const update = useHighlights((s) => s.update);
@@ -22,6 +31,9 @@ export default function HighlightsDialog({ mediaId, onExport, onClose }: { media
   const setSelection = useTimeline((s) => s.setSelection);
   // isRangePlaying() 只說「有沒有在播某一段」，不說是哪一段，所以自己記
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [bed, setBed] = useState<string>("");
+  // 墊樂只能挑「別的檔案」—— 拿這一集自己當底會聽到兩次自己
+  const beds = useProject((s2) => s2.media.filter((m) => m.id !== mediaId));
 
   const merged = normalizeRanges(list);
   const problem = reelProblem(list);
@@ -38,7 +50,7 @@ export default function HighlightsDialog({ mediaId, onExport, onClose }: { media
           <Button variant="ghost" onClick={onClose}>
             {t("關閉")}
           </Button>
-          <Button variant="primary" icon={Film} disabled={!!problem} onClick={onExport} title={problem ?? undefined}>
+          <Button variant="primary" icon={Film} disabled={!!problem} onClick={() => onExport(bed || null)} title={problem ?? undefined}>
             {t("輸出精華合輯")}
           </Button>
         </>
@@ -100,6 +112,19 @@ export default function HighlightsDialog({ mediaId, onExport, onClose }: { media
             </div>
           </>
         )}
+        {list.length > 0 && (
+          <Field label={t("墊樂（選用）")} hint={t("整支預告底下鋪同一首，頭尾自動淡進淡出，音量 {db} dB。").replace("{db}", String(REEL_BED_GAIN_DB))}>
+            <Select value={bed} onChange={(e) => setBed(e.target.value)}>
+              <option value="">{t("不加墊樂")}</option>
+              {beds.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
+        {list.length > 0 && beds.length === 0 && <div className="text-[11px] text-fg/40">{t("媒體清單裡只有這一個檔案，沒有東西可以當墊樂。")}</div>}
         {problem && list.length > 0 && <div className="text-xs text-warning">{problem}</div>}
       </div>
     </Modal>

@@ -717,6 +717,12 @@ const en: Catalog = {
   "精華合輯（串成一支預告）": "Highlight reel (string them into a promo)",
   "加進精華片段（之後可以串成一支預告）": "Add to highlights (string them into a promo later)",
   "已加進精華片段（共 {n} 段）": "Added to highlights ({n} in total)",
+  // 合輯墊樂與頭尾淡入淡出（v0.38.0）
+  "精華合輯：{n} 段、素材共 {len} 秒，段落之間自動交越，頭尾自動淡進淡出。不寫章節。": "Reel: {n} pieces, {len}s of material, joined by crossfades and topped and tailed with fades. No chapters.",
+  "墊樂（選用）": "Music bed (optional)",
+  "整支預告底下鋪同一首，頭尾自動淡進淡出，音量 {db} dB。": "One track under the whole promo, faded in and out, at {db} dB.",
+  "不加墊樂": "No bed",
+  "媒體清單裡只有這一個檔案，沒有東西可以當墊樂。": "This is the only file in the media list, so there is nothing to use as a bed.",
 };
 
 

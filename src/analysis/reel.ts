@@ -17,6 +17,21 @@ export interface ReelRange extends Span {
 /** 範圍交界的交越長度：比句中接點長得多，因為兩邊在原本的錄音裡毫無關係。 */
 export const REEL_CROSSFADE_MS = 120;
 
+/**
+ * 合輯頭尾的淡入淡出。
+ *
+ * 預告一定是從句子中間開始、句子中間結束（挑的是「好的那一句」，不是段落）。
+ * 不淡就是硬切進一個字的中段 —— 聽起來像檔案壞了。
+ * 出點淡得比進點長：結尾要收，開頭不能拖（前 0.4 秒沒聲音，社群平台上的人就滑走了）。
+ */
+export const REEL_FADE_IN_MS = 150;
+export const REEL_FADE_OUT_MS = 450;
+
+/** 預告的墊樂預設：比一般配樂再低一點 —— 預告是 wall-to-wall 講話，音樂只是底。 */
+export const REEL_BED_GAIN_DB = -22;
+export const REEL_BED_FADE_IN_MS = 800;
+export const REEL_BED_FADE_OUT_MS = 1200;
+
 /** 太短的範圍串起來只會像雜訊。 */
 export const MIN_REEL_RANGE_MS = 300;
 

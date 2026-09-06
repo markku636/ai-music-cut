@@ -170,6 +170,7 @@ export default function App() {
   const [cleanupOpen, setCleanupOpen] = useState(false);
   const [reelOpen, setReelOpen] = useState(false);
   const [renderReel, setRenderReel] = useState<ReelRange[] | null>(null);
+  const [reelBed, setReelBed] = useState<string | null>(null);
   const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
@@ -492,10 +493,12 @@ export default function App() {
           mediaId={active.id}
           range={renderRange}
           reel={renderReel}
+          reelBed={reelBed}
           onClose={() => {
             setRenderOpen(false);
             setRenderRange(null);
             setRenderReel(null);
+            setReelBed(null);
           }}
           onVerify={startVerify}
         />
@@ -510,8 +513,9 @@ export default function App() {
         <HighlightsDialog
           mediaId={active.id}
           onClose={() => setReelOpen(false)}
-          onExport={() => {
+          onExport={(bedMediaId) => {
             setRenderReel(useHighlights.getState().list(active.id));
+            setReelBed(bedMediaId);
             setReelOpen(false);
             setRenderOpen(true);
           }}

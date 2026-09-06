@@ -21,6 +21,7 @@ export default function RenderDialog({
   onVerify,
   range,
   reel,
+  reelBed,
 }: {
   mediaId: string;
   onClose: () => void;
@@ -29,6 +30,8 @@ export default function RenderDialog({
   range?: { startMs: number; endMs: number } | null;
   /** 精華合輯：把好幾段不相鄰的範圍串成一支預告（與 range 互斥）。 */
   reel?: ReelRange[] | null;
+  /** 合輯的墊樂（媒體 id）。 */
+  reelBed?: string | null;
 }) {
   const t = useT();
   const media = useProject((s) => s.media.find((m) => m.id === mediaId) ?? null);
@@ -52,8 +55,8 @@ export default function RenderDialog({
   }, [media, format, settings.output_dir, range, reel]);
 
   const built = useMemo(
-    () => (media ? buildRenderPlan(mediaId, { format, outPath, leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null }) : null),
-    [media, mediaId, format, outPath, leveling, target, range, reel],
+    () => (media ? buildRenderPlan(mediaId, { format, outPath, leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null, reelBedMediaId: reelBed ?? null }) : null),
+    [media, mediaId, format, outPath, leveling, target, range, reel, reelBed],
   );
   const stats = built?.edl.stats;
   const gainRange = useMemo(() => {
@@ -67,7 +70,7 @@ export default function RenderDialog({
     setBusy(true);
     setDone(null);
     try {
-      const base = { format, outPath: outPath.trim(), leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null };
+      const base = { format, outPath: outPath.trim(), leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null, reelBedMediaId: reelBed ?? null };
       if (stems && hasOverlays && !range && !reel?.length) {
         const files = await renderStems(mediaId, base, true, (p) => setStemStep(p));
         setStemStep(null);
@@ -186,7 +189,7 @@ export default function RenderDialog({
         </Field>
         {!!reel?.length && (
           <div className="rounded-md border border-fg/10 px-3 py-2 text-xs text-fg/70">
-            {t("精華合輯：{n} 段、素材共 {len} 秒，段落之間自動交越。不寫章節、不帶配樂（散落的範圍上「配樂該在哪」沒有定義）。")
+            {t("精華合輯：{n} 段、素材共 {len} 秒，段落之間自動交越，頭尾自動淡進淡出。不寫章節。")
               .replace("{n}", String(normalizeRanges(reel).length))
               .replace("{len}", (reelSourceMs(reel) / 1000).toFixed(1))}
           </div>

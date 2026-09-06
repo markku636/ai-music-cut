@@ -5,7 +5,17 @@ import type { Edl } from "../analysis/edl/build";
 import { DEFAULT_EDL_OPTIONS } from "../analysis/edl/build";
 import { buildChapters, toFfmetadata, type Chapter } from "../analysis/chapters";
 import { clipOverlays, clipUnits } from "../analysis/clip";
-import { clipUnitsMulti, normalizeRanges, REEL_CROSSFADE_MS, type ReelRange } from "../analysis/reel";
+import {
+  clipUnitsMulti,
+  normalizeRanges,
+  REEL_BED_FADE_IN_MS,
+  REEL_BED_FADE_OUT_MS,
+  REEL_BED_GAIN_DB,
+  REEL_CROSSFADE_MS,
+  REEL_FADE_IN_MS,
+  REEL_FADE_OUT_MS,
+  type ReelRange,
+} from "../analysis/reel";
 import { outputDurationWithOverlays } from "../analysis/overlays";
 import { mapSrcToOut } from "../analysis/edl/map";
 import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
@@ -44,6 +54,8 @@ export interface RenderOptions {
    * 專案不動、章節不寫、配樂不帶（散落的範圍上「配樂該在哪」沒有定義）。
    */
   reelRanges?: ReelRange[] | null;
+  /** 合輯的墊樂（媒體 id）。整支預告底下鋪同一首，頭尾淡進淡出。 */
+  reelBedMediaId?: string | null;
   /**
    * 只輸出這一段（**來源**時間）。剪輯、配樂、閃避全部照舊，只是頭尾被夾掉；
    * 專案本身不動。社群短片用。
@@ -130,6 +142,15 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   }
   const channels = Math.max(1, Math.min(2, media.probe?.audio?.channels ?? 1));
   const effects = (useDecisions.getState().effects[mediaId] ?? []).map((e) => ({ kind: e.kind, start_ms: e.startMs, end_ms: e.endMs, db: e.db ?? 0 }));
+  if (reel && units.length) {
+    // 預告一定是從句子中間開始、句子中間結束，不淡就是硬切進一個字的中段。
+    // **只加進這一趟的 plan，不寫進 store** —— 這是輸出這支預告的處理，
+    // 不是對專案的編輯；寫進去的話完整成品也會莫名其妙在那兩個位置淡掉。
+    const first = units[0];
+    const last = units[units.length - 1];
+    effects.push({ kind: "fade_in", start_ms: first.startMs, end_ms: Math.min(first.endMs, first.startMs + REEL_FADE_IN_MS), db: 0 });
+    effects.push({ kind: "fade_out", start_ms: Math.max(last.startMs, last.endMs - REEL_FADE_OUT_MS), end_ms: last.endMs, db: 0 });
+  }
   // 章節：標記是釘在來源上的，要換算成成品時間才寫進檔案
   const mainOutMs = planOutDurationMs(
     segs.map((sg) => ({ startMs: sg.src_start_ms, endMs: sg.src_end_ms })),
@@ -160,6 +181,29 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       points: o.points ?? [],
       lane: o.lane,
     });
+  }
+
+  // 合輯的墊樂：整支預告底下鋪同一首。
+  // 不走 store 的 overlays（那是釘在完整成品時間軸上的，合輯的時間軸完全不一樣），
+  // 而是照這一趟算出來的長度現生一條。人聲是 wall-to-wall 的，所以不做閃避控制點 ——
+  // 直接壓到 −22 dB 當底，反而比一路上上下下乾淨。
+  if (reel && opts.reelBedMediaId) {
+    const bed = proj.media.find((m) => m.id === opts.reelBedMediaId);
+    const bedLen = bed?.probe?.duration_ms ?? 0;
+    if (bed && bedLen > 0 && mainOutMs > 0) {
+      clipped.push({
+        path: bed.path,
+        src_start_ms: 0,
+        // 墊樂比預告短就播到哪算哪（Rust 端不會循環）；長就切掉尾巴
+        src_end_ms: Math.min(bedLen, mainOutMs),
+        out_start_ms: 0,
+        gain_db: REEL_BED_GAIN_DB,
+        fade_in_ms: Math.min(REEL_BED_FADE_IN_MS, mainOutMs / 3),
+        fade_out_ms: Math.min(REEL_BED_FADE_OUT_MS, mainOutMs / 3),
+        points: [],
+        lane: "music",
+      });
+    }
   }
 
   // 修聲：opts 明講就用它（傳 null = 這一趟不修，A/B 比較用），沒講就用這個媒體存的設定

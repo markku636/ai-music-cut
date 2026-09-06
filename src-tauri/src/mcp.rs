@@ -164,7 +164,7 @@ async fn dispatch(ctx: &Ctx, req: &Value) -> Option<Value> {
                 "protocolVersion": requested,
                 "capabilities": { "tools": { "listChanged": false } },
                 "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
-                "instructions": "你正在操作 AI Music Cut（podcast 自動粗剪）。以自然順暢為最高原則：先用 get_project_summary / list_candidates 看狀態，再用 set_decisions 接受或拒絕；unclear/rambling 類只建議不自動剪。要動剪輯手法時：list_seams 看有哪些接縫 → trim_seam 修剪（ripple 會改變成品長度、roll 不會）、blade_at 切一刀、insert_pause 在切點補呼吸。要拿掉雜音但保留節奏就用 set_selection + lift_selection（提起不關洞），不要用 add_cut。afterKeepId 只在下一次修剪前有效，連續操作請每次重新呼叫 list_seams。"
+                "instructions": "你正在操作 AI Music Cut（podcast 自動粗剪）。以自然順暢為最高原則：先用 get_project_summary / list_candidates 看狀態，再用 set_decisions 接受或拒絕；unclear/rambling 類只建議不自動剪。要動剪輯手法時：list_seams 看有哪些接縫 → trim_seam 修剪（ripple 會改變成品長度、roll 不會）、blade_at 切一刀、insert_pause 在切點補呼吸。要拿掉雜音但保留節奏就用 set_selection + lift_selection（提起不關洞），不要用 add_cut。afterKeepId 只在下一次修剪前有效，連續操作請每次重新呼叫 list_seams。配樂：list_media → place_overlay（位置用成品時間）→ duck_overlay 讓它在人聲下自動閃避；閃避是看得見的音量控制點，不是壓縮器。章節用 set_chapters（會寫進成品檔案，標題要具體）。"
             })
         }
         "ping" => json!({}),

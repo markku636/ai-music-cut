@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { effectLabel, type AudioEffect } from "../analysis/effects";
 import { thresholdsFor } from "../analysis/thresholds";
 import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, markerId, splitPointId, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState, type Marker, type MarkerKind, type Opinion, type SplitPoint } from "../analysis/types";
+import { overlayId, type Overlay } from "../analysis/overlays";
 import { resolveOpinions } from "../analysis/llm/resolve";
 import { useProject } from "./project";
 
@@ -12,6 +13,7 @@ interface Snapshot {
   effects: AudioEffect[];
   splits: SplitPoint[];
   markers: Marker[];
+  overlays: Overlay[];
 }
 
 interface Patch {
@@ -37,6 +39,8 @@ interface DecisionsStore {
   splits: Record<string, SplitPoint[]>;
   /** 標記 / 章節 / 待辦，同樣共用 undo 歷史。 */
   markers: Record<string, Marker[]>;
+  /** 墊樂 / 音效軌（位置是成品時間），同樣共用 undo 歷史。 */
+  overlays: Record<string, Overlay[]>;
   selectedIds: string[];
   filter: DecisionFilter;
   /** 審核模式（一次一筆、鍵盤決定並自動前進）。 */
@@ -79,6 +83,10 @@ interface DecisionsStore {
   removeMarker: (mediaId: string, id: string) => void;
   /** AI 提的章節：整批取代既有的 chapter 標記（其他類型不動），一筆 undo。 */
   setChapters: (mediaId: string, chapters: { ms: number; title: string }[]) => number;
+  /** 放一段墊樂 / 音效到成品時間軸上；回傳 id。 */
+  addOverlay: (mediaId: string, o: Omit<Overlay, "id">) => string;
+  updateOverlay: (mediaId: string, id: string, patch: Partial<Omit<Overlay, "id">>, label?: string) => void;
+  removeOverlay: (mediaId: string, id: string) => void;
   addEffect: (mediaId: string, e: AudioEffect) => void;
   updateEffect: (mediaId: string, id: string, patch: Partial<Omit<AudioEffect, "id">>) => void;
   removeEffect: (mediaId: string, id: string) => void;
@@ -96,7 +104,7 @@ interface DecisionsStore {
   redo: () => void;
   clear: (mediaId: string) => void;
   /** 專案載入：直接放入（不記 undo）。 */
-  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[], splits?: SplitPoint[], markers?: Marker[]) => void;
+  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[], splits?: SplitPoint[], markers?: Marker[], overlays?: Overlay[]) => void;
 }
 
 function now(): string {
@@ -118,8 +126,9 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     effects: get().effects[mediaId] ?? [],
     splits: get().splits[mediaId] ?? [],
     markers: get().markers[mediaId] ?? [],
+    overlays: get().overlays[mediaId] ?? [],
   });
-  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[]; splits?: SplitPoint[]; markers?: Marker[] }, record = true) => {
+  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[]; splits?: SplitPoint[]; markers?: Marker[]; overlays?: Overlay[] }, record = true) => {
     const before = snapshot(mediaId);
     const after: Snapshot = {
       candidates: next.candidates ?? before.candidates,
@@ -127,6 +136,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       effects: next.effects ?? before.effects,
       splits: next.splits ?? before.splits,
       markers: next.markers ?? before.markers,
+      overlays: next.overlays ?? before.overlays,
     };
     set((s) => ({
       candidates: { ...s.candidates, [mediaId]: after.candidates },
@@ -134,6 +144,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       effects: { ...s.effects, [mediaId]: after.effects },
       splits: { ...s.splits, [mediaId]: after.splits },
       markers: { ...s.markers, [mediaId]: after.markers },
+      overlays: { ...s.overlays, [mediaId]: after.overlays },
       past: record ? [...s.past.slice(-(MAX_HISTORY - 1)), { label, mediaId, before, after }] : s.past,
       future: record ? [] : s.future,
     }));
@@ -146,6 +157,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     effects: {},
     splits: {},
     markers: {},
+    overlays: {},
     selectedIds: [],
     filter: { kinds: null, states: null },
     reviewing: false,
@@ -328,6 +340,24 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       return added.length;
     },
 
+    addOverlay: (mediaId, o) => {
+      const list = get().overlays[mediaId] ?? [];
+      const item: Overlay = { ...o, id: overlayId(o.lane, o.outStartMs) };
+      commit(mediaId, o.lane === "music" ? "加入配樂" : "加入音效", { overlays: [...list, item].sort((a, b) => a.outStartMs - b.outStartMs) });
+      return item.id;
+    },
+    updateOverlay: (mediaId, id, p, label = "調整配樂") => {
+      const list = get().overlays[mediaId] ?? [];
+      if (!list.some((x) => x.id === id)) return;
+      const next = list.map((x) => (x.id === id ? { ...x, ...p } : x)).sort((a, b) => a.outStartMs - b.outStartMs);
+      commit(mediaId, label, { overlays: next });
+    },
+    removeOverlay: (mediaId, id) => {
+      const list = get().overlays[mediaId] ?? [];
+      if (!list.some((x) => x.id === id)) return;
+      commit(mediaId, "移除配樂", { overlays: list.filter((x) => x.id !== id) });
+    },
+
     addEffect: (mediaId, e) => {
       const list = (get().effects[mediaId] ?? []).filter((x) => x.id !== e.id);
       commit(mediaId, `效果：${effectLabel(e)}`, { decisions: get().decisions[mediaId] ?? {}, effects: [...list, e].sort((a, b) => a.startMs - b.startMs) });
@@ -374,6 +404,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         effects: { ...s.effects, [p.mediaId]: p.before.effects },
         splits: { ...s.splits, [p.mediaId]: p.before.splits ?? [] },
         markers: { ...s.markers, [p.mediaId]: p.before.markers ?? [] },
+        overlays: { ...s.overlays, [p.mediaId]: p.before.overlays ?? [] },
         past: s.past.slice(0, -1),
         future: [...s.future, p],
       }));
@@ -388,18 +419,20 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         effects: { ...s.effects, [p.mediaId]: p.after.effects },
         splits: { ...s.splits, [p.mediaId]: p.after.splits ?? [] },
         markers: { ...s.markers, [p.mediaId]: p.after.markers ?? [] },
+        overlays: { ...s.overlays, [p.mediaId]: p.after.overlays ?? [] },
         future: s.future.slice(0, -1),
         past: [...s.past, p],
       }));
       useProject.getState().markDirty();
     },
-    load: (mediaId, candidates, decisions, effects = [], splits = [], markers = []) =>
+    load: (mediaId, candidates, decisions, effects = [], splits = [], markers = [], overlays = []) =>
       set((s) => ({
         candidates: { ...s.candidates, [mediaId]: candidates },
         decisions: { ...s.decisions, [mediaId]: decisions },
         effects: { ...s.effects, [mediaId]: effects },
         splits: { ...s.splits, [mediaId]: splits },
         markers: { ...s.markers, [mediaId]: markers },
+        overlays: { ...s.overlays, [mediaId]: overlays },
       })),
     clear: (mediaId) =>
       set((s) => {
@@ -408,12 +441,14 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         const effects = { ...s.effects };
         const splits = { ...s.splits };
         const markers = { ...s.markers };
+        const overlays = { ...s.overlays };
         delete candidates[mediaId];
         delete decisions[mediaId];
         delete effects[mediaId];
         delete splits[mediaId];
         delete markers[mediaId];
-        return { candidates, decisions, effects, splits, markers, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
+        delete overlays[mediaId];
+        return { candidates, decisions, effects, splits, markers, overlays, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
       }),
   };
 });

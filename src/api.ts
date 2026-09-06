@@ -169,6 +169,21 @@ export interface RenderPlan {
   preview?: boolean;
   /** 章節（ffmetadata 全文；mp3 → ID3 CHAP、m4a → QuickTime 章節）。wav / 預覽會忽略。 */
   chapters_meta?: string;
+  /** 墊樂 / 音效軌（位置是成品時間）。 */
+  overlays?: RenderOverlay[];
+}
+
+/** 疊在主聲軌上的一段音訊（Rust 端逐 frame 混音，包絡與淡入淡出同一套）。 */
+export interface RenderOverlay {
+  path: string;
+  src_start_ms: number;
+  src_end_ms: number;
+  out_start_ms: number;
+  gain_db: number;
+  fade_in_ms: number;
+  fade_out_ms: number;
+  points: { ms: number; db: number }[];
+  lane: string;
 }
 export interface RenderProgress {
   job_id: string;

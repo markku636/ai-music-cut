@@ -1,6 +1,6 @@
 // 輸出流程：EDL → 響度單元 / 增益 → RenderPlan → Rust（串流剪接 + loudnorm 兩趟）；進度 / 完成事件回報。
 import { listen } from "@tauri-apps/api/event";
-import { api, type RenderDone, type RenderJoin, type RenderPlan, type RenderProgress, type RenderSeg } from "../api";
+import { api, type RenderDone, type RenderJoin, type RenderOverlay, type RenderPlan, type RenderProgress, type RenderSeg } from "../api";
 import type { Edl } from "../analysis/edl/build";
 import { DEFAULT_EDL_OPTIONS } from "../analysis/edl/build";
 import { buildChapters, toFfmetadata, type Chapter } from "../analysis/chapters";
@@ -99,6 +99,23 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     joins,
   );
   const chapters = buildChapters(useDecisions.getState().markers[mediaId] ?? [], edl, { outDurationMs: expectedOutMs });
+  // 墊樂 / 音效：來源檔案路徑要從媒體清單解出來（overlay 只存 mediaId）
+  const overlays: RenderOverlay[] = [];
+  for (const o of useDecisions.getState().overlays[mediaId] ?? []) {
+    const srcMedia = proj.media.find((m) => m.id === o.mediaId);
+    if (!srcMedia) continue; // 來源被移出媒體清單了 —— 靜靜跳過比讓整個輸出失敗好
+    overlays.push({
+      path: srcMedia.path,
+      src_start_ms: o.srcInMs,
+      src_end_ms: o.srcOutMs,
+      out_start_ms: o.outStartMs,
+      gain_db: o.gainDb,
+      fade_in_ms: o.fadeInMs,
+      fade_out_ms: o.fadeOutMs,
+      points: o.points ?? [],
+      lane: o.lane,
+    });
+  }
   return {
     plan: {
       segs,
@@ -113,6 +130,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       out_path: opts.outPath,
       channels,
       ...(chapters.length ? { chapters_meta: toFfmetadata(chapters) } : {}),
+      ...(overlays.length ? { overlays } : {}),
     },
     edl,
     units: units.length,

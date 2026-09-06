@@ -1,5 +1,6 @@
 // 專案檔 ↔ 執行期 store 的橋：存檔時把候選 / 決策併進 analysis[mediaId]；載入時還原。
 import type { AudioEffect } from "../analysis/effects";
+import type { Overlay } from "../analysis/overlays";
 import type { Candidate, DecisionMap, Marker, SplitPoint, Transcript } from "../analysis/types";
 import type { MediaAnalysisV1 } from "../project/format";
 import { useDecisions } from "../store/decisions";
@@ -12,6 +13,7 @@ export interface StoredAnalysis extends MediaAnalysisV1 {
   effects?: AudioEffect[];
   splits?: SplitPoint[];
   markers?: Marker[];
+  overlays?: Overlay[];
   transcribedAt?: string;
 }
 
@@ -20,7 +22,7 @@ export function enrichAnalysis(analysis: Record<string, MediaAnalysisV1>): Recor
   const ts = useTranscript.getState();
   const d = useDecisions.getState();
   const out: Record<string, MediaAnalysisV1> = { ...analysis };
-  const ids = new Set([...Object.keys(analysis), ...Object.keys(ts.byMedia), ...Object.keys(d.candidates), ...Object.keys(d.effects), ...Object.keys(d.splits), ...Object.keys(d.markers)]);
+  const ids = new Set([...Object.keys(analysis), ...Object.keys(ts.byMedia), ...Object.keys(d.candidates), ...Object.keys(d.effects), ...Object.keys(d.splits), ...Object.keys(d.markers), ...Object.keys(d.overlays)]);
   for (const id of ids) {
     const rec: StoredAnalysis = { ...(analysis[id] as StoredAnalysis | undefined) };
     if (ts.byMedia[id]) rec.transcript = ts.byMedia[id];
@@ -32,8 +34,10 @@ export function enrichAnalysis(analysis: Record<string, MediaAnalysisV1>): Recor
     else delete rec.splits;
     if (d.markers[id]?.length) rec.markers = d.markers[id];
     else delete rec.markers;
+    if (d.overlays[id]?.length) rec.overlays = d.overlays[id];
+    else delete rec.overlays;
     // 沒逐字稿也可能有人工剪輯 / 效果 / 切點（未分析就手動剪）
-    if (rec.transcript || rec.candidates?.length || rec.effects?.length || rec.splits?.length || rec.markers?.length) out[id] = rec;
+    if (rec.transcript || rec.candidates?.length || rec.effects?.length || rec.splits?.length || rec.markers?.length || rec.overlays?.length) out[id] = rec;
   }
   return out;
 }
@@ -41,9 +45,10 @@ export function enrichAnalysis(analysis: Record<string, MediaAnalysisV1>): Recor
 /** 載入後：analysis 記錄 → store（不記 undo）。回 true 表示有候選可用。 */
 export function restoreDecisions(mediaId: string, rec: StoredAnalysis | undefined): boolean {
   if (!rec?.candidates || !rec.decisions) {
-    if (rec?.effects?.length || rec?.splits?.length || rec?.markers?.length) useDecisions.getState().load(mediaId, [], {}, rec.effects ?? [], rec.splits ?? [], rec.markers ?? []);
+    if (rec?.effects?.length || rec?.splits?.length || rec?.markers?.length || rec?.overlays?.length)
+      useDecisions.getState().load(mediaId, [], {}, rec.effects ?? [], rec.splits ?? [], rec.markers ?? [], rec.overlays ?? []);
     return false;
   }
-  useDecisions.getState().load(mediaId, rec.candidates, rec.decisions, rec.effects ?? [], rec.splits ?? [], rec.markers ?? []);
+  useDecisions.getState().load(mediaId, rec.candidates, rec.decisions, rec.effects ?? [], rec.splits ?? [], rec.markers ?? [], rec.overlays ?? []);
   return true;
 }

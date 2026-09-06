@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api, type McpToolCall, type McpToolDef } from "../api";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState, type MarkerKind } from "../analysis/types";
 import { buildChapters } from "../analysis/chapters";
+import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutput } from "../analysis/overlays";
 import type { EffectKind } from "../analysis/effects";
 import { edlFor, runRulesFor } from "../pipeline/rules";
 import { useTimeline } from "../store/timeline";
@@ -25,14 +26,29 @@ export interface ToolSpec {
 
 class ToolError extends Error {}
 
+/**
+ * 需要逐字稿的工具用這個（候選、判讀、逐字比對之類）。
+ */
 function ctx() {
+  const m = ctxMedia();
+  const tr = useTranscript.getState().byMedia[m.media.id];
+  if (!tr) throw new ToolError(`「${m.media.name}」尚未分析（請先按「分析」）`);
+  return { ...m, tr, cands: m.d.candidates[m.media.id] ?? [], dec: m.d.decisions[m.media.id] ?? {} };
+}
+
+/**
+ * 只需要「有開檔」的工具用這個。
+ *
+ * 手動剪輯、刀片、標記、配樂都**不需要**先跑 ASR（App 本來就是開檔就能剪），
+ * 所以這些工具不該因為沒有逐字稿就拒絕 —— 那會逼使用者為了放一段開場音樂
+ * 先花幾分鐘上傳轉寫。
+ */
+function ctxMedia() {
   const proj = useProject.getState();
   const media = selectActiveMedia(proj);
   if (!media) throw new ToolError("目前沒有開啟的音檔");
-  const tr = useTranscript.getState().byMedia[media.id];
-  if (!tr) throw new ToolError(`「${media.name}」尚未分析（請先按「分析」）`);
   const d = useDecisions.getState();
-  return { proj, media, tr, cands: d.candidates[media.id] ?? [], dec: d.decisions[media.id] ?? {}, d };
+  return { proj, media, d };
 }
 
 function num(v: unknown, dflt: number): number {
@@ -287,7 +303,7 @@ export const TOOLS: ToolSpec[] = [
       additionalProperties: false,
     },
     handler: (a) => {
-      const x = ctx();
+      const x = ctxMedia();
       const from = num(a.fromMs, 0);
       const to = num(a.toMs, Number.MAX_SAFE_INTEGER);
       const all = seamsOfEdl(edlFor(x.media.id));
@@ -317,7 +333,7 @@ export const TOOLS: ToolSpec[] = [
       additionalProperties: false,
     },
     handler: (a) => {
-      ctx();
+      ctxMedia();
       const ms = num(a.ms, -1);
       if (ms < 0) throw new ToolError("ms 必須是非負數");
       const r = bladeAt(ms);
@@ -340,7 +356,7 @@ export const TOOLS: ToolSpec[] = [
       additionalProperties: false,
     },
     handler: (a) => {
-      ctx();
+      ctxMedia();
       const mode = a.mode === "roll" ? "roll" : "ripple";
       const side = a.side === "right" ? "right" : "left";
       const ok = trimSeam(Math.round(num(a.afterKeepId, -1)), Math.round(num(a.deltaMs, 0)), mode, side);
@@ -361,7 +377,7 @@ export const TOOLS: ToolSpec[] = [
       additionalProperties: false,
     },
     handler: (a) => {
-      ctx();
+      ctxMedia();
       const ok = setSeamPause(Math.round(num(a.afterKeepId, -1)), Math.round(num(a.ms, 0)));
       if (!ok) throw new ToolError("那個接縫不是刀片切點（一般接縫的呼吸由 breath 自動決定）");
       return { pauseMs: Math.round(num(a.ms, 0)) };
@@ -376,7 +392,7 @@ export const TOOLS: ToolSpec[] = [
       additionalProperties: false,
     },
     handler: (a) => {
-      const x = ctx();
+      const x = ctxMedia();
       const kind = typeof a.kind === "string" ? a.kind : null;
       const list = (x.d.markers[x.media.id] ?? []).filter((m) => !kind || m.kind === kind);
       return {
@@ -398,7 +414,7 @@ export const TOOLS: ToolSpec[] = [
       additionalProperties: false,
     },
     handler: (a) => {
-      const x = ctx();
+      const x = ctxMedia();
       const kind = (a.kind === "chapter" || a.kind === "todo" ? a.kind : "standard") as MarkerKind;
       const title = typeof a.title === "string" ? a.title.trim() : "";
       if (kind === "chapter" && !title) throw new ToolError("章節一定要給 title（那會顯示在 Podcast 播放器裡）");
@@ -428,7 +444,7 @@ export const TOOLS: ToolSpec[] = [
       additionalProperties: false,
     },
     handler: (a) => {
-      const x = ctx();
+      const x = ctxMedia();
       const raw = Array.isArray(a.chapters) ? a.chapters : [];
       const rows = raw
         .map((c) => {
@@ -447,6 +463,155 @@ export const TOOLS: ToolSpec[] = [
     },
   },
   {
+    name: "list_media",
+    description: "媒體清單裡有哪些檔案（主聲軌之外的可以拿來當配樂 / 音效）。放配樂之前先看這個拿 mediaId。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      const x = ctxMedia();
+      return {
+        active: x.media.id,
+        media: x.proj.media.map((m) => ({ id: m.id, name: m.name, durationMs: Math.round(m.probe?.duration_ms ?? 0), isActive: m.id === x.media.id })),
+      };
+    },
+  },
+  {
+    name: "list_overlays",
+    description: "目前疊在主聲軌上的配樂 / 音效。位置是**成品時間**（剪完之後的時間軸）。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      const x = ctxMedia();
+      const list = x.d.overlays[x.media.id] ?? [];
+      return {
+        overlays: list.map((o) => ({
+          id: o.id,
+          lane: o.lane,
+          source: x.proj.media.find((m) => m.id === o.mediaId)?.name ?? o.mediaId,
+          outStartMs: Math.round(o.outStartMs),
+          at: formatMs(o.outStartMs, { millis: false }),
+          lengthMs: Math.round(o.srcOutMs - o.srcInMs),
+          gainDb: o.gainDb,
+          duckPoints: o.points?.length ?? 0,
+        })),
+      };
+    },
+  },
+  {
+    name: "place_overlay",
+    description:
+      "把媒體清單裡的某個檔案放到配樂（music）或音效（sfx）軌上。outStartMs 是**成品時間**。配樂預設 −18 dB 並帶 2 秒進出，音效預設 −6 dB。放完通常接著呼叫 duck_overlay。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mediaId: { type: "string", description: "從 list_media 取得" },
+        lane: { type: "string", enum: ["music", "sfx"], default: "music" },
+        outStartMs: { type: "number", default: 0 },
+        srcInMs: { type: "number", default: 0 },
+        srcOutMs: { type: "number", description: "省略＝用到來源結尾" },
+        gainDb: { type: "number", minimum: -48, maximum: 12 },
+      },
+      required: ["mediaId"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctxMedia();
+      const src = x.proj.media.find((m) => m.id === a.mediaId);
+      if (!src?.probe) throw new ToolError("找不到那個媒體（先用 list_media）");
+      if (src.id === x.media.id) throw new ToolError("不能把主聲軌自己疊在自己身上");
+      const lane = a.lane === "sfx" ? "sfx" : "music";
+      const preset = lane === "music" ? DEFAULT_MUSIC : DEFAULT_SFX;
+      const srcInMs = Math.max(0, num(a.srcInMs, 0));
+      const srcOutMs = Math.min(src.probe.duration_ms, num(a.srcOutMs, src.probe.duration_ms));
+      if (srcOutMs - srcInMs < 100) throw new ToolError("片段太短（至少 100 ms）");
+      const id = x.d.addOverlay(x.media.id, {
+        lane,
+        mediaId: src.id,
+        srcInMs,
+        srcOutMs,
+        outStartMs: Math.max(0, num(a.outStartMs, 0)),
+        ...preset,
+        ...(typeof a.gainDb === "number" ? { gainDb: a.gainDb } : {}),
+      });
+      return { id, lane, source: src.name, lengthMs: Math.round(srcOutMs - srcInMs) };
+    },
+  },
+  {
+    name: "duck_overlay",
+    description:
+      "讓配樂在人聲底下自動閃避：依人聲區間算出音量控制點（人聲進來前壓下去、講完再回來）。這不是壓縮器，是看得見也拖得動的曲線。省略 id 就對所有 music 軌做。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "省略＝所有配樂" },
+        depthDb: { type: "number", minimum: -40, maximum: 0, description: "壓多少（預設 −9）" },
+        attackMs: { type: "number", minimum: 0, maximum: 3000 },
+        releaseMs: { type: "number", minimum: 0, maximum: 5000 },
+      },
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctxMedia();
+      const edl = edlFor(x.media.id);
+      if (!edl) throw new ToolError("還沒有 EDL（媒體尚未探測）");
+      // 有逐字稿就用 VAD（準）；沒有就退回「保留段就是人聲」（粗，但不必先跑 ASR 才能閃避）
+      const tr = useTranscript.getState().byMedia[x.media.id];
+      const vad = tr?.vad.length ? tr.vad : edl.keeps.map((k) => ({ startMs: k.srcStartMs, endMs: k.srcEndMs }));
+      const voice = voiceRegionsInOutput(vad, edl.keeps);
+      const opts = {
+        ...DEFAULT_DUCK,
+        ...(typeof a.depthDb === "number" ? { depthDb: a.depthDb } : {}),
+        ...(typeof a.attackMs === "number" ? { attackMs: a.attackMs } : {}),
+        ...(typeof a.releaseMs === "number" ? { releaseMs: a.releaseMs } : {}),
+      };
+      const list = (x.d.overlays[x.media.id] ?? []).filter((o) => (a.id ? o.id === a.id : o.lane === "music"));
+      if (!list.length) throw new ToolError(a.id ? "找不到那一段配樂" : "沒有配樂可以閃避（先用 place_overlay）");
+      const done: { id: string; points: number }[] = [];
+      for (const o of list) {
+        const pts = planDuck(voice, o, opts);
+        if (!pts.length) continue;
+        x.d.updateOverlay(x.media.id, o.id, { points: pts }, "自動閃避");
+        done.push({ id: o.id, points: pts.length });
+      }
+      if (!done.length) throw new ToolError("那些配樂底下沒有人聲，不需要閃避");
+      return { ducked: done, depthDb: opts.depthDb };
+    },
+  },
+  {
+    name: "update_overlay",
+    description: "調整一段配樂 / 音效：音量、位置、長度、淡入淡出。remove=true 就移除。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        gainDb: { type: "number", minimum: -48, maximum: 12 },
+        outStartMs: { type: "number", minimum: 0 },
+        srcInMs: { type: "number", minimum: 0 },
+        srcOutMs: { type: "number", minimum: 0 },
+        fadeInMs: { type: "number", minimum: 0, maximum: 20000 },
+        fadeOutMs: { type: "number", minimum: 0, maximum: 20000 },
+        remove: { type: "boolean" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctxMedia();
+      const id = String(a.id);
+      const cur = (x.d.overlays[x.media.id] ?? []).find((o) => o.id === id);
+      if (!cur) throw new ToolError("找不到那一段配樂（先用 list_overlays）");
+      if (a.remove === true) {
+        x.d.removeOverlay(x.media.id, id);
+        return { removed: id };
+      }
+      const patch: Record<string, number> = {};
+      for (const k of ["gainDb", "outStartMs", "srcInMs", "srcOutMs", "fadeInMs", "fadeOutMs"] as const) {
+        if (typeof a[k] === "number") patch[k] = a[k] as number;
+      }
+      if (!Object.keys(patch).length) throw new ToolError("沒有任何要改的欄位");
+      x.d.updateOverlay(x.media.id, id, patch, "調整配樂");
+      return { updated: id, patch };
+    },
+  },
+  {
     name: "set_selection",
     description: "設定時間選取（等同使用者在波形上拖一段）。設好之後可以用 lift_selection 提起，或叫使用者確認。傳 null 清除選取。",
     inputSchema: {
@@ -459,7 +624,7 @@ export const TOOLS: ToolSpec[] = [
       additionalProperties: false,
     },
     handler: (a) => {
-      ctx();
+      ctxMedia();
       if (a.clear === true) {
         useTimeline.getState().setSelection(null);
         return { cleared: true };
@@ -477,7 +642,7 @@ export const TOOLS: ToolSpec[] = [
     description: "提起（lift）：把目前選取換成靜音，但**不關洞** —— 後面的時間位置完全不動。拿掉咳嗽 / 關門聲又要保留節奏時用這個，不要用 add_cut。",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: () => {
-      ctx();
+      ctxMedia();
       const id = liftSelection();
       if (!id) throw new ToolError("目前沒有選取（先用 set_selection）");
       return { lifted: id };
@@ -496,7 +661,7 @@ export const TOOLS: ToolSpec[] = [
       additionalProperties: false,
     },
     handler: (a) => {
-      ctx();
+      ctxMedia();
       const kind = String(a.kind) as EffectKind;
       const id = addEffectOnSelection(kind, kind === "gain" ? num(a.db, 0) : undefined);
       if (!id) throw new ToolError("目前沒有選取（先用 set_selection）");

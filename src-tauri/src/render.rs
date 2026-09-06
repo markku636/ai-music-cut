@@ -16,7 +16,7 @@ use crate::error::{AppError, AppResult};
 use crate::ffmpeg::FfmpegBins;
 use crate::proc;
 
-const SR: u32 = 48_000;
+pub(crate) const SR: u32 = 48_000;
 const ROOM_TONE_AMP: f32 = 0.001; // −60 dBFS
 
 #[derive(Debug, Clone, Deserialize)]
@@ -75,6 +75,9 @@ pub struct RenderPlan {
     /// 而且沒有對拍測試抓得到。Rust 這邊只負責寫檔與多帶兩個 ffmpeg 參數。
     #[serde(default)]
     pub chapters_meta: Option<String>,
+    /// 墊樂 / 音效軌。位置是**成品時間**（剪完之後的時間軸），不是來源時間。
+    #[serde(default)]
+    pub overlays: Vec<crate::mix::RenderOverlay>,
 }
 
 #[derive(Serialize, Clone)]
@@ -97,11 +100,11 @@ pub struct RenderDone {
     pub elapsed_ms: u64,
 }
 
-fn emit_progress(app: &AppHandle, job_id: &str, stage: &str, pct: f32) {
+pub(crate) fn emit_progress(app: &AppHandle, job_id: &str, stage: &str, pct: f32) {
     let _ = app.emit("render-progress", Progress { job_id, stage, pct: pct.clamp(0.0, 100.0) });
 }
 
-fn ms_to_frames(ms: f64) -> u64 {
+pub(crate) fn ms_to_frames(ms: f64) -> u64 {
     ((ms.max(0.0) / 1000.0) * SR as f64).round() as u64
 }
 
@@ -653,21 +656,31 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
         }
         let total = total_out_frames(&plan);
         cut_to_wav(&app, &bins, &src, &plan, &wav_path, &job_id, &cancel).await?;
+        // 墊樂 / 音效疊在主聲軌上。**一定要在量測之前**：loudnorm 要對的是使用者聽到的
+        // 那一份（含配樂），先量主聲軌再加音樂的話成品會比目標響度大。
+        let mixed_path = work_dir.join(format!("mixed-{job_id}.wav"));
+        let stage_wav = if plan.overlays.is_empty() {
+            wav_path.clone()
+        } else {
+            crate::mix::mix_overlays(&app, &bins, &plan, &wav_path, &mixed_path, &job_id, &cancel).await?;
+            mixed_path.clone()
+        };
         // 預覽跳過量測那一趟（30 分鐘素材要幾十秒），直接進編碼
         let m = if plan.preview {
             LoudnormStats::default()
         } else {
             emit_progress(&app, &job_id, "measure", 0.0);
-            let m = measure(&bins, &wav_path, &plan, &cancel).await?;
+            let m = measure(&bins, &stage_wav, &plan, &cancel).await?;
             emit_progress(&app, &job_id, "measure", 100.0);
             m
         };
-        let (oi, otp) = encode(&app, &bins, &wav_path, &plan, &m, &out_part, total, &job_id, &cancel).await?;
+        let (oi, otp) = encode(&app, &bins, &stage_wav, &plan, &m, &out_part, total, &job_id, &cancel).await?;
         tokio::fs::rename(&out_part, &out_path).await?;
         Ok((oi, otp, m.input_i))
     }
     .await;
     let _ = tokio::fs::remove_file(&wav_path).await;
+    let _ = tokio::fs::remove_file(work_dir.join(format!("mixed-{job_id}.wav"))).await;
     if result.is_err() {
         let _ = tokio::fs::remove_file(&out_part).await;
     }
@@ -694,6 +707,7 @@ mod tests {
             channels: 1,
             preview: false,
             chapters_meta: None,
+            overlays: vec![],
         }
     }
 

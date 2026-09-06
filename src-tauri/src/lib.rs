@@ -3,6 +3,7 @@ mod commands;
 mod error;
 mod ffmpeg;
 mod mcp;
+mod mix;
 mod media;
 mod proc;
 mod project;

@@ -73,6 +73,22 @@
    pcm 與 mp3 不在意，但原生 aac 編碼器會直接回 -22 (Invalid argument) —— 症狀是 m4a 輸出一律失敗，
    而 ffmpeg 的最後一行只寫 "Conversion failed!"，看不出原因。（編碼失敗的訊息現在會保留最後四行。）
 
+5h. **配樂 / 音效軌與自動閃避**（`analysis/overlays.ts` + `src-tauri/src/mix.rs`）：
+   `Overlay {lane, mediaId, srcIn/srcOut, outStartMs, gainDb, fadeIn/Out, points[]}` 掛在 decisions store（undo）與專案檔。
+   **位置釘在成品時間**，不是來源時間 —— 使用者是在剪好的節目上決定「開場音樂放這裡」，
+   之後再多剪掉幾個贅字，音樂不該跟著往前跑。時間軸畫的時候用 `mapOutToSrc` 換回來源時間才對得上波形。
+   混音在 `run()` 裡插在 **cut 之後、measure 之前** —— loudnorm 要對的是使用者聽到的那一份（含配樂），
+   先量主聲軌再加音樂的話成品會比目標響度大。
+
+   自己寫混音而不用 ffmpeg 的 `filter_complex`：閃避曲線在 filter graph 裡只能用 `volume` 的運算式硬寫，
+   一集節目幾十段閃避就是幾千字元的表達式（Windows 命令列會先撞牆），而且 filter 字串沒辦法寫測試。
+   `mix.rs` 逐 frame 走成品時間軸，每一軌同時只會有一個片段在播，所以解碼管線是「用到才開、過了就關」，
+   記憶體不隨素材長度成長。**注意**：解碼緩衝要用讀取游標，不能 `carry.drain(..frame_bytes)` 逐 frame 砍前面 ——
+   那是每個 frame 一次 memmove，34 秒的素材就會慢到像當掉。
+
+   閃避（`planDuck`）刻意產生**控制點**而不是接壓縮器：壓縮器聽起來不對的時候只能轉 threshold / ratio 猜，
+   剪輯師要的是「這一句底下再低 3 dB」—— 那是拖一個點的事。內插在 **dB 域**做，0 → −12 dB 才聽起來等速。
+
 6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
 7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。

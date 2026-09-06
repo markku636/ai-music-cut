@@ -3,8 +3,11 @@ import { BookMarked, Check, Crop, Flag, ListTree, MoveHorizontal, Music, Palette
 import type { AudioEffect } from "../analysis/effects";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
 import { activeRanges } from "../analysis/edl/build";
+import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, LANE_LABEL, planDuck, voiceRegionsInOutput, type Overlay } from "../analysis/overlays";
+import { mapSrcToOut } from "../analysis/edl/map";
 import { MARKER_KIND_LABEL, isActiveState, type Candidate, type DecisionMap, type Marker, type MarkerKind, type SplitPoint } from "../analysis/types";
 import { EmptyState, Button } from "../ui/index";
+import { toast } from "../ui";
 import { useT } from "../i18n";
 import { restoreAnalysis } from "../pipeline/analyze";
 import { edlFor } from "../pipeline/rules";
@@ -41,6 +44,9 @@ const EMPTY_D: DecisionMap = {};
 const EMPTY_E: AudioEffect[] = [];
 const EMPTY_S: SplitPoint[] = [];
 const EMPTY_MK: Marker[] = [];
+const EMPTY_OV: Overlay[] = [];
+/** 配樂音量的常用檔位（dB）。 */
+const OVERLAY_GAINS = [0, -6, -12, -18, -24];
 const GAIN_STEPS = [6, 3, -3, -6, -12];
 
 export interface MainAreaProps {
@@ -101,6 +107,14 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   const removeMarker = useDecisions((s) => s.removeMarker);
   const addMarker = useDecisions((s) => s.addMarker);
   const [markerMenu, setMarkerMenu] = useState<{ marker: Marker; x: number; y: number } | null>(null);
+  const overlays = useDecisions((s) => (mediaId ? s.overlays[mediaId] ?? EMPTY_OV : EMPTY_OV));
+  const updateOverlay = useDecisions((s) => s.updateOverlay);
+  const removeOverlay = useDecisions((s) => s.removeOverlay);
+  const addOverlay = useDecisions((s) => s.addOverlay);
+  const allMedia = useProject((s) => s.media);
+  const [overlayMenu, setOverlayMenu] = useState<{ o: Overlay; x: number; y: number } | null>(null);
+  // 可以拿來當配樂 / 音效的其他媒體（自己不能疊自己）
+  const otherMedia = allMedia.filter((m) => m.id !== mediaId);
   // 吸附目標：接縫（EDL 的保留段邊界，含刀片切點）+ 句界 + 字界 + 頭尾。
   // 只在 EDL / 逐字稿變動時攤平一次，拖曳過程中直接用。
   const setSnapSources = useTimeline((s) => s.setSnapSources);
@@ -198,6 +212,21 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
       { label: t("在這裡切一刀"), icon: Slice, shortcut: "B", onClick: () => void bladeAt(info.ms) },
       { label: t("在這裡下標記"), icon: Flag, shortcut: "M", onClick: () => mediaId && addMarker(mediaId, info.ms, "standard") },
       { label: t("在這裡下章節"), icon: BookMarked, shortcut: "Shift+M", onClick: () => mediaId && addMarker(mediaId, info.ms, "chapter") },
+      ...(otherMedia.length
+        ? [
+            { separator: true } as MenuItem,
+            ...otherMedia.slice(0, 6).map<MenuItem>((m) => ({
+              label: t("在這裡放配樂：{name}", { name: m.name }),
+              icon: Music,
+              onClick: () => placeOverlay(m.id, "music", info.ms),
+            })),
+            ...otherMedia.slice(0, 6).map<MenuItem>((m) => ({
+              label: t("在這裡放音效：{name}", { name: m.name }),
+              icon: Volume2,
+              onClick: () => placeOverlay(m.id, "sfx", info.ms),
+            })),
+          ]
+        : []),
       { separator: true },
       { label: t("從開頭選到這裡"), icon: SquareDashed, onClick: () => setSelection({ startMs: 0, endMs: info.ms }) },
       { label: t("從這裡選到結尾"), icon: SquareDashed, onClick: () => setSelection({ startMs: info.ms, endMs: dur }) },
@@ -221,6 +250,69 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
     { separator: true },
     { label: t("移除標記"), icon: Trash, danger: true, onClick: () => mediaId && removeMarker(mediaId, m.id) },
   ];
+
+  /** 目前 EDL 下的人聲區間（成品時間）—— 自動閃避要用。 */
+  const voiceOut = () => {
+    if (!edl) return [];
+    const vad = transcript?.vad ?? [];
+    // 沒有逐字稿時退回「保留段就是人聲」：粗，但總比什麼都不閃避好
+    const regions = vad.length ? vad : edl.keeps.map((k) => ({ startMs: k.srcStartMs, endMs: k.srcEndMs }));
+    return voiceRegionsInOutput(regions, edl.keeps);
+  };
+
+  const overlayMenuItems = (o: Overlay): MenuItem[] => {
+    const len = Math.max(0, o.srcOutMs - o.srcInMs);
+    return [
+      { label: `${LANE_LABEL[o.lane]}　${allMedia.find((m) => m.id === o.mediaId)?.name ?? o.mediaId}`, disabled: true },
+      { separator: true },
+      { label: t("試聽這一段"), icon: Play, onClick: () => playRange(o.outStartMs, o.outStartMs + len, { skip: true }) },
+      { separator: true },
+      ...OVERLAY_GAINS.map<MenuItem>((db) => ({
+        label: t("音量 {db} dB", { db: db > 0 ? `+${db}` : db }),
+        icon: Volume2,
+        checked: o.gainDb === db,
+        onClick: () => mediaId && updateOverlay(mediaId, o.id, { gainDb: db }, "配樂音量"),
+      })),
+      { separator: true },
+      {
+        label: o.points?.length ? t("重算人聲閃避") : t("讓配樂在人聲下自動閃避"),
+        icon: TrendingDown,
+        onClick: () => {
+          if (!mediaId) return;
+          const pts = planDuck(voiceOut(), o, DEFAULT_DUCK);
+          if (!pts.length) {
+            toast.info(t("這一段底下沒有人聲，不需要閃避"));
+            return;
+          }
+          updateOverlay(mediaId, o.id, { points: pts }, "自動閃避");
+          toast.success(t("已加上 {n} 個閃避控制點（{db} dB）", { n: pts.length, db: DEFAULT_DUCK.depthDb }));
+        },
+      },
+      ...(o.points?.length
+        ? [{ label: t("拿掉閃避（整段固定音量）"), icon: TrendingUp, onClick: () => mediaId && updateOverlay(mediaId, o.id, { points: [] }, "拿掉閃避") } as MenuItem]
+        : []),
+      { separator: true },
+      { label: t("移除這段配樂"), icon: Trash, danger: true, onClick: () => mediaId && removeOverlay(mediaId, o.id) },
+    ];
+  };
+
+  /** 把某個媒體放到配樂 / 音效軌上（起點＝目前播放位置換算成成品時間）。 */
+  const placeOverlay = (srcMediaId: string, lane: "music" | "sfx", atSrcMs: number) => {
+    if (!mediaId) return;
+    const src = allMedia.find((m) => m.id === srcMediaId);
+    if (!src?.probe) return;
+    const outStartMs = edl ? mapSrcToOut(edl.keeps, atSrcMs) : atSrcMs;
+    const preset = lane === "music" ? DEFAULT_MUSIC : DEFAULT_SFX;
+    addOverlay(mediaId, {
+      lane,
+      mediaId: srcMediaId,
+      srcInMs: 0,
+      srcOutMs: src.probe.duration_ms,
+      outStartMs: Math.max(0, Math.round(outStartMs)),
+      ...preset,
+    });
+    toast.success(t("已加入{lane}：{name}", { lane: LANE_LABEL[lane], name: src.name }));
+  };
 
   const seamMenuItems = (s: SeamInfo): MenuItem[] => {
     const around = () => playRange(Math.max(0, s.srcBeforeMs - 1200), s.srcAfterMs + 1200, { skip: true });
@@ -288,6 +380,11 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
               markers={markers}
               onMarkerMove={(id, ms) => mediaId && updateMarker(mediaId, id, { ms })}
               onMarkerMenu={(marker, x, y) => setMarkerMenu({ marker, x, y })}
+              edl={edl}
+              overlays={overlays}
+              mediaNameOf={(id) => allMedia.find((m) => m.id === id)?.name ?? id}
+              onOverlayChange={(id, patch, label) => mediaId && updateOverlay(mediaId, id, patch, label)}
+              onOverlayMenu={(o, x, y) => setOverlayMenu({ o, x, y })}
               onRetry={() => void ensureLocalAnalysis(active.id).catch(() => {})}
               onOpenSettings={onOpenSettings}
             />
@@ -295,6 +392,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
             {menu && <WaveContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
             {seamMenu && <WaveContextMenu x={seamMenu.x} y={seamMenu.y} items={seamMenuItems(seamMenu.seam)} onClose={() => setSeamMenu(null)} />}
             {markerMenu && <WaveContextMenu x={markerMenu.x} y={markerMenu.y} items={markerMenuItems(markerMenu.marker)} onClose={() => setMarkerMenu(null)} />}
+            {overlayMenu && <WaveContextMenu x={overlayMenu.x} y={overlayMenu.y} items={overlayMenuItems(overlayMenu.o)} onClose={() => setOverlayMenu(null)} />}
             {styleFor && mediaId && <StyleDialog mediaId={mediaId} startMs={styleFor.startMs} endMs={styleFor.endMs} onClose={() => setStyleFor(null)} />}
           </div>
           <Splitter axis="y" onPointerDown={timeline.onPointerDown} />

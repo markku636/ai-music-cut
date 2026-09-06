@@ -4,6 +4,8 @@ import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.e
 import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import HoverPlugin from "wavesurfer.js/dist/plugins/hover.esm.js";
 import { effectLabel, type AudioEffect } from "../analysis/effects";
+import type { Edl } from "../analysis/edl/build";
+import type { Overlay } from "../analysis/overlays";
 import { wavesurferPeaks, type LocalAnalysis } from "../analysis/peaks";
 import { isActiveState, type Candidate, type CandidateKind, type DecisionMap, type Marker } from "../analysis/types";
 import { getPlayer } from "../preview/playerRef";
@@ -14,6 +16,7 @@ import { formatMs } from "../time";
 import BeatGridOverlay from "./BeatGridOverlay";
 import PlayheadOverlay from "./PlayheadOverlay";
 import MarkerOverlay from "./MarkerOverlay";
+import OverlayLanes from "./OverlayLanes";
 import TrimHandles from "./TrimHandles";
 import type { SeamInfo } from "./trimActions";
 import TimelinePlaceholder from "./TimelinePlaceholder";
@@ -153,6 +156,11 @@ export interface TimelineProps {
   markers: Marker[];
   onMarkerMove: (id: string, ms: number) => void;
   onMarkerMenu: (marker: Marker, x: number, y: number) => void;
+  edl: Edl | null;
+  overlays: Overlay[];
+  mediaNameOf: (mediaId: string) => string;
+  onOverlayChange: (id: string, patch: Partial<Overlay>, label: string) => void;
+  onOverlayMenu: (o: Overlay, x: number, y: number) => void;
 }
 
 /**
@@ -475,6 +483,14 @@ export default function Timeline(props: TimelineProps) {
         <BeatGridOverlay ws={wsInstance} height={waveH + RULER_H} />
         <TrimHandles ws={wsInstance} height={waveH + RULER_H} seams={props.seams} onOpenMenu={props.onSeamMenu} />
         <MarkerOverlay ws={wsInstance} markers={props.markers} onMove={props.onMarkerMove} onMenu={props.onMarkerMenu} />
+        <OverlayLanes
+          ws={wsInstance}
+          edl={props.edl}
+          overlays={props.overlays}
+          nameOf={props.mediaNameOf}
+          onChange={props.onOverlayChange}
+          onMenu={props.onOverlayMenu}
+        />
         <PlayheadOverlay ws={wsInstance} height={waveH + RULER_H} />
       </div>
       {hint && (

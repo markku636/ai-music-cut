@@ -543,7 +543,24 @@ const en: Catalog = {
   "在索引改標題…": "Rename in the Index...",
   "改成{kind}": "Change to {kind}",
   "移除標記": "Remove marker",
+  // R13 配樂 / 音效軌與自動閃避
+  "配樂": "Music",
+  "音效": "SFX",
+  "　閃避 {n} 點": "  {n} duck points",
+  "{label}　成品 {at} 起、長 {len}（拖曳移動 · 拖邊界修剪 · 右鍵更多）": "{label}  starts at {at} in the export, {len} long (drag to move, drag the edges to trim, right-click for more)",
+  "試聽這一段": "Play this clip",
+  "音量 {db} dB": "Volume {db} dB",
+  "讓配樂在人聲下自動閃避": "Duck under the voice automatically",
+  "重算人聲閃避": "Recompute ducking",
+  "拿掉閃避（整段固定音量）": "Remove ducking (flat volume)",
+  "移除這段配樂": "Remove this clip",
+  "這一段底下沒有人聲，不需要閃避": "No voice under this clip, nothing to duck",
+  "已加上 {n} 個閃避控制點（{db} dB）": "Added {n} duck points ({db} dB)",
+  "在這裡放配樂：{name}": "Add music here: {name}",
+  "在這裡放音效：{name}": "Add SFX here: {name}",
+  "已加入{lane}：{name}": "Added {lane}: {name}",
 };
+
 
 
 

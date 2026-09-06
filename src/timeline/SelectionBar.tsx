@@ -1,4 +1,4 @@
-import { Crop, Palette, Play, Repeat, Scissors, Square, TrendingDown, TrendingUp, VolumeX, X, ZoomIn } from "lucide-react";
+import { Crop, Palette, Play, Repeat, Scissors, Share2, Square, TrendingDown, TrendingUp, VolumeX, X, ZoomIn } from "lucide-react";
 import { useT } from "../i18n";
 import { playRange, stopRange } from "../preview/playerRef";
 import { usePlayback } from "../store/playback";
@@ -11,7 +11,7 @@ import { addEffectOnSelection, clearSelection, cutSelection, keepOnlySelection }
  * 浮在時間軸右下的選取動作列：範圍 / 長度、播放（可循環）、剪掉、只保留、靜音、淡入 / 淡出、縮放到選取、清除。
  * 沒有選取時不渲染。所有動作也在右鍵選單與快捷鍵（Space / Delete / Z / Esc）。
  */
-export default function SelectionBar({ onStyle }: { onStyle?: (startMs: number, endMs: number) => void }) {
+export default function SelectionBar({ onStyle, onExportRange }: { onStyle?: (startMs: number, endMs: number) => void; onExportRange?: (startMs: number, endMs: number) => void }) {
   const t = useT();
   const selection = useTimeline((s) => s.selection);
   const loop = useTimeline((s) => s.loopSelection);
@@ -38,6 +38,9 @@ export default function SelectionBar({ onStyle }: { onStyle?: (startMs: number, 
       <IconButton icon={Repeat} label={t("循環播放選取")} active={loop} onClick={toggleLoop} />
       <span className="w-px h-4 bg-fg/10 mx-0.5" aria-hidden />
       <IconButton icon={Scissors} label={t("剪掉這段（Delete）")} className="text-danger" onClick={() => void cutSelection()} />
+      {onExportRange && (
+        <IconButton icon={Share2} label={t("只輸出這一段（社群短片；剪輯與配樂照舊，專案不動）")} onClick={() => onExportRange(selection.startMs, selection.endMs)} />
+      )}
       <IconButton icon={Crop} label={t("只保留這段（頭尾剪掉）")} onClick={() => void keepOnlySelection()} />
       <span className="w-px h-4 bg-fg/10 mx-0.5" aria-hidden />
       {onStyle && (

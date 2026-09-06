@@ -54,9 +54,11 @@ export interface MainAreaProps {
   onOpen: () => void;
   onAnalyze: () => void;
   onOpenSettings: (focus?: "key" | "ffmpeg") => void;
+  /** 只輸出選取的那一段（社群短片）。 */
+  onExportRange?: (startMs: number, endMs: number) => void;
 }
 
-export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainAreaProps) {
+export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRange }: MainAreaProps) {
   const t = useT();
   const active = useProject(selectActiveMedia);
   const mediaId = active?.id ?? null;
@@ -390,7 +392,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
               onRetry={() => void ensureLocalAnalysis(active.id).catch(() => {})}
               onOpenSettings={onOpenSettings}
             />
-            <SelectionBar onStyle={(s, e) => setStyleFor({ startMs: s, endMs: e })} />
+            <SelectionBar onStyle={(s, e) => setStyleFor({ startMs: s, endMs: e })} onExportRange={(s, e) => onExportRange?.(s, e)} />
             {menu && <WaveContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
             {seamMenu && <WaveContextMenu x={seamMenu.x} y={seamMenu.y} items={seamMenuItems(seamMenu.seam)} onClose={() => setSeamMenu(null)} />}
             {markerMenu && <WaveContextMenu x={markerMenu.x} y={markerMenu.y} items={markerMenuItems(markerMenu.marker)} onClose={() => setMarkerMenu(null)} />}

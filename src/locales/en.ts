@@ -590,6 +590,8 @@ const en: Catalog = {
   "人聲": "Voice",
   "配樂與音效": "Music & SFX",
   "全選（整段變成時間選取）": "Select all (the whole file becomes the time selection)",
+  "只輸出這一段（社群短片；剪輯與配樂照舊，專案不動）": "Export just this range (for social clips; edits and music stay as they are, the project is untouched)",
+  "只輸出 {a}–{b}（{len} 秒）。剪輯、配樂與閃避都照舊，專案不會被改到；章節與分軌只寫進完整成品。": "Exporting {a}-{b} ({len} s) only. Edits, music and ducking are unchanged and the project is untouched; chapters and stems are written for the full export only.",
 };
 
 

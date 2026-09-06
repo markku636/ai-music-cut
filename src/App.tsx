@@ -157,6 +157,8 @@ export default function App() {
   const [aboutOpen, setAboutOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [renderOpen, setRenderOpen] = useState(false);
+  /** 只輸出選取的那一段（社群短片）；null = 輸出整集。 */
+  const [renderRange, setRenderRange] = useState<{ startMs: number; endMs: number } | null>(null);
   const [separateOpen, setSeparateOpen] = useState(false);
   const [syncOpen, setSyncOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
@@ -424,7 +426,10 @@ export default function App() {
         canAnalyze={!!active && active.analysis !== "analyzing"}
         onJudge={onJudge}
         canJudge={!!active && active.analysis === "ready"}
-        onRender={() => setRenderOpen(true)}
+        onRender={() => {
+          setRenderRange(null);
+          setRenderOpen(true);
+        }}
         canRender={!!active}
         onSeparate={() => setSeparateOpen(true)}
         onSyncMics={() => setSyncOpen(true)}
@@ -443,7 +448,10 @@ export default function App() {
         onOpen={() => void openMedia()}
         onAnalyze={() => analyzeWithPreflight()}
         onJudge={onJudge}
-        onRender={() => setRenderOpen(true)}
+        onRender={() => {
+          setRenderRange(null);
+          setRenderOpen(true);
+        }}
         onVerify={openVerify}
         onOpenSettings={openSettings}
       />
@@ -451,14 +459,32 @@ export default function App() {
       <div className="flex-1 flex min-h-0">
         <Sidebar width={sidebar.size} onOpen={() => void openMedia()} onAnalyze={(id) => analyzeWithPreflight(id)} onOpenSettings={openSettings} />
         <Splitter axis="x" onPointerDown={sidebar.onPointerDown} />
-        <MainArea onOpen={() => void openMedia()} onAnalyze={() => analyzeWithPreflight()} onOpenSettings={openSettings} />
+        <MainArea
+          onOpen={() => void openMedia()}
+          onAnalyze={() => analyzeWithPreflight()}
+          onOpenSettings={openSettings}
+          onExportRange={(startMs, endMs) => {
+            setRenderRange({ startMs, endMs });
+            setRenderOpen(true);
+          }}
+        />
         <RightRail mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} onRerunRules={rerunRules} onVerify={openVerify} seams={railSeams} effects={railEffects} />
       </div>
       <StatusBar onOpenSettings={openSettings} />
       <SettingsDialog open={settingsOpen} focus={settingsFocus} onClose={() => setSettingsOpen(false)} />
       {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
       {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
-      {renderOpen && active && <RenderDialog mediaId={active.id} onClose={() => setRenderOpen(false)} onVerify={startVerify} />}
+      {renderOpen && active && (
+        <RenderDialog
+          mediaId={active.id}
+          range={renderRange}
+          onClose={() => {
+            setRenderOpen(false);
+            setRenderRange(null);
+          }}
+          onVerify={startVerify}
+        />
+      )}
       {verifyFor && active && <VerifyDialog mediaId={active.id} outPath={verifyFor.outPath} outDurationMs={verifyFor.durationMs} onClose={() => setVerifyFor(null)} />}
       {separateOpen && active && <SeparateDialog mediaId={active.id} onClose={() => setSeparateOpen(false)} />}
       {syncOpen && <SyncDialog onClose={() => setSyncOpen(false)} />}

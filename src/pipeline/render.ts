@@ -4,6 +4,8 @@ import { api, type LoudnormStats, type RenderDone, type RenderJoin, type RenderO
 import type { Edl } from "../analysis/edl/build";
 import { DEFAULT_EDL_OPTIONS } from "../analysis/edl/build";
 import { buildChapters, toFfmetadata, type Chapter } from "../analysis/chapters";
+import { clipOverlays, clipUnits } from "../analysis/clip";
+import { mapSrcToOut } from "../analysis/edl/map";
 import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
 import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
 import { splitUnits } from "../analysis/loudness/units";
@@ -31,6 +33,11 @@ export interface RenderOptions {
   stem?: "full" | "voice" | "music";
   /** 沿用主混音那一趟的響度量測（分軌一定要帶，各軌才加得回原本的混音）。 */
   loudnormMeasured?: LoudnormStats | null;
+  /**
+   * 只輸出這一段（**來源**時間）。剪輯、配樂、閃避全部照舊，只是頭尾被夾掉；
+   * 專案本身不動。社群短片用。
+   */
+  rangeMs?: { startMs: number; endMs: number } | null;
 }
 
 function sep(p: string): string {
@@ -66,7 +73,11 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   const local = useTranscript.getState().local[mediaId];
   const edl = edlFor(mediaId);
   if (!media || !edl) return null;
-  const units = splitUnits(edl.keeps, tr?.vad ?? []);
+  const allUnits = splitUnits(edl.keeps, tr?.vad ?? []);
+  // 只輸出一段：把響度單元夾在來源範圍內。範圍是連續的，所以只有頭尾會被切，
+  // 中間不會出現洞 —— 接點因此可以原樣沿用。
+  const units = opts.rangeMs ? clipUnits(allUnits, opts.rangeMs) : allUnits;
+  if (!units.length) return null;
   const measured = local ? measureUnits(units, local) : units.map((u) => ({ ...u, lufs: null, peakDb: 0 }));
   const gains = opts.leveling && local ? planGains(measured, { ...DEFAULT_GAIN_OPTIONS, targetLufs: opts.targetLufs }) : units.map((u) => ({ unitId: u.id, gainDb: 0 }));
   const segs: RenderSeg[] = units.map((u, i) => ({ src_start_ms: u.startMs, src_end_ms: u.endMs, gain_db: gains[i]?.gainDb ?? 0 }));
@@ -102,13 +113,19 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     segs.map((sg) => ({ startMs: sg.src_start_ms, endMs: sg.src_end_ms })),
     joins,
   );
-  const chapters = buildChapters(useDecisions.getState().markers[mediaId] ?? [], edl, { outDurationMs: expectedOutMs });
-  // 墊樂 / 音效：來源檔案路徑要從媒體清單解出來（overlay 只存 mediaId）
-  const overlays: RenderOverlay[] = [];
-  for (const o of useDecisions.getState().overlays[mediaId] ?? []) {
+  // 章節只寫進完整成品：一段 60 秒的預告不需要章節，而且時間軸原點不一樣
+  const chapters = opts.rangeMs ? [] : buildChapters(useDecisions.getState().markers[mediaId] ?? [], edl, { outDurationMs: expectedOutMs });
+  // 墊樂 / 音效。**先夾再轉成 RenderOverlay** —— 夾的邏輯用的是 store 的欄位名，
+  // 而且只輸出一段時要連來源進出點一起移（不然音樂會從頭重播）。
+  // 配樂的位置是成品時間，所以要先知道選取起點落在成品的哪裡。
+  const storeOverlays = useDecisions.getState().overlays[mediaId] ?? [];
+  const outOffsetMs = opts.rangeMs ? mapSrcToOut(edl.keeps, opts.rangeMs.startMs) : 0;
+  const kept = opts.rangeMs ? clipOverlays(storeOverlays, outOffsetMs, expectedOutMs) : storeOverlays;
+  const clipped: RenderOverlay[] = [];
+  for (const o of kept) {
     const srcMedia = proj.media.find((m) => m.id === o.mediaId);
     if (!srcMedia) continue; // 來源被移出媒體清單了 —— 靜靜跳過比讓整個輸出失敗好
-    overlays.push({
+    clipped.push({
       path: srcMedia.path,
       src_start_ms: o.srcInMs,
       src_end_ms: o.srcOutMs,
@@ -120,6 +137,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       lane: o.lane,
     });
   }
+
   return {
     plan: {
       segs,
@@ -135,7 +153,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       channels,
       ...(chapters.length ? { chapters_meta: toFfmetadata(chapters) } : {}),
       // 人聲 stem 不帶 overlays；配樂 stem 把主聲軌靜音
-      ...(overlays.length && opts.stem !== "voice" ? { overlays } : {}),
+      ...(clipped.length && opts.stem !== "voice" ? { overlays: clipped } : {}),
       ...(opts.stem === "music" ? { mute_main: true } : {}),
       ...(opts.loudnormMeasured ? { loudnorm_measured: opts.loudnormMeasured } : {}),
     },

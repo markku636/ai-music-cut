@@ -159,6 +159,36 @@ describe("unclear rule", () => {
     expect(u!.endMs).toBe(1000);
   });
 
+  it("段級 no_speech 高、但字級信心也高 → 不算含糊（字級是否決票）", () => {
+    // whisper 會一邊說「這段大概不是語音」、一邊用 0.99 的信心把每個字寫出來。
+    // 兩者矛盾時真正的證據是那些字。實測一集真實 podcast，這一條原本誤判 917 段、
+    // 蓋掉半集節目的字，其中 96.9% 的字級信心中位數都在 0.6 以上。
+    const c = run(
+      [["那我們", 0, 400, 0.99], ["今天", 400, 800, 0.99], ["要來講的", 800, 1400, 0.98], ["主題呢", 1400, 1900, 0.99]],
+      50,
+      { segOpts: { 0: { no_speech_prob: 0.81 } } },
+    );
+    expect(c.filter((x) => x.kind === "unclear" && x.reason.startsWith("整段"))).toHaveLength(0);
+  });
+
+  it("段級 no_speech 高、字級信心也低 → 仍然要標出來", () => {
+    const c = run(
+      [["嗚", 0, 400, 0.2], ["嗯啊", 400, 900, 0.15], ["唔", 900, 1300, 0.25]],
+      50,
+      { segOpts: { 0: { no_speech_prob: 0.81 } } },
+    );
+    expect(c.some((x) => x.kind === "unclear")).toBe(true);
+  });
+
+  it("壓縮比異常（幻覺 / 重複）不受字級信心否決 —— 幻覺往往信心很高", () => {
+    const c = run(
+      [["好的", 0, 300, 0.99], ["好的", 300, 600, 0.99], ["好的", 600, 900, 0.99], ["好的", 900, 1200, 0.99]],
+      50,
+      { segOpts: { 0: { compression_ratio: 3.1 } } },
+    );
+    expect(c.some((x) => x.kind === "unclear" && x.reason.includes("壓縮比"))).toBe(true);
+  });
+
   it("flags quiet words relative to the speaker median", () => {
     const specs: Spec[] = [["我們", 0, 400], ["今天", 400, 800], ["來聊", 800, 1200], ["這個", 1200, 1600], ["小聲", 1600, 2000], ["的話", 2000, 2400], ["好嗎", 2400, 2800]];
     const loud: LoudnessWindow[] = [];

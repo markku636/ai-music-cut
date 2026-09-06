@@ -15,6 +15,17 @@ export interface Thresholds {
   restartMaxChars: number;
   unclearWordProb: number;
   unclearMinRun: number;
+  /**
+   * 段級訊號（no_speech / logprob）要不要採信的門檻：
+   * 這一段的字級信心中位數低於它才採信。
+   *
+   * whisper 會一邊說「這段可能不是語音」（no_speech 0.8）一邊用 99% 的信心
+   * 把每個字寫出來 —— 兩個訊號直接矛盾時，**字級的才是證據**。
+   * 實測一集 57 分鐘的真實 podcast（人聲底下有配樂）：段級 no_speech 命中 917 段，
+   * 其中 96.9% 的字級信心中位數在 0.6 以上，中位數 0.994 —— 全是誤判，
+   * 而且蓋掉了 5215 個字（半集節目）。
+   */
+  unclearSegWordProb: number;
   /** 比講者中位數低多少 LU 視為聽不清。 */
   unclearQuietLu: number;
   /** 非語音區高於底噪多少 LU 視為雜音。 */
@@ -37,6 +48,7 @@ const LO: Thresholds = {
   restartMaxChars: 8,
   unclearWordProb: 0.35,
   unclearMinRun: 3,
+  unclearSegWordProb: 0.6,
   unclearQuietLu: 22,
   noiseAboveFloorLu: 16,
   markerOverusePer30s: 4,
@@ -55,6 +67,7 @@ const HI: Thresholds = {
   restartMaxChars: 14,
   unclearWordProb: 0.5,
   unclearMinRun: 2,
+  unclearSegWordProb: 0.6,
   unclearQuietLu: 16,
   noiseAboveFloorLu: 10,
   markerOverusePer30s: 2,

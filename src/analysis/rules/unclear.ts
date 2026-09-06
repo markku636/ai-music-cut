@@ -2,6 +2,13 @@
 import type { Candidate } from "../types";
 import type { RuleContext } from "./context";
 
+/** 這一段的字，ASR 自己有沒有把握？有的話段級的「可能不是語音」就不足採信。 */
+function segWordsAreConfident(wordIds: number[], words: RuleContext["words"], minProb: number): boolean {
+  const probs = wordIds.map((id) => words[id]?.prob).filter((p): p is number => typeof p === "number");
+  const m = median(probs);
+  return m != null && m >= minProb;
+}
+
 function median(xs: number[]): number | null {
   if (!xs.length) return null;
   const s = xs.slice().sort((a, b) => a - b);
@@ -38,10 +45,23 @@ export function unclearRule(ctx: RuleContext): Candidate[] {
   }
 
   // 2) 段級訊號
+  //
+  // **字級信心是段級訊號的否決票**。whisper 會一邊回報 no_speech 0.8
+  // （「這段大概不是語音」）、一邊用 0.99 的信心把每個字寫出來 —— 兩者矛盾時，
+  // 真正的證據是那些字：它顯然聽到了，而且聽得很清楚。
+  //
+  // 實測一集 57 分鐘的真實 podcast（人聲底下鋪著配樂，段級訊號特別容易被拉壞）：
+  // 這一條原本產生 917 個候選、蓋掉 5215 個字（半集節目），
+  // 其中 96.9% 的段落字級信心中位數 ≥ 0.6（中位數 0.994）—— 全是誤判。
+  // 使用者要面對的 1445 筆待決，有三分之二是這樣來的。
+  //
+  // 壓縮比那一條**不受這個否決**：幻覺與重複往往信心很高，字級信心救不了它。
   for (const seg of ctx.segments) {
     if (seg.hallucination || !seg.wordIds.length) continue;
     if (seg.compressionRatio > 2.4) {
       out.push(ctx.wordsCandidate("unclear", seg.wordIds, 0.7, `整段辨識異常（壓縮比 ${seg.compressionRatio.toFixed(2)}，疑似重複 / 幻覺）`));
+    } else if (segWordsAreConfident(seg.wordIds, words, th.unclearSegWordProb)) {
+      continue;
     } else if (seg.avgLogprob < -1.0 || seg.noSpeechProb > 0.6) {
       out.push(
         ctx.wordsCandidate("unclear", seg.wordIds, 0.55, seg.avgLogprob < -1.0 ? `整段辨識信心低（logprob ${seg.avgLogprob.toFixed(2)}）` : `整段疑似非語音（no_speech ${seg.noSpeechProb.toFixed(2)}）`),

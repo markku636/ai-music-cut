@@ -27,27 +27,33 @@
       <style>
         #boot-splash {
           position: fixed; inset: 0; z-index: 300;
-          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
           background: radial-gradient(120% 90% at 50% 38%, #3a3950 0%, #2f303b 58%, #22212c 100%);
           transition: opacity 0.28s ease, transform 0.28s ease;
         }
         /* App 準備好時加上這個類別才開始退場，remove() 等淡出跑完再做 */
         #boot-splash.done { opacity: 0; transform: scale(1.03); pointer-events: none; }
-        #boot-splash .art { position: relative; width: 132px; height: 132px; display: grid; place-items: center; }
+        #boot-splash .art { position: relative; width: 176px; height: 176px; display: grid; place-items: center; }
         #boot-splash .glow {
           position: absolute; inset: -14%; border-radius: 50%;
           background: radial-gradient(circle, rgba(149, 128, 255, 0.42) 0%, rgba(149, 128, 255, 0) 68%);
           animation: splash-glow 2.4s ease-in-out infinite;
         }
         #boot-splash img {
-          position: relative; width: 132px; height: 132px; display: block;
+          position: relative; width: 176px; height: 176px; display: block;
           filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.45));
           animation: splash-pop 0.62s cubic-bezier(0.2, 0.9, 0.25, 1) both, splash-float 3.6s ease-in-out 0.62s infinite;
         }
         #boot-splash .name {
-          font: 600 15px/1.2 system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
-          letter-spacing: 0.04em; color: rgba(232, 230, 245, 0.86);
+          font: 700 24px/1.2 system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+          letter-spacing: 0.06em; color: #f0eeff;
+          text-shadow: 0 2px 14px rgba(149, 128, 255, 0.55);
           animation: splash-rise 0.5s ease-out 0.18s both;
+        }
+        #boot-splash .tag {
+          font: 400 12px/1.4 system-ui, -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+          letter-spacing: 0.14em; text-transform: uppercase; color: rgba(200, 195, 230, 0.6);
+          animation: splash-rise 0.5s ease-out 0.26s both;
         }
         #boot-splash .bar {
           width: 112px; height: 2px; border-radius: 2px; overflow: hidden;
@@ -64,7 +70,7 @@
         @keyframes splash-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
         @keyframes splash-slide { 0% { transform: translateX(-110%); } 100% { transform: translateX(290%); } }
         @media (prefers-reduced-motion: reduce) {
-          #boot-splash .glow, #boot-splash img, #boot-splash .name, #boot-splash .bar, #boot-splash .bar span { animation: none; }
+          #boot-splash .glow, #boot-splash img, #boot-splash .name, #boot-splash .tag, #boot-splash .bar, #boot-splash .bar span { animation: none; }
           #boot-splash .bar span { width: 100%; }
         }
       </style>
@@ -73,6 +79,7 @@
         <img src="/app-icon.png" alt="" draggable="false" />
       </div>
       <div class="name">AI Music Cut</div>
+      <div class="tag">Podcast rough cut</div>
       <div class="bar"><span></span></div>
     </div>
     <script>

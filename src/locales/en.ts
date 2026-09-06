@@ -904,6 +904,13 @@ const en: Catalog = {
   "在終端機執行這一行，裝好之後按「重新檢查」：": "Run this in a terminal, then press Re-check:",
   "第一次分析時會自動下載模型（large-v3 約 1 GB），之後就不用了。沒有顯示卡也跑得動，只是比較慢。": "The model downloads automatically on the first analysis (large-v3 is about 1 GB); after that it is reused. It runs without a GPU, just slower.",
   "找不到 python，無法用本機辨識": "Python not found, so local transcription cannot run",
+  "點擊切換 AI 後端與模型": "Click to switch AI backend and model",
+  "codex 的模型在它自己的設定裡指定（$CODEX_HOME/config.toml 的 model），App 寫不進去。": "Codex takes its model from its own config ($CODEX_HOME/config.toml, key `model`) — this app cannot write there.",
+  "判讀": "Judge",
+  "目前只跑剪輯一個 agent，審核模型用不到。": "Only the editor agent runs right now, so the reviewer model is unused.",
+  "AI 助手不受這裡影響 —— 它要透過 App 的 MCP server 操作剪輯，一律走 claude。": "The AI assistant ignores this — it edits through the app's MCP server, so it always uses claude.",
+  "判讀、審核、節目筆記與 AI 助手都吃這裡的設定。": "Judging, review, show notes and the AI assistant all use this setting.",
+  "更多 AI 設定…": "More AI settings…",
 };
 
 

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { APP_NAME } from "../brand";
 import { useT } from "../i18n";
+import ModelMenu from "./ModelMenu";
 import { usePlayback } from "../store/playback";
 import { useProject } from "../store/project";
 import { ffmpegSourceLabel, shortFfmpegVersion } from "../ffmpegSource";
@@ -16,7 +17,6 @@ export default function StatusBar({ onOpenSettings }: { onOpenSettings: (focus?:
   const ffmpeg = useSettings((s) => s.ffmpeg);
   const ttls = useSettings((s) => s.ttls);
   const key = useSettings((s) => s.key);
-  const claude = useSettings((s) => s.claude);
   const probeAll = useSettings((s) => s.probeAll);
   const currentMs = usePlayback((s) => s.currentMs);
   const dirty = useProject((s) => s.dirty);
@@ -62,10 +62,7 @@ ${ffmpegSourceLabel(ffmpeg.source)}：${ffmpeg.ffmpeg_path}` : t("找不到 ffmp
         ttls {ttls?.ok ? `${ttls.latency_ms ?? "?"}ms` : t("離線")}
         {ttls?.ok && !key?.present && <span className="text-warning">· {t("未設金鑰")}</span>}
       </button>
-      <span className="flex items-center gap-1.5 shrink-0" title={claude?.path ?? ""}>
-        <Dot ok={!!claude?.installed} warn={!!claude?.installed && !claude?.logged_in} />
-        claude {claude?.installed ? (claude.version?.split(" ")[0] ?? "") : t("未安裝")}
-      </span>
+      <ModelMenu onOpenSettings={() => onOpenSettings()} />
       <span className="mono shrink-0 text-fg/60">{formatMs(currentMs)}</span>
       <span className="ml-auto flex items-center gap-1.5 min-w-0">
         <Dot ok={!dirty} warn={false} />

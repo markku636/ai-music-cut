@@ -29,11 +29,14 @@ interface SettingsStore {
   ttls: TtlsHealth | null;
   key: KeyStatus | null;
   claude: ClaudeStatus | null;
+  /** 只有選了 codex 後端、或使用者打開模型選單時才探（每探一次就是開一個 process）。 */
+  codex: ClaudeStatus | null;
   paths: AppPaths | null;
   probing: boolean;
   load: () => Promise<void>;
   save: (patch: Partial<AppSettings>) => Promise<void>;
   probeAll: () => Promise<void>;
+  probeCodex: () => Promise<void>;
   refreshKey: () => Promise<void>;
 }
 
@@ -44,6 +47,7 @@ export const useSettings = create<SettingsStore>((set, get) => ({
   ttls: null,
   key: null,
   claude: null,
+  codex: null,
   paths: null,
   probing: false,
   load: async () => {
@@ -83,6 +87,10 @@ export const useSettings = create<SettingsStore>((set, get) => ({
       api.claudeDetect().catch(() => null),
     ]);
     set({ ffmpeg, ttls, key, claude, probing: false });
+    if ((get().s.agent_backend || "claude") === "codex") void get().probeCodex();
+  },
+  probeCodex: async () => {
+    set({ codex: await api.codexDetect().catch(() => null) });
   },
   refreshKey: async () => {
     set({ key: await api.ttlsKeyStatus().catch(() => null) });

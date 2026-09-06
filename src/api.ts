@@ -173,6 +173,14 @@ export interface RenderPlan {
   overlays?: RenderOverlay[];
 }
 
+/** 串音衰減（ffmpeg agate 的參數；門檻由該軌自己的能量分布量出來）。 */
+export interface RenderGate {
+  threshold: number;
+  range: number;
+  attack_ms: number;
+  release_ms: number;
+}
+
 /** 疊在主聲軌上的一段音訊（Rust 端逐 frame 混音，包絡與淡入淡出同一套）。 */
 export interface RenderOverlay {
   path: string;
@@ -303,8 +311,9 @@ export const api = {
     invoke<ArrayBuffer>("media_analyze_local", { jobId, path, fingerprint, durationMs }),
   mediaCancel: (jobId: string) => invoke<void>("media_cancel", { jobId }),
   /** 把 [startMs, endMs] 切成 wav（曲風轉換的參考片段）；回輸出路徑。 */
-  /** 多支麥克風對齊後併成一軌（delaysMs 都必須 ≥ 0；adelay 只能往後推）。 */
-  mediaCombine: (srcs: string[], delaysMs: number[], outPath: string) => invoke<string>("media_combine", { srcs, delaysMs, outPath }),
+  /** 多支麥克風對齊後併成一軌（delaysMs 都必須 ≥ 0；adelay 只能往後推）。gates 為每軌的串音衰減（null = 不處理）。 */
+  mediaCombine: (srcs: string[], delaysMs: number[], outPath: string, gates?: (RenderGate | null)[]) =>
+    invoke<string>("media_combine", { srcs, delaysMs, outPath, gates: gates ?? null }),
   mediaClip: (path: string, fingerprint: string, startMs: number, endMs: number) =>
     invoke<string>("media_clip", { path, fingerprint, startMs, endMs }),
   mediaCacheWriteTranscript: (fingerprint: string, doc: unknown) => invoke<void>("media_cache_write_transcript", { fingerprint, doc }),

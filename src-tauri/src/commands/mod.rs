@@ -381,10 +381,17 @@ pub async fn media_clip(
 
 /// 多支麥克風對齊後併成一軌，回傳新檔路徑（放在第一軌旁邊）。
 #[tauri::command]
-pub async fn media_combine(state: State<'_, AppState>, srcs: Vec<String>, delays_ms: Vec<i64>, out_path: String) -> AppResult<String> {
+pub async fn media_combine(
+    state: State<'_, AppState>,
+    srcs: Vec<String>,
+    delays_ms: Vec<i64>,
+    gates: Option<Vec<Option<media::GateSpec>>>,
+    out_path: String,
+) -> AppResult<String> {
     let bins = state.ffmpeg_bins().await?;
     let out = PathBuf::from(&out_path);
-    media::combine_tracks(&bins, &srcs, &delays_ms, &out).await?;
+    let gates = gates.unwrap_or_default();
+    media::combine_tracks(&bins, &srcs, &delays_ms, &gates, &out).await?;
     Ok(out_path)
 }
 

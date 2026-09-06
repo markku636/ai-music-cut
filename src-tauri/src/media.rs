@@ -122,7 +122,17 @@ pub async fn clip_wav(bins: &FfmpegBins, src: &str, start_ms: f64, end_ms: f64, 
 ///
 /// `normalize=0`：amix 預設會把每一路除以路數，兩支麥就各小 6 dB，聽起來像整體變小聲。
 /// 這裡要的是單純相加，音量交給後面的 loudnorm 處理。
-pub async fn combine_tracks(bins: &FfmpegBins, srcs: &[String], delays_ms: &[i64], out: &Path) -> AppResult<()> {
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct GateSpec {
+    /// 低於這個振幅（線性）就衰減。由前端從該軌自己的能量分布量出來。
+    pub threshold: f64,
+    /// 衰減到剩多少（線性）。刻意不給 0 —— 全靜音會讓換人講話時出現空間感落差。
+    pub range: f64,
+    pub attack_ms: f64,
+    pub release_ms: f64,
+}
+
+pub async fn combine_tracks(bins: &FfmpegBins, srcs: &[String], delays_ms: &[i64], gates: &[Option<GateSpec>], out: &Path) -> AppResult<()> {
     if srcs.len() < 2 || srcs.len() != delays_ms.len() {
         return Err(AppError::Invalid("至少要兩軌，而且每一軌都要有對應的延遲".into()));
     }
@@ -139,8 +149,20 @@ pub async fn combine_tracks(bins: &FfmpegBins, srcs: &[String], delays_ms: &[i64
     let mut labels = String::new();
     for (i, d) in delays_ms.iter().enumerate() {
         let ms = (*d).max(0);
+        // 串音衰減放在最前面：要看的是這一軌**原本**的音量，
+        // 排在 adelay 之後也可以，但排在重取樣之前門檻的意義最單純。
+        let gate = match gates.get(i).and_then(|g| g.as_ref()) {
+            Some(g) => format!(
+                "agate=threshold={:.6}:range={:.6}:attack={:.1}:release={:.1}:ratio=4:knee=4,",
+                g.threshold.clamp(0.0001, 1.0),
+                g.range.clamp(0.0001, 1.0),
+                g.attack_ms.clamp(1.0, 500.0),
+                g.release_ms.clamp(10.0, 3000.0)
+            ),
+            None => String::new(),
+        };
         // adelay 要為每個聲道各給一個值，`all=1` 讓它套用到全部聲道
-        parts.push(format!("[{i}:a]aresample=48000,aformat=channel_layouts=mono,adelay={ms}:all=1[a{i}]"));
+        parts.push(format!("[{i}:a]{gate}aresample=48000,aformat=channel_layouts=mono,adelay={ms}:all=1[a{i}]"));
         labels.push_str(&format!("[a{i}]"));
     }
     parts.push(format!("{labels}amix=inputs={}:normalize=0:duration=longest[mix]", srcs.len()));

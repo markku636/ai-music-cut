@@ -576,6 +576,10 @@ const en: Catalog = {
   "已合併成一軌：{name}": "Combined into one track: {name}",
   "有軌道的信心偏低，可能沒對上（兩軌完全沒有共同的聲音時會這樣）。合併後先聽一下開頭與結尾。": "Some tracks aligned with low confidence and may be wrong (this happens when two tracks share no audible sound). Listen to the start and end after combining.",
   "對齊看起來沒問題。合併會產生一個新的 _synced.wav，原始檔案不會被動到。": "Alignment looks good. Combining writes a new _synced.wav; your original files are untouched.",
+  "降低串音（別人講話時漏進這支麥的聲音）": "Reduce crosstalk (what the other person's voice leaks into this mic)",
+  "每支麥都收得到別人講話，合起來同一句會聽到兩次 —— 一次清楚、一次糊的。門檻由每一軌自己的能量分布量出來，不是寫死的數字。": "Every mic picks up the other people, so the combined track plays each sentence twice: once clear, once smeared. The threshold is measured from each track's own energy distribution, not a hard-coded number.",
+  "套用到 {n} 軌": "applies to {n} track(s)",
+  "（{skip} 軌本來就沒有安靜段，跳過）": " ({skip} skipped: no quiet passages to work from)",
 };
 
 

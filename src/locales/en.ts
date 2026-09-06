@@ -872,6 +872,24 @@ const en: Catalog = {
   "審核（第二雙耳朵）": "Reviewer (second pair of ears)",
   // 複製（v0.47.0）
   "複製": "Copy",
+  // 關於（v0.48.0）
+  "關於 {app}": "About {app}",
+  "版本": "Version",
+  "已複製版本資訊": "Version info copied",
+  "複製版本資訊（回報問題時附上）": "Copy version info (attach it when reporting an issue)",
+  "AI Podcast 粗剪：剪贅字與口吃（以自然順暢為原則）、修聲、音量平衡、章節與節目筆記；含糊段落只給建議由你決定。": "AI podcast rough cut: removes fillers and stutters (naturalness first), cleans up the audio, evens out loudness, writes chapters and show notes; unclear passages are only ever suggestions for you to decide.",
+  "有新版 v{version}，點擊前往下載": "v{version} is available - click to download",
+  "已是最新版本": "You are on the latest version",
+  "檢查失敗（離線或已達 GitHub API 上限），稍後再試": "Check failed (offline, or the GitHub API limit was reached). Try again later.",
+  "檢查中…": "Checking...",
+  "檢查更新": "Check for updates",
+  "GitHub 專案": "GitHub project",
+  "作者部落格": "Author's blog",
+  "變更紀錄": "Changelog",
+  "回報問題": "Report an issue",
+  "檔案位置": "File locations",
+  "隱藏檔案位置": "Hide file locations",
+  "MIT 授權 · Tauri + React 打造": "MIT licence - built with Tauri + React",
 };
 
 

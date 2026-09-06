@@ -589,6 +589,7 @@ const en: Catalog = {
   "完整混音": "Full mix",
   "人聲": "Voice",
   "配樂與音效": "Music & SFX",
+  "全選（整段變成時間選取）": "Select all (the whole file becomes the time selection)",
 };
 
 

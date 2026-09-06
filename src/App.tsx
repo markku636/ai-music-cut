@@ -23,7 +23,7 @@ import { runJudge } from "./pipeline/judge";
 import { runVerify } from "./pipeline/verify";
 import { enrichAnalysis } from "./pipeline/persist";
 import { runRulesFor } from "./pipeline/rules";
-import { getPlayer, isRangePlaying, playRange, seekTo, stopRange, togglePlay } from "./preview/playerRef";
+import { playRange, seekTo, togglePlaySelectionAware } from "./preview/playerRef";
 import { useDecisions } from "./store/decisions";
 import { useAssistant } from "./store/assistant";
 import { useAssistantChat } from "./store/assistantChat";
@@ -108,22 +108,13 @@ function previewSelected() {
 }
 
 /**
- * Space：有時間選取 → 播這段選取（可循環）；已經在播這段就停。
+ * Space：有時間選取 → 從選取起點播這段（可循環）；已經在播這段就停。
  * 舊版還要求「而且目前是暫停」，所以播到一半想重播選取只會變成暫停，很難用。
+ *
+ * 實作已移到 playerRef.togglePlaySelectionAware()，好讓工具列的播放鈕共用同一個行為
+ * —— 兩份各自實作時，按鈕會從播放線位置開始播、Space 會從選取起點開始播。
  */
-function spaceKey() {
-  const tl = useTimeline.getState();
-  const p = getPlayer();
-  if (tl.selection && p) {
-    const pv = usePlayback.getState().preview;
-    const onThisSelection =
-      isRangePlaying() && !!pv && pv.startMs === tl.selection.startMs && pv.endMs === tl.selection.endMs;
-    if (onThisSelection) stopRange();
-    else playRange(tl.selection.startMs, tl.selection.endMs, { skip: false, loop: tl.loopSelection });
-    return;
-  }
-  togglePlay();
-}
+const spaceKey = togglePlaySelectionAware;
 
 /** Delete：有時間選取 → 剪掉選取；否則拒絕選取的候選。 */
 function deleteKey() {

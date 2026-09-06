@@ -7,7 +7,7 @@ import { useTimeline, type TimelineTool } from "../store/timeline";
 import { formatMs } from "../time";
 import SnapMenu from "./SnapMenu";
 import { nextShuttle, shuttleLabel, SHUTTLE_STOPPED } from "./shuttle";
-import { togglePlay } from "./playerRef";
+import { togglePlaySelectionAware } from "./playerRef";
 import { editedTimeAt, type Range } from "./skip";
 
 const RATES = [1, 1.25, 1.5, 2];
@@ -63,7 +63,7 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
         box="w-8 h-8"
         onClick={() => {
           if (shuttle.dir) setShuttle(SHUTTLE_STOPPED);
-          else togglePlay();
+          else togglePlaySelectionAware();
         }}
       />
       <IconButton icon={FastForward} label={t("前進轉盤（L）—— 再點加速 1x / 2x / 4x")} active={shuttle.dir > 0} onClick={() => setShuttle(nextShuttle(shuttle, "L"))} />

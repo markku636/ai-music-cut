@@ -1,5 +1,6 @@
 // 單一 <audio> 元素的全域參考：讓快捷鍵 / 工具 / 時間軸不必透過 React 樹就能控制播放。
 import { usePlayback } from "../store/playback";
+import { useTimeline } from "../store/timeline";
 import { releaseGainSource, setGainSource } from "./previewGain";
 import { rangeTick, tailGain, TAIL_RAMP_MS } from "./range";
 import { subscribeTick, TICK_PRIORITY } from "./ticker";
@@ -56,6 +57,27 @@ export function isRangePlaying(): boolean {
 /** 停止範圍播放（沒有在播範圍則不動作）。 */
 export function stopRange() {
   rangeStop?.();
+}
+
+/**
+ * 「播放」這個動作的唯一定義：有時間選取就播那一段，而且**一律從選取起點開始**；
+ * 沒有選取才是一般的播放 / 暫停。已經在播同一段就停（再按一次＝停）。
+ *
+ * 為什麼要抽出來：本來只有 Space 有這個行為（App.tsx 的 spaceKey），工具列的播放鈕卻直接
+ * 呼叫 togglePlay()，所以拖好一段、播放線落在段落中間時按鈕會從中間開始播，跟 Space 不一樣。
+ * 中文輸入法下字母鍵不會產生 keydown，很多人只能點按鈕 —— 兩條路徑必須是同一個行為。
+ */
+export function togglePlaySelectionAware() {
+  const tl = useTimeline.getState();
+  if (tl.selection && el) {
+    const pv = usePlayback.getState().preview;
+    const onThisSelection =
+      isRangePlaying() && !!pv && pv.startMs === tl.selection.startMs && pv.endMs === tl.selection.endMs;
+    if (onThisSelection) stopRange();
+    else playRange(tl.selection.startMs, tl.selection.endMs, { skip: false, loop: tl.loopSelection });
+    return;
+  }
+  togglePlay();
 }
 
 export interface PlayRangeOptions {

@@ -3,13 +3,15 @@ import { create } from "zustand";
 import { outputLanguageLine, resolveOutputLang, type OutputLangMode } from "./analysis/lang";
 
 // 介面語言。以「繁中原文」作為 translation key，查無翻譯時回傳 key 本身（identity fallback）。
-export type Lang = "zh-TW" | "en";
+export type Lang = "zh-TW" | "zh-Hans" | "ja" | "en";
 
 const LANG_KEY = "aicut:lang";
 const AI_LANG_KEY = "aicut:aiLang";
 
 export const LANGUAGES: readonly { id: Lang; label: string }[] = [
   { id: "zh-TW", label: "繁體中文" },
+  { id: "zh-Hans", label: "简体中文" },
+  { id: "ja", label: "日本語" },
   { id: "en", label: "English" },
 ];
 
@@ -75,6 +77,8 @@ function readStoredAiLang(): OutputLangMode {
 
 const LOADERS: Record<Exclude<Lang, "zh-TW">, () => Promise<{ default: Catalog }>> = {
   en: () => import("./locales/en"),
+  "zh-Hans": () => import("./locales/zh-Hans"),
+  ja: () => import("./locales/ja"),
 };
 
 async function loadCatalog(l: Lang): Promise<Catalog> {
@@ -128,7 +132,12 @@ export function useT(): typeof t {
 }
 
 export function htmlLangAttr(l: string): string {
-  return l.startsWith("en") ? "en" : "zh-Hant";
+  if (l.startsWith("en")) return "en";
+  if (l.startsWith("ja")) return "ja";
+  // 简体要標成 zh-Hans：瀏覽器與螢幕閱讀器依這個挑字體與發音，
+  // 標錯的話簡體內容會被套上繁體字型（同一個碼位在兩地字形不同，看起來就是怪）
+  if (l.includes("Hans") || l.includes("CN")) return "zh-Hans";
+  return "zh-Hant";
 }
 
 /**

@@ -13,6 +13,7 @@ import { setSkimSource, skimTo, stopSkim } from "../preview/skimPlayer";
 import { usePlayback } from "../store/playback";
 import { useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
+import { useT } from "../i18n";
 import { useTheme } from "../theme";
 import { formatMs } from "../time";
 import BeatGridOverlay from "./BeatGridOverlay";
@@ -183,6 +184,7 @@ export default function Timeline(props: TimelineProps) {
   const [wsInstance, setWsInstance] = useState<WaveSurfer | null>(null);
   const cb = useRef(props);
   cb.current = props;
+  const t = useT();
   const themeId = useTheme((s) => s.themeId);
   const followMode = usePlayback((s) => s.followMode);
   const tool = useTimeline((s) => s.tool);
@@ -523,7 +525,7 @@ export default function Timeline(props: TimelineProps) {
       </div>
       {hint && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
-          <span className="text-[11px] text-fg/45 bg-well/85 px-2 py-1 rounded">在波形上拖曳選一段 → 播放 / 剪掉 / 只保留（右鍵有更多）</span>
+          <span className="text-[11px] text-fg/45 bg-well/85 px-2 py-1 rounded">{t("在波形上拖曳選一段 → 播放 / 剪掉 / 只保留（右鍵有更多）")}</span>
         </div>
       )}
     </div>

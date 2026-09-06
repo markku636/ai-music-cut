@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { BrainCircuit, ChevronDown, Cog, Disc3, FileMusic, FolderOpen, Info, Keyboard, MicOff, Save, Sparkles, WandSparkles, Zap } from "lucide-react";
+import { BrainCircuit, Link2, ChevronDown, Cog, Disc3, FileMusic, FolderOpen, Info, Keyboard, MicOff, Save, Sparkles, WandSparkles, Zap } from "lucide-react";
 import Icon from "../ui/Icon";
 import { APP_NAME } from "../brand";
 import { useT } from "../i18n";
@@ -17,6 +17,8 @@ export interface ToolbarProps {
   canRender: boolean;
   onSeparate: () => void;
   canSeparate: boolean;
+  onSyncMics: () => void;
+  canSyncMics: boolean;
   onHighlight: () => void;
   canHighlight: boolean;
   onMusic: () => void;
@@ -47,6 +49,7 @@ export default function Toolbar(p: ToolbarProps) {
     { icon: <Icon icon={Disc3} size={16} />, label: t("AI 配樂"), onClick: p.onMusic, disabled: false },
     { icon: <Icon icon={MicOff} size={16} />, label: t("去人聲"), onClick: p.onSeparate, disabled: !p.canSeparate, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Zap} size={16} />, label: t("精華片段"), onClick: p.onHighlight, disabled: !p.canHighlight, hint: t("先開啟一個音檔") },
+    { icon: <Icon icon={Link2} size={16} />, label: t("同步麥克風"), onClick: p.onSyncMics, disabled: !p.canSyncMics, hint: t("媒體清單裡要有兩個以上的檔案") },
   ];
   const utilTools: Tool[] = [
     { icon: <Icon icon={Keyboard} size={18} />, label: t("快捷鍵 (F1)"), onClick: p.onHelp, disabled: false },

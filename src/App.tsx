@@ -8,6 +8,7 @@ import MusicDialog from "./dialogs/MusicDialog";
 import AboutDialog from "./dialogs/AboutDialog";
 import RenderDialog from "./dialogs/RenderDialog";
 import SeparateDialog from "./dialogs/SeparateDialog";
+import SyncDialog from "./dialogs/SyncDialog";
 import SettingsDialog, { type SettingsFocus } from "./dialogs/SettingsDialog";
 import VerifyDialog from "./dialogs/VerifyDialog";
 import ShortcutsHelp from "./dialogs/ShortcutsHelp";
@@ -159,12 +160,14 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const railSeams = useMemo(() => seamsOfEdl(currentEdl()), [active?.id, railCands, railDecs, railSplits]);
   const dirty = useProject((s) => s.dirty);
+  const mediaCount = useProject((s) => s.media.length);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsFocus, setSettingsFocus] = useState<SettingsFocus>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [renderOpen, setRenderOpen] = useState(false);
   const [separateOpen, setSeparateOpen] = useState(false);
+  const [syncOpen, setSyncOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
   const [musicOpen, setMusicOpen] = useState(false);
   const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
@@ -433,6 +436,8 @@ export default function App() {
         onRender={() => setRenderOpen(true)}
         canRender={!!active}
         onSeparate={() => setSeparateOpen(true)}
+        onSyncMics={() => setSyncOpen(true)}
+        canSyncMics={mediaCount >= 2}
         canSeparate={!!active}
         onHighlight={() => setHighlightOpen(true)}
         canHighlight={!!active}
@@ -465,6 +470,7 @@ export default function App() {
       {renderOpen && active && <RenderDialog mediaId={active.id} onClose={() => setRenderOpen(false)} onVerify={startVerify} />}
       {verifyFor && active && <VerifyDialog mediaId={active.id} outPath={verifyFor.outPath} outDurationMs={verifyFor.durationMs} onClose={() => setVerifyFor(null)} />}
       {separateOpen && active && <SeparateDialog mediaId={active.id} onClose={() => setSeparateOpen(false)} />}
+      {syncOpen && <SyncDialog onClose={() => setSyncOpen(false)} />}
       {highlightOpen && active && <HighlightDialog mediaId={active.id} onClose={() => setHighlightOpen(false)} />}
       {musicOpen && <MusicDialog onClose={() => setMusicOpen(false)} />}
       <UiHost />

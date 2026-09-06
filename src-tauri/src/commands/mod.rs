@@ -1,4 +1,5 @@
 //! Tauri command 薄層：`AppState` + 設定 / ffmpeg / 媒體 / ttls / 專案 / 開啟路徑。
+use std::path::PathBuf;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -376,6 +377,15 @@ pub async fn media_clip(
     let out = dir.join(format!("clip-{}-{}.wav", start_ms.round() as i64, end_ms.round() as i64));
     media::clip_wav(&bins, &path, start_ms, end_ms, &out).await?;
     Ok(out.to_string_lossy().into_owned())
+}
+
+/// 多支麥克風對齊後併成一軌，回傳新檔路徑（放在第一軌旁邊）。
+#[tauri::command]
+pub async fn media_combine(state: State<'_, AppState>, srcs: Vec<String>, delays_ms: Vec<i64>, out_path: String) -> AppResult<String> {
+    let bins = state.ffmpeg_bins().await?;
+    let out = PathBuf::from(&out_path);
+    media::combine_tracks(&bins, &srcs, &delays_ms, &out).await?;
+    Ok(out_path)
 }
 
 /// 顯存不夠時請伺服器釋放（停音樂服務 / 清快取）。

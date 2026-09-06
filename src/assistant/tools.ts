@@ -5,6 +5,7 @@ import { api, type McpToolCall, type McpToolDef } from "../api";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState, type MarkerKind } from "../analysis/types";
 import { buildChapters } from "../analysis/chapters";
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutput } from "../analysis/overlays";
+import { analyzeMicSync, combineMics } from "../pipeline/syncMics";
 import type { EffectKind } from "../analysis/effects";
 import { edlFor, runRulesFor } from "../pipeline/rules";
 import { useTimeline } from "../store/timeline";
@@ -609,6 +610,32 @@ export const TOOLS: ToolSpec[] = [
       if (!Object.keys(patch).length) throw new ToolError("沒有任何要改的欄位");
       x.d.updateOverlay(x.media.id, id, patch, "調整配樂");
       return { updated: id, patch };
+    },
+  },
+  {
+    name: "sync_mics",
+    description:
+      "多麥克風同步：用兩軌都聽得到的講話節奏（能量包絡）算出各軌的時間位移。預設只回報結果不動檔案；combine=true 才會併成一軌並開起來。信心低於 0.3 表示大概沒對上，這時要請使用者自己聽一下，不要硬合併。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mediaIds: { type: "array", items: { type: "string" }, minItems: 2, description: "第一個是基準軌；從 list_media 取得" },
+        combine: { type: "boolean", default: false },
+      },
+      required: ["mediaIds"],
+      additionalProperties: false,
+    },
+    handler: async (a) => {
+      ctxMedia();
+      const ids = Array.isArray(a.mediaIds) ? a.mediaIds.map(String) : [];
+      if (ids.length < 2) throw new ToolError("至少要兩軌");
+      const rows = await analyzeMicSync(ids);
+      const weak = rows.filter((r) => r.offsetMs !== 0 && r.confidence < 0.3);
+      const report = rows.map((r) => ({ name: r.name, offsetMs: r.offsetMs, delayMs: r.delayMs, confidence: Math.round(r.confidence * 100) / 100 }));
+      if (a.combine !== true) return { rows: report, lowConfidence: weak.map((r) => r.name), combined: false };
+      if (weak.length) throw new ToolError(`這些軌的信心太低，先讓使用者確認：${weak.map((r) => r.name).join("、")}`);
+      const outPath = await combineMics(rows);
+      return { rows: report, combined: true, outPath };
     },
   },
   {

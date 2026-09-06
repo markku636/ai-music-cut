@@ -560,7 +560,24 @@ const en: Catalog = {
   "在這裡放音效：{name}": "Add SFX here: {name}",
   "已加入{lane}：{name}": "Added {lane}: {name}",
   "控制點 {db} dB（上下拖曳改音量、左右拖曳改時間、右鍵移除）": "{db} dB point (drag up/down for volume, left/right for time, right-click to remove)",
+  // R16 多麥克風同步
+  "同步麥克風": "Sync mics",
+  "多麥克風同步": "Synchronize microphones",
+  "媒體清單裡要有兩個以上的檔案": "Open at least two files first",
+  "一人一軌的錄音各自按下錄影，起點會差好幾秒。這裡用兩軌都聽得到的講話節奏（能量包絡）自動對齊，再併成一軌繼續剪。第一個勾選的是基準軌。": "When everyone records their own mic, the start times differ by seconds. This aligns them automatically using the speech rhythm both tracks picked up (the energy envelope), then combines them into one track you edit as usual. The first one you tick is the reference.",
+  "媒體清單裡至少要有兩個檔案（把每一支麥的錄音都開起來）。": "You need at least two files in the media list (open each mic's recording).",
+  "基準": "Reference",
+  "對齊": "Align",
+  "合併成一軌": "Combine into one track",
+  "至少要選兩軌": "Pick at least two tracks",
+  "基準軌還沒分析完成": "The reference track has not finished analysing",
+  "「{name}」還沒分析完成": "\"{name}\" has not finished analysing",
+  "找不到媒體：{name}": "Media not found: {name}",
+  "已合併成一軌：{name}": "Combined into one track: {name}",
+  "有軌道的信心偏低，可能沒對上（兩軌完全沒有共同的聲音時會這樣）。合併後先聽一下開頭與結尾。": "Some tracks aligned with low confidence and may be wrong (this happens when two tracks share no audible sound). Listen to the start and end after combining.",
+  "對齊看起來沒問題。合併會產生一個新的 _synced.wav，原始檔案不會被動到。": "Alignment looks good. Combining writes a new _synced.wav; your original files are untouched.",
 };
+
 
 
 

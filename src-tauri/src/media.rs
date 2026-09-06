@@ -113,6 +113,50 @@ pub async fn clip_wav(bins: &FfmpegBins, src: &str, start_ms: f64, end_ms: f64, 
     Ok(())
 }
 
+
+/// 多支麥克風對齊後併成一軌。
+///
+/// `delays_ms` 與 `srcs` 一一對應，且**都必須 ≥ 0** —— ffmpeg 的 `adelay` 只能把聲音
+/// 往後推，不能往前拉。呼叫端（analysis/sync.ts 的 `delaysFromOffsets`）已經把整組
+/// 平移到「最早的那一軌 = 0」。
+///
+/// `normalize=0`：amix 預設會把每一路除以路數，兩支麥就各小 6 dB，聽起來像整體變小聲。
+/// 這裡要的是單純相加，音量交給後面的 loudnorm 處理。
+pub async fn combine_tracks(bins: &FfmpegBins, srcs: &[String], delays_ms: &[i64], out: &Path) -> AppResult<()> {
+    if srcs.len() < 2 || srcs.len() != delays_ms.len() {
+        return Err(AppError::Invalid("至少要兩軌，而且每一軌都要有對應的延遲".into()));
+    }
+    if let Some(parent) = out.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let mut c = proc::cmd(&bins.ffmpeg);
+    c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y"]);
+    for s in srcs {
+        c.arg("-i");
+        c.arg(s);
+    }
+    let mut parts: Vec<String> = Vec::new();
+    let mut labels = String::new();
+    for (i, d) in delays_ms.iter().enumerate() {
+        let ms = (*d).max(0);
+        // adelay 要為每個聲道各給一個值，`all=1` 讓它套用到全部聲道
+        parts.push(format!("[{i}:a]aresample=48000,aformat=channel_layouts=mono,adelay={ms}:all=1[a{i}]"));
+        labels.push_str(&format!("[a{i}]"));
+    }
+    parts.push(format!("{labels}amix=inputs={}:normalize=0:duration=longest[mix]", srcs.len()));
+    let filter = parts.join(";");
+    c.args(["-filter_complex", &filter, "-map", "[mix]"]);
+    c.args(["-vn", "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", "-f", "wav"]);
+    c.arg(out);
+    let o = c.output().await.map_err(|e| AppError::Ffmpeg(format!("ffmpeg 啟動失敗：{e}")))?;
+    if !o.status.success() {
+        let err = String::from_utf8_lossy(&o.stderr);
+        let tail: Vec<&str> = err.lines().map(str::trim).filter(|l| !l.is_empty()).rev().take(3).collect();
+        return Err(AppError::Ffmpeg(format!("合併麥克風失敗：{}", tail.into_iter().rev().collect::<Vec<_>>().join(" / "))));
+    }
+    Ok(())
+}
+
 /// 串流分析器：每個樣本更新 5 ms 桶（min/max/平方和），每 100 ms 餵 ebur128 一次。
 struct Analyzer {
     bucket_len: usize,

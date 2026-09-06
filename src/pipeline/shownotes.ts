@@ -6,6 +6,7 @@ import { useProject } from "../store/project";
 import { agentBackend, useSettings } from "../store/settings";
 import { useTranscript } from "../store/transcript";
 import { edlFor } from "./rules";
+import { resolvePrompt } from "../analysis/prompts";
 
 /**
  * 節目筆記：把剪好的這一集交給地端 claude，要回摘要 / 章節 / 節錄 / 關鍵字。
@@ -18,7 +19,6 @@ import { edlFor } from "./rules";
  * 它回來的時間戳再對節目長度驗一次，claude 完全不需要知道 EDL 的存在。
  */
 
-const SYSTEM_BASE = "你是 podcast 製作人。只輸出符合 schema 的 JSON，不要加任何說明文字。";
 
 export class ShowNotesError extends Error {}
 
@@ -46,7 +46,7 @@ export async function generateShowNotes(mediaId: string): Promise<ShowNotes> {
 
   let raw: unknown;
   try {
-    raw = await api.claudeStructured(prompt, SHOW_NOTES_SCHEMA, model, `${SYSTEM_BASE}${langLine}`, 240_000, agentBackend());
+    raw = await api.claudeStructured(prompt, SHOW_NOTES_SCHEMA, model, `${resolvePrompt("shownotes")}${langLine}`, 240_000, agentBackend());
   } catch (e) {
     throw new ShowNotesError(e instanceof Error ? e.message : String(e));
   }

@@ -20,6 +20,8 @@ export interface AppSettings {
   asr_model: string;
   hotwords: string;
   recent_projects: string[];
+  /** 使用者改過的提示詞（id -> 內容）；只存被改過的那幾條。 */
+  prompt_overrides: Record<string, string>;
 }
 
 export interface FfmpegStatus {

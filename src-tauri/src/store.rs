@@ -45,6 +45,10 @@ pub struct AppSettings {
     pub asr_model: String,
     pub hotwords: String,
     pub recent_projects: Vec<String>,
+    /// 使用者改過的提示詞（id -> 內容）。**只存被改過的那幾條** ——
+    /// 全部存下來的話，之後改了預設值，舊使用者永遠拿不到新的版本。
+    #[serde(default)]
+    pub prompt_overrides: std::collections::HashMap<String, String>,
 }
 
 impl Default for AppSettings {
@@ -65,6 +69,7 @@ impl Default for AppSettings {
             asr_model: "auto".to_string(),
             hotwords: String::new(),
             recent_projects: Vec::new(),
+            prompt_overrides: std::collections::HashMap::new(),
         }
     }
 }

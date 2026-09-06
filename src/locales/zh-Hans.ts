@@ -706,6 +706,23 @@ const zhHans: Catalog = {
   "AI 判讀、審核、節目筆記走哪個 CLI。AI 助手不受影響 —— 它要透過 App 內建的 MCP server 操作剪輯，而 codex 要連上那個 server 得改你自己的 config.toml，所以助手一律走 claude。": "AI 判读、审核、节目笔记走哪个 CLI。AI 助手不受影响 —— 它要透过 App 内建的 MCP server 操作剪辑，而 codex 要连上那个 server 得改你自己的 config.toml，所以助手一律走 claude。",
   "codex 走 `codex exec --output-schema`。模型請在 codex 自己的設定裡指定（$CODEX_HOME/config.toml 的 model）。": "codex 走 `codex exec --output-schema`。模型请在 codex 自己的设置里指定（$CODEX_HOME/config.toml 的 model）。",
   "沒裝的話：npm i -g @openai/codex，然後執行 codex login。": "没装的话：npm i -g @openai/codex，然后运行 codex login。",
+  "提示詞": "提示词",
+  "儲存這一條": "保存这一条",
+  "還原預設": "还原默认",
+  "與預設不同": "与默认不同",
+  "尚未儲存": "尚未保存",
+  "已還原成預設": "已还原成默认",
+  "匯入": "导入",
+  "匯出": "导出",
+  "已複製提示詞設定（JSON）": "已复制提示词设置（JSON）",
+  "貼上先前匯出的提示詞 JSON": "粘贴先前导出的提示词 JSON",
+  "已匯入 {n} 條": "已导入 {n} 条",
+  "已匯入 {n} 條（略過 {d} 條不認得的）": "已导入 {n} 条（跳过 {d} 条不认得的）",
+  "這不是有效的 JSON": "这不是有效的 JSON",
+  "輸出語言不用寫在提示詞裡 —— 那是依節目 / 介面語言在執行期自動接上去的。清空一條等於還原預設。": "输出语言不用写在提示词里 —— 那是依节目 / 界面语言在运行期自动接上去的。清空一条等于还原默认。",
+  "剪輯師（AI 判讀）": "剪辑师（AI 判读）",
+  "審核（第二雙耳朵）": "审核（第二双耳朵）",
+  "複製": "复制",
 };
 
 export default zhHans;

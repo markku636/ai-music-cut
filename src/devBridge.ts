@@ -12,6 +12,8 @@ import { useDecisions } from "./store/decisions";
 import { usePlayback } from "./store/playback";
 import { skimStatus, skimTo } from "./preview/skimPlayer";
 import { useLang } from "./i18n";
+import * as prompts from "./analysis/prompts";
+import { useSettings } from "./store/settings";
 import { useCleanup } from "./store/cleanup";
 import { useHighlights } from "./store/highlights";
 import { useShowNotes } from "./store/showNotes";
@@ -57,6 +59,8 @@ export interface DevBridge {
   highlights: typeof useHighlights;
   showNotes: typeof useShowNotes;
   lang: typeof useLang;
+  prompts: typeof prompts;
+  settings: typeof useSettings;
   transcript: typeof useTranscript;
   seams: () => SeamInfo[];
 }
@@ -122,6 +126,8 @@ export function installDevBridge() {
     highlights: useHighlights,
     showNotes: useShowNotes,
     lang: useLang,
+    prompts,
+    settings: useSettings,
     transcript: useTranscript,
     seams: () => {
       const id = useProject.getState().activeMediaId;

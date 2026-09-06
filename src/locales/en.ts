@@ -851,6 +851,27 @@ const en: Catalog = {
   "codex 走 `codex exec --output-schema`。模型請在 codex 自己的設定裡指定（$CODEX_HOME/config.toml 的 model）。": "Codex runs via `codex exec --output-schema`. Set the model in codex's own config ($CODEX_HOME/config.toml, key `model`).",
   "沒裝的話：npm i -g @openai/codex，然後執行 codex login。": "Not installed? Run: npm i -g @openai/codex, then codex login.",
   // Codex 後端（v0.46.0）
+  // 提示詞維護（v0.47.0）
+  "提示詞": "Prompts",
+  "儲存這一條": "Save this one",
+  "還原預設": "Reset to default",
+  "已改": "edited",
+  "與預設不同": "differs from default",
+  "尚未儲存": "unsaved",
+  "{n} 字": "{n} chars",
+  "已還原成預設": "Reset to the default",
+  "匯入": "Import",
+  "匯出": "Export",
+  "已複製提示詞設定（JSON）": "Prompt settings copied (JSON)",
+  "貼上先前匯出的提示詞 JSON": "Paste previously exported prompt JSON",
+  "已匯入 {n} 條": "Imported {n}",
+  "已匯入 {n} 條（略過 {d} 條不認得的）": "Imported {n} (skipped {d} unknown)",
+  "這不是有效的 JSON": "That is not valid JSON",
+  "輸出語言不用寫在提示詞裡 —— 那是依節目 / 介面語言在執行期自動接上去的。清空一條等於還原預設。": "You do not need to specify the output language here - it is appended at runtime from the episode / interface language. Clearing a prompt resets it to the default.",
+  "剪輯師（AI 判讀）": "Editor (AI review)",
+  "審核（第二雙耳朵）": "Reviewer (second pair of ears)",
+  // 複製（v0.47.0）
+  "複製": "Copy",
 };
 
 

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { BrainCircuit, Link2, ChevronDown, Cog, Disc3, FileMusic, FileText, FolderOpen, Info, Keyboard, MicOff, Save, Sparkles, Star, Wand2, WandSparkles, Zap } from "lucide-react";
+import { BrainCircuit, Link2, ChevronDown, Cog, Disc3, FileMusic, FileText, FolderOpen, Info, Keyboard, MicOff, Save, ScrollText, Sparkles, Star, Wand2, WandSparkles, Zap } from "lucide-react";
 import Icon from "../ui/Icon";
 import { APP_NAME } from "../brand";
 import { useT } from "../i18n";
@@ -30,6 +30,7 @@ export interface ToolbarProps {
   canShowNotes: boolean;
   onAutoCut: () => void;
   canAutoCut: boolean;
+  onPrompts: () => void;
   onSave: () => void;
   dirty: boolean;
   onHelp: () => void;
@@ -65,6 +66,7 @@ export default function Toolbar(p: ToolbarProps) {
   ];
   const utilTools: Tool[] = [
     { icon: <Icon icon={Keyboard} size={18} />, label: t("快捷鍵 (F1)"), onClick: p.onHelp, disabled: false },
+    { icon: <Icon icon={ScrollText} size={18} />, label: t("提示詞"), onClick: p.onPrompts, disabled: false },
     { icon: <Icon icon={Cog} size={18} />, label: t("設定"), onClick: p.onSettings, disabled: false },
     { icon: <Icon icon={Info} size={18} />, label: t("關於"), onClick: p.onAbout, disabled: false },
   ];

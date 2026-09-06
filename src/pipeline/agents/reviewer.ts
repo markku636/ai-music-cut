@@ -7,7 +7,8 @@
 // 只覆核「判剪」的候選：keep 是安全方向（不剪不會壞），覆核它沒有價值，
 // 而且能省下約 40% 的 token。
 import { api, errMessage } from "../../api";
-import { renderReviewWindow, REVIEWER_SYSTEM_PROMPT } from "../../analysis/llm/prompt";
+import { renderReviewWindow } from "../../analysis/llm/prompt";
+import { resolvePrompt } from "../../analysis/prompts";
 import { REVIEW_SCHEMA, type ReviewOutput } from "../../analysis/llm/schema";
 import type { JudgeWindow } from "../../analysis/llm/windows";
 import type { Candidate, DecisionMap, Opinion, Transcript } from "../../analysis/types";
@@ -65,7 +66,7 @@ export async function reviewWindow(
   const inWindow = new Set(w.candidateIds.filter((id) => cutIds.has(id)));
   if (!inWindow.size) return { opinions: {}, warnings: [] };
   const r = renderReviewWindow(tr, w, candidates, decisions, inWindow);
-  const sys = opts.systemPrompt ?? REVIEWER_SYSTEM_PROMPT;
+  const sys = opts.systemPrompt ?? resolvePrompt("reviewer");
   const now = new Date().toISOString();
   try {
     const raw = await api.claudeStructured(r.prompt, REVIEW_SCHEMA, opts.model, sys, opts.timeoutMs ?? 240_000, agentBackend());

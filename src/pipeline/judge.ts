@@ -1,7 +1,7 @@
 // AI 判讀：逐視窗呼叫 claude（結構化輸出）→ 驗證 → 併入決策。視窗以內容雜湊快取在專案 analysis 記錄。
 import { api, errMessage } from "../api";
-import { EDITOR_SYSTEM_PROMPT, renderWindow } from "../analysis/llm/prompt";
-import { REVIEWER_SYSTEM_PROMPT } from "../analysis/llm/prompt";
+import { renderWindow } from "../analysis/llm/prompt";
+import { resolvePrompt } from "../analysis/prompts";
 import { reviewWindow } from "./agents/reviewer";
 import type { Opinion } from "../analysis/types";
 import { JUDGE_SCHEMA } from "../analysis/llm/schema";
@@ -62,8 +62,11 @@ export async function runJudge(mediaId: string): Promise<void> {
   const model = useSettings.getState().s.claude_model || "sonnet";
   // 判讀理由是給**剪輯的人**看的，所以跟著介面語言，不跟著節目語言
   const lang = uiLanguageLine();
-  const sys = lang ? `${EDITOR_SYSTEM_PROMPT}\n${lang}` : EDITOR_SYSTEM_PROMPT;
-  const reviewSys = lang ? `${REVIEWER_SYSTEM_PROMPT}\n${lang}` : REVIEWER_SYSTEM_PROMPT;
+  // 兩個角色的人格設定都可以在「提示詞」對話框改；語言指示是執行期接上去的
+  const editorBase = resolvePrompt("editor");
+  const reviewerBase = resolvePrompt("reviewer");
+  const sys = lang ? `${editorBase}\n${lang}` : editorBase;
+  const reviewSys = lang ? `${reviewerBase}\n${lang}` : reviewerBase;
   const st = useSettings.getState().s;
   const withReviewer = (st.judge_roles || "editor+reviewer").includes("reviewer");
   const reviewModel = st.claude_review_model || "haiku";

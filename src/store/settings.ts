@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { setPromptOverrides } from "../analysis/prompts";
 import { api, type AppPaths, type AppSettings, type ClaudeStatus, type FfmpegStatus, type KeyStatus, type TtlsHealth } from "../api";
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -6,6 +7,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ffmpeg_path: null,
   claude_model: "sonnet",
   agent_backend: "claude",
+  prompt_overrides: {},
   claude_review_model: "haiku",
   judge_roles: "editor+reviewer",
   default_aggressiveness: 50,
@@ -47,6 +49,8 @@ export const useSettings = create<SettingsStore>((set, get) => ({
     try {
       const s = await api.settingsGet();
       set({ s: { ...DEFAULT_SETTINGS, ...s }, loaded: true });
+      // 提示詞覆寫是單向推進 prompts 模組的（那支是純函式，不反向讀設定）
+      setPromptOverrides(s.prompt_overrides);
     } catch {
       set({ loaded: true });
     }
@@ -63,6 +67,7 @@ export const useSettings = create<SettingsStore>((set, get) => ({
     try {
       const saved = await api.settingsSet(next);
       set({ s: { ...DEFAULT_SETTINGS, ...saved } });
+      setPromptOverrides(saved.prompt_overrides);
     } catch {
       /* 寫檔失敗保留記憶體中的值；呼叫端可再試 */
     }

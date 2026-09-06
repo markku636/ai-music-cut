@@ -6,7 +6,8 @@ import { usePlayback } from "../store/playback";
 import { useTimeline, type TimelineTool } from "../store/timeline";
 import { formatMs } from "../time";
 import SnapMenu from "./SnapMenu";
-import { seekBy, togglePlay } from "./playerRef";
+import { nextShuttle, shuttleLabel, SHUTTLE_STOPPED } from "./shuttle";
+import { togglePlay } from "./playerRef";
 import { editedTimeAt, type Range } from "./skip";
 
 const RATES = [1, 1.25, 1.5, 2];
@@ -17,6 +18,8 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
   const currentMs = usePlayback((s) => s.currentMs);
   const rate = usePlayback((s) => s.rate);
   const setRate = usePlayback((s) => s.setRate);
+  const shuttle = usePlayback((s) => s.shuttle);
+  const setShuttle = usePlayback((s) => s.setShuttle);
   const skipEnabled = usePlayback((s) => s.skipEnabled);
   const toggleSkip = usePlayback((s) => s.toggleSkip);
   const followMode = usePlayback((s) => s.followMode);
@@ -47,9 +50,31 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
 
   return (
     <div ref={barRef} className="min-h-10 shrink-0 flex flex-wrap items-center gap-x-1 gap-y-0.5 px-2 py-1 border-b border-fg/10 bg-panel min-w-0">
-      <IconButton icon={Rewind} label={t("倒退 5 秒")} onClick={() => seekBy(-5000)} />
-      <IconButton icon={playing ? Pause : Play} label={playing ? t("暫停") : t("播放")} iconSize={18} box="w-8 h-8" onClick={togglePlay} />
-      <IconButton icon={FastForward} label={t("前進 5 秒")} onClick={() => seekBy(5000)} />
+      <IconButton
+        icon={Rewind}
+        label={t("倒退轉盤（J）—— 再點加速；倒退只移動播放線，沒有聲音")}
+        active={shuttle.dir < 0}
+        onClick={() => setShuttle(nextShuttle(shuttle, "J"))}
+      />
+      <IconButton
+        icon={playing || shuttle.dir ? Pause : Play}
+        label={playing || shuttle.dir ? t("暫停（K）") : t("播放")}
+        iconSize={18}
+        box="w-8 h-8"
+        onClick={() => {
+          if (shuttle.dir) setShuttle(SHUTTLE_STOPPED);
+          else togglePlay();
+        }}
+      />
+      <IconButton icon={FastForward} label={t("前進轉盤（L）—— 再點加速 1x / 2x / 4x")} active={shuttle.dir > 0} onClick={() => setShuttle(nextShuttle(shuttle, "L"))} />
+      {shuttle.dir !== 0 && (
+        <span
+          className={`h-7 px-1.5 rounded-sm text-[11px] mono tabular-nums inline-flex items-center whitespace-nowrap ${shuttle.dir < 0 ? "bg-amber-400/15 text-amber-400" : "bg-accent/15 text-accent"}`}
+          title={shuttle.dir < 0 ? t("倒退轉盤：只移動播放線，沒有聲音") : t("前進轉盤")}
+        >
+          {shuttleLabel(shuttle)}
+        </span>
+      )}
       <button type="button" onClick={() => setRate(RATES[(RATES.indexOf(rate) + 1) % RATES.length] ?? 1)} title={t("播放速率")} className="h-7 px-2 rounded-sm text-xs mono text-fg/70 hover:bg-fg/5">
         {rate}×
       </button>

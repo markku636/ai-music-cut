@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Crop, Music, Palette, Play, Repeat, Scissors, Slice, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
+import { Check, Crop, MoveHorizontal, Music, Palette, Play, Repeat, Scissors, Slice, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
 import type { AudioEffect } from "../analysis/effects";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
 import { activeRanges } from "../analysis/edl/build";
@@ -14,7 +14,9 @@ import { playRange } from "../preview/playerRef";
 import { useEffectPreview } from "../preview/useEffectPreview";
 import TransportBar from "../preview/TransportBar";
 import PreviewBar from "../preview/PreviewBar";
+import PrecisionTrim from "../preview/PrecisionTrim";
 import { useSkipPlayback } from "../preview/useSkipPlayback";
+import { useShuttle } from "../preview/useShuttle";
 import { useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
 import { selectActiveMedia, useProject } from "../store/project";
@@ -72,6 +74,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   const seek = usePlayback((s) => s.seek);
   const selection = useTimeline((s) => s.selection);
   const setSelection = useTimeline((s) => s.setSelection);
+  const setFocusSeam = useTimeline((s) => s.setFocusSeam);
   const anchorWord = useRef<number | null>(null);
   const timeline = useResizable({ storageKey: "aicut:timelineH", initial: 220, min: 140, max: () => window.innerHeight * 0.6, axis: "y" });
 
@@ -123,6 +126,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
     setBeatGrid(!isSpeech && g.confidence >= MIN_BEAT_CONFIDENCE ? g : null);
   }, [local, transcript, setBeatGrid]);
   useSkipPlayback(cuts);
+  useShuttle();
   useEffectPreview(effects);
 
   // 開檔 / 切換媒體：波形立刻算（只需 ffmpeg；快取命中幾乎即時）。失敗留在 job 裡由 placeholder 顯示。
@@ -200,6 +204,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
       { separator: true },
       { label: t("巡這個接縫（前後各 1.2 秒）"), icon: Play, onClick: around },
       { label: t("選取這個接縫附近"), icon: SquareDashed, onClick: () => setSelection({ startMs: Math.max(0, s.srcBeforeMs - 600), endMs: s.srcAfterMs + 600 }) },
+      { label: t("在這裡精準修剪…"), icon: MoveHorizontal, onClick: () => setFocusSeam(s.srcBeforeMs) },
     ];
     if (s.splitId) {
       items.push(
@@ -237,6 +242,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
       ) : (
         <>
           <TransportBar durationMs={active.probe?.duration_ms ?? 0} cuts={cuts} />
+          <PrecisionTrim seams={seams} analysis={local} transcript={transcript ?? null} />
           <div className="relative shrink-0 bg-well border-b border-fg/10" style={{ height: timeline.size }}>
             <Timeline
               mediaId={mediaId}

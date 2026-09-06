@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { SHUTTLE_STOPPED, type ShuttleState } from "../preview/shuttle";
 
 export interface PreviewRange {
   startMs: number;
@@ -30,6 +31,9 @@ interface PlaybackStore {
   seekReq: { ms: number; nonce: number } | null;
   /** 預聽中的範圍（playerRef.playRange 設定）。 */
   preview: PreviewRange | null;
+  /** J / K / L 轉盤狀態（0 = 沒在轉盤模式，一般播放仍走 playing / rate）。 */
+  shuttle: ShuttleState;
+  setShuttle: (s: ShuttleState) => void;
   seek: (ms: number) => void;
   setCurrent: (ms: number) => void;
   setPlaying: (b: boolean) => void;
@@ -49,6 +53,7 @@ export const usePlayback = create<PlaybackStore>((set) => ({
   followMode: "page",
   seekReq: null,
   preview: null,
+  shuttle: SHUTTLE_STOPPED,
   seek: (ms) => set((s) => ({ currentMs: Math.max(0, ms), seekReq: { ms: Math.max(0, ms), nonce: (s.seekReq?.nonce ?? 0) + 1 } })),
   setCurrent: (ms) => set({ currentMs: ms }),
   setPlaying: (b) => set({ playing: b }),
@@ -58,4 +63,5 @@ export const usePlayback = create<PlaybackStore>((set) => ({
     set((s) => ({ followMode: FOLLOW_MODES[(FOLLOW_MODES.indexOf(s.followMode) + 1) % FOLLOW_MODES.length] })),
   setFollowMode: (m) => set({ followMode: m }),
   setPreview: (p) => set({ preview: p }),
+  setShuttle: (sh) => set({ shuttle: sh }),
 }));

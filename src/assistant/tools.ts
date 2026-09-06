@@ -3,7 +3,11 @@
 import { listen } from "@tauri-apps/api/event";
 import { api, type McpToolCall, type McpToolDef } from "../api";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState } from "../analysis/types";
+import type { EffectKind } from "../analysis/effects";
 import { edlFor, runRulesFor } from "../pipeline/rules";
+import { useTimeline } from "../store/timeline";
+import { addEffectOnSelection } from "../timeline/selectionActions";
+import { bladeAt, liftSelection, seamsOfEdl, setSeamPause, trimSeam } from "../timeline/trimActions";
 import { playRange } from "../preview/playerRef";
 import { decisionCounts, useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
@@ -267,6 +271,156 @@ export const TOOLS: ToolSpec[] = [
       const label = d.future[d.future.length - 1]?.label ?? null;
       d.redo();
       return { redone: label };
+    },
+  },
+  {
+    name: "list_seams",
+    description: "列出目前所有接縫（剪除區的接點與刀片切點），含位置、剪掉多長、接法（crossfade / gap / seam）。修剪前先呼叫這支看有哪些刀。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fromMs: { type: "number", description: "只列這個時間之後的" },
+        toMs: { type: "number", description: "只列這個時間之前的" },
+        limit: { type: "integer", minimum: 1, maximum: 500, default: 100 },
+      },
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctx();
+      const from = num(a.fromMs, 0);
+      const to = num(a.toMs, Number.MAX_SAFE_INTEGER);
+      const all = seamsOfEdl(edlFor(x.media.id));
+      const rows = all
+        .filter((s) => s.srcBeforeMs >= from && s.srcBeforeMs <= to)
+        .slice(0, Math.round(num(a.limit, 100)))
+        .map((s) => ({
+          afterKeepId: s.afterKeepId,
+          at: formatMs(s.srcBeforeMs, { millis: true }),
+          srcBeforeMs: Math.round(s.srcBeforeMs),
+          srcAfterMs: Math.round(s.srcAfterMs),
+          removedMs: Math.round(s.srcAfterMs - s.srcBeforeMs),
+          kind: s.kind,
+          isBlade: !!s.splitId,
+          pauseMs: Math.round(s.gapMs),
+        }));
+      return { total: all.length, seams: rows, note: "afterKeepId 只在下一次修剪前有效（保留段會重新編號）；連續操作請每次重新呼叫這支。" };
+    },
+  },
+  {
+    name: "blade_at",
+    description: "刀片：在指定時間切一刀。切點本身不改變聲音，只是立一個可以修剪 / 插留白的接縫。同一位置再呼叫一次＝移除切點。",
+    inputSchema: {
+      type: "object",
+      properties: { ms: { type: "number", description: "來源時間（毫秒）" } },
+      required: ["ms"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      ctx();
+      const ms = num(a.ms, -1);
+      if (ms < 0) throw new ToolError("ms 必須是非負數");
+      const r = bladeAt(ms);
+      if (r === null) throw new ToolError("這個位置切不了：太靠近既有接縫，或落在已經剪掉的區段裡");
+      return { bladed: r, ms: Math.round(ms) };
+    },
+  },
+  {
+    name: "trim_seam",
+    description: "修剪一個接縫。mode=ripple 只動一側（後面整串跟著位移、成品變長或變短）；mode=roll 兩側一起動（成品總長不變，只換接縫落在哪）。afterKeepId 從 list_seams 取得。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        afterKeepId: { type: "integer", description: "從 list_seams 取得" },
+        deltaMs: { type: "number", description: "位移量，正數往後、負數往前" },
+        mode: { type: "string", enum: ["ripple", "roll"], default: "ripple" },
+        side: { type: "string", enum: ["left", "right"], default: "left", description: "ripple 時要動哪一邊的邊界" },
+      },
+      required: ["afterKeepId", "deltaMs"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      ctx();
+      const mode = a.mode === "roll" ? "roll" : "ripple";
+      const side = a.side === "right" ? "right" : "left";
+      const ok = trimSeam(Math.round(num(a.afterKeepId, -1)), Math.round(num(a.deltaMs, 0)), mode, side);
+      if (!ok) throw new ToolError("修剪沒有生效：接縫不存在，或這個方向沒有意義（切點上的漣漪只能往外吃）");
+      return { trimmed: true, mode, side, deltaMs: Math.round(num(a.deltaMs, 0)) };
+    },
+  },
+  {
+    name: "insert_pause",
+    description: "在刀片切點插入留白（room tone）當段落呼吸；0 = 拿掉留白回到直接對接。只有刀片切出來的接縫可以。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        afterKeepId: { type: "integer", description: "從 list_seams 取得（isBlade 必須是 true）" },
+        ms: { type: "number", minimum: 0, maximum: 5000, description: "留白長度（毫秒）" },
+      },
+      required: ["afterKeepId", "ms"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      ctx();
+      const ok = setSeamPause(Math.round(num(a.afterKeepId, -1)), Math.round(num(a.ms, 0)));
+      if (!ok) throw new ToolError("那個接縫不是刀片切點（一般接縫的呼吸由 breath 自動決定）");
+      return { pauseMs: Math.round(num(a.ms, 0)) };
+    },
+  },
+  {
+    name: "set_selection",
+    description: "設定時間選取（等同使用者在波形上拖一段）。設好之後可以用 lift_selection 提起，或叫使用者確認。傳 null 清除選取。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        startMs: { type: "number" },
+        endMs: { type: "number" },
+        clear: { type: "boolean", description: "true = 清除選取" },
+      },
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      ctx();
+      if (a.clear === true) {
+        useTimeline.getState().setSelection(null);
+        return { cleared: true };
+      }
+      const s = num(a.startMs, -1);
+      const e = num(a.endMs, -1);
+      if (s < 0 || e <= s) throw new ToolError("startMs / endMs 不合法");
+      useTimeline.getState().setSelection({ startMs: s, endMs: e });
+      const sel = useTimeline.getState().selection;
+      return { selection: sel, note: sel && (Math.abs(sel.startMs - s) > 1 || Math.abs(sel.endMs - e) > 1) ? "已吸附到最近的接縫 / 句界 / 拍點" : undefined };
+    },
+  },
+  {
+    name: "lift_selection",
+    description: "提起（lift）：把目前選取換成靜音，但**不關洞** —— 後面的時間位置完全不動。拿掉咳嗽 / 關門聲又要保留節奏時用這個，不要用 add_cut。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      ctx();
+      const id = liftSelection();
+      if (!id) throw new ToolError("目前沒有選取（先用 set_selection）");
+      return { lifted: id };
+    },
+  },
+  {
+    name: "add_effect",
+    description: "對目前選取加效果：靜音 / 增益（dB）/ 淡入 / 淡出。先用 set_selection 選好範圍。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["mute", "gain", "fade_in", "fade_out"] },
+        db: { type: "number", minimum: -24, maximum: 12, description: "kind=gain 時的增益" },
+      },
+      required: ["kind"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      ctx();
+      const kind = String(a.kind) as EffectKind;
+      const id = addEffectOnSelection(kind, kind === "gain" ? num(a.db, 0) : undefined);
+      if (!id) throw new ToolError("目前沒有選取（先用 set_selection）");
+      return { effectId: id, kind };
     },
   },
 ];

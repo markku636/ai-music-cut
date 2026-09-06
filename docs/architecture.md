@@ -50,6 +50,14 @@
    `store/timeline.setSelection` 仍是唯一吸附入口，拖接縫與 `B` 切刀也走同一支 `snapMs`。容差 = 8 px 換算成 ms（上限 140 ms）。
    目標由 `MainArea` 在 EDL / 逐字稿變動時攤平進 `snapTargets`；播放線每秒動 60 次，所以不進那份快取，算 context 時才附上去。
 
+5e. **轉盤與精準修剪**（`preview/shuttle.ts` / `useShuttle.ts` / `PrecisionTrim.tsx`）：
+   `nextShuttle` 是純狀態機，走一條 `[-4,-2,-1,0,1,2,4]` 的階梯，用「嚴格大於 / 小於目前值的第一格」
+   前進（不是「找最近再 ±1」—— 慢速 0.5x 卡在 0 與 1 中間會平手，往哪邊解都有一邊錯）。
+   順向直接設 `playbackRate`；**倒退沒有辦法出聲**（`<audio>` 不支援負的 playbackRate），
+   改成暫停元素、用共用 ticker 每幀把 currentTime 往回推，UI 標「靜音」。
+   精準修剪器用**位置**追接縫（`focusSeamMs`）而不是 `afterKeepId` —— keep 是推導出來的，
+   剪除區一移開，原本被壓住的切點又會重新把保留段切開，編號整個往後移。
+
 6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
 7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。

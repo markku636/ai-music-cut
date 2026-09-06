@@ -21,3 +21,52 @@ describe("timeline zoom", () => {
     expect(useTimeline.getState().selection).toBeNull();
   });
 });
+
+describe("入點 / 出點（I / O）", () => {
+  const reset = () => {
+    useTimeline.setState({ selection: null, pendingIn: null, pendingOut: null, snap: { enabled: false, beats: false, seams: false, sentences: false, words: false } });
+  };
+
+  it("先 I 再 O 組成一段選取", () => {
+    reset();
+    // 只標了入點時**不會**產生選取 —— 1 ms 的佔位會被 setSelection 的下限丟掉，
+    // 使用者按了 I 再按 O 就什麼都不會發生（這是實機測出來的 bug）
+    expect(useTimeline.getState().markIn(5000)).toBe(false);
+    expect(useTimeline.getState().selection).toBeNull();
+    expect(useTimeline.getState().pendingIn).toBe(5000);
+    expect(useTimeline.getState().markOut(9000)).toBe(true);
+    expect(useTimeline.getState().selection).toEqual({ startMs: 5000, endMs: 9000 });
+    expect(useTimeline.getState().pendingIn).toBeNull();
+  });
+
+  it("先 O 再 I 也可以", () => {
+    reset();
+    expect(useTimeline.getState().markOut(9000)).toBe(false);
+    expect(useTimeline.getState().markIn(5000)).toBe(true);
+    expect(useTimeline.getState().selection).toEqual({ startMs: 5000, endMs: 9000 });
+  });
+
+  it("已經有選取時，I / O 只換那一端", () => {
+    reset();
+    useTimeline.getState().setSelection({ startMs: 2000, endMs: 8000 });
+    expect(useTimeline.getState().markIn(3000)).toBe(true);
+    expect(useTimeline.getState().selection).toEqual({ startMs: 3000, endMs: 8000 });
+    expect(useTimeline.getState().markOut(7000)).toBe(true);
+    expect(useTimeline.getState().selection).toEqual({ startMs: 3000, endMs: 7000 });
+  });
+
+  it("出點在入點之前 → 改成重新標入點，不會做出反向選取", () => {
+    reset();
+    useTimeline.getState().markIn(9000);
+    expect(useTimeline.getState().markOut(5000)).toBe(false);
+    expect(useTimeline.getState().selection).toBeNull();
+    expect(useTimeline.getState().pendingOut).toBe(5000);
+  });
+
+  it("清除選取也會清掉單邊的標記", () => {
+    reset();
+    useTimeline.getState().markIn(5000);
+    useTimeline.getState().setSelection(null);
+    expect(useTimeline.getState().pendingIn).toBeNull();
+  });
+});

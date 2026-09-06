@@ -12,7 +12,9 @@ import SettingsDialog, { type SettingsFocus } from "./dialogs/SettingsDialog";
 import VerifyDialog from "./dialogs/VerifyDialog";
 import ShortcutsHelp from "./dialogs/ShortcutsHelp";
 import { installHotkeys } from "./hotkeys";
-import { bladeAtPlayhead, liftSelection } from "./timeline/trimActions";
+import { formatMs } from "./time";
+import { bladeAtPlayhead, currentEdl, liftSelection, seamsOfEdl } from "./timeline/trimActions";
+import { isSilentDirection, nextShuttle, shuttleLabel } from "./preview/shuttle";
 import { runAnalyze } from "./pipeline/analyze";
 import { runJudge } from "./pipeline/judge";
 import { runVerify } from "./pipeline/verify";
@@ -44,6 +46,29 @@ import { applyAppTheme, useTheme } from "./theme";
 import { pickOpenFile, pickSaveFile, toast, UiHost } from "./ui";
 
 /** 依時間順序選上一個 / 下一個候選並 seek。 */
+/** 精準修剪器開著時在接縫之間跳；沒開就回 false 讓 [ ] 回到候選導覽。 */
+function stepSeam(dir: 1 | -1): boolean {
+  const focus = useTimeline.getState().focusSeamMs;
+  if (focus == null) return false;
+  const seams = seamsOfEdl(currentEdl());
+  if (!seams.length) return false;
+  let idx = 0;
+  let best = Infinity;
+  seams.forEach((s, i) => {
+    const d = Math.abs(s.srcBeforeMs - focus);
+    if (d < best) {
+      best = d;
+      idx = i;
+    }
+  });
+  const next = seams[Math.max(0, Math.min(seams.length - 1, idx + dir))];
+  if (next) {
+    useTimeline.getState().setFocusSeam(next.srcBeforeMs);
+    seekTo(Math.max(0, next.srcBeforeMs - 300));
+  }
+  return true;
+}
+
 function stepCandidate(dir: 1 | -1) {
   const id = useProject.getState().activeMediaId;
   if (!id) return;
@@ -278,8 +303,9 @@ export default function App() {
         save: () => void saveProject(),
         help: () => setHelpOpen((v) => !v),
         space: spaceKey,
-        prevCandidate: () => stepCandidate(-1),
-        nextCandidate: () => stepCandidate(1),
+        // 精準修剪器開著的時候，[ ] 是在接縫之間跳；否則是上下一個候選
+        prevCandidate: () => (stepSeam(-1) ? undefined : stepCandidate(-1)),
+        nextCandidate: () => (stepSeam(1) ? undefined : stepCandidate(1)),
         accept: () => decideSelected("accepted"),
         reject: () => decideSelected("rejected"),
         deleteSelection: deleteKey,
@@ -295,6 +321,31 @@ export default function App() {
         toolSeek: () => useTimeline.getState().setTool("seek"),
         toolSelect: () => useTimeline.getState().setTool("select"),
         toolTrim: () => useTimeline.getState().setTool("trim"),
+        shuttle: (key, opts) => {
+          const pb = usePlayback.getState();
+          const next = nextShuttle(pb.shuttle, key, { slow: opts.slow });
+          pb.setShuttle(next);
+          // 只在「剛進入倒退」時說一次，不然每點一下都跳一個 toast
+          if (isSilentDirection(next) && !isSilentDirection(pb.shuttle)) toast.info(t("{label}　倒退只移動播放線，沒有聲音", { label: shuttleLabel(next) }));
+        },
+        markIn: () => {
+          const ms = usePlayback.getState().currentMs;
+          // 只標了一端要說一聲，否則按了 I 畫面上什麼都沒有，看起來像壞掉
+          if (!useTimeline.getState().markIn(ms)) toast.info(t("入點 {at}　再按 O 標出點", { at: formatMs(ms, { millis: true }) }));
+        },
+        markOut: () => {
+          const ms = usePlayback.getState().currentMs;
+          if (!useTimeline.getState().markOut(ms)) toast.info(t("出點 {at}　再按 I 標入點", { at: formatMs(ms, { millis: true }) }));
+        },
+        gotoIn: () => {
+          const sel = useTimeline.getState().selection;
+          if (sel) seekTo(sel.startMs);
+        },
+        gotoOut: () => {
+          const sel = useTimeline.getState().selection;
+          if (sel) seekTo(sel.endMs);
+        },
+        nudge: (ms) => seekTo(Math.max(0, usePlayback.getState().currentMs + ms)),
         blade: () => {
           const r = bladeAtPlayhead();
           if (r === null) toast.info(t("這裡切不了：太靠近既有的接縫，或落在已剪掉的區段裡"));

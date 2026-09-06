@@ -6,6 +6,9 @@ import { usePlayback } from "./playback";
 /** 時間軸縮放與工具狀態。pxPerSec = null 代表「整段適配」（fit-to-width），由 Timeline 依容器寬度算出 fitPxPerSec。 */
 export const MAX_PX_PER_SEC = 500;
 
+/** 選取的最短長度：比這短就當作沒選（setSelection 會丟掉）。 */
+export const MIN_RANGE_MS = 20;
+
 export type TimelineTool = "seek" | "select" | "trim";
 
 export interface TimeSelection {
@@ -42,6 +45,13 @@ interface TimelineStore {
   snapTargets: SnapTarget[];
   /** 最近一次吸到哪裡（波形上畫指示線）。 */
   lastSnapHit: { ms: number; kind: SnapKind } | null;
+  /**
+   * 精準修剪器正在看哪一個接縫（記位置而不是 afterKeepId）。
+   *
+   * keep 是從候選推導出來的，剪除區一移動、切點一生效，keep.id 就整個重新編號 ——
+   * 用 id 當持久參照，面板會在你修剪完之後指到另一個接縫上。位置則不會騙人。
+   */
+  focusSeamMs: number | null;
   /** AI 偵測到的原始網格（未套人工修正）。 */
   rawGrid: BeatGrid | null;
   gridOverride: GridOverride;
@@ -63,6 +73,19 @@ interface TimelineStore {
   /** 吸附一個時間值（拖曳接縫 / 切刀 / 微調都走這支），順便記下吸到哪。 */
   snapMs: (ms: number) => number;
   clearSnapHit: () => void;
+  setFocusSeam: (ms: number | null) => void;
+  /**
+   * I / O：用播放線標入點 / 出點。
+   *
+   * 只標了一端的時候**不能**先做出一個 1 ms 的選取當佔位 —— setSelection 有 20 ms 下限，
+   * 那種佔位會當場被丟掉，使用者按了 I 再按 O 什麼都不會發生。所以先記在 pendingIn /
+   * pendingOut，等另一端到齊才組成選取。回傳這一下有沒有湊成完整的一段。
+   */
+  markIn: (ms: number) => boolean;
+  markOut: (ms: number) => boolean;
+  /** 只標了一端、還在等另一端的入 / 出點。 */
+  pendingIn: number | null;
+  pendingOut: number | null;
   setFit: (px: number, viewWidth?: number) => void;
   setPxPerSec: (px: number | null) => void;
   zoomBy: (factor: number) => void;
@@ -153,6 +176,9 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   snapSources: {},
   snapTargets: [{ ms: 0, kind: "bound" }],
   lastSnapHit: null,
+  focusSeamMs: null,
+  pendingIn: null,
+  pendingOut: null,
   setBeatGrid: (g) => set({ rawGrid: g, gridOverride: NO_OVERRIDE, taps: [], beatGrid: g }),
   scaleGrid: (factor) =>
     set((s) => {
@@ -205,6 +231,30 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     return r.ms;
   },
   clearSnapHit: () => set({ lastSnapHit: null }),
+  setFocusSeam: (ms) => set({ focusSeamMs: ms }),
+  markIn: (ms) => {
+    const s = get();
+    // 出點的來源：現有選取的右端 > 先前單獨標的出點
+    const end = s.selection && s.selection.endMs > ms + MIN_RANGE_MS ? s.selection.endMs : s.pendingOut;
+    if (end != null && end > ms + MIN_RANGE_MS) {
+      set({ pendingIn: null, pendingOut: null });
+      s.setSelection({ startMs: ms, endMs: end });
+      return true;
+    }
+    set({ pendingIn: ms, pendingOut: null, selection: null });
+    return false;
+  },
+  markOut: (ms) => {
+    const s = get();
+    const start = s.selection && s.selection.startMs < ms - MIN_RANGE_MS ? s.selection.startMs : s.pendingIn;
+    if (start != null && start < ms - MIN_RANGE_MS) {
+      set({ pendingIn: null, pendingOut: null });
+      s.setSelection({ startMs: start, endMs: ms });
+      return true;
+    }
+    set({ pendingOut: ms, pendingIn: null, selection: null });
+    return false;
+  },
   setFit: (px, viewWidth) => set((s) => ({ fitPxPerSec: Math.max(0.01, px), viewWidth: viewWidth ?? s.viewWidth })),
   setPxPerSec: (px) => set({ pxPerSec: px == null ? null : clampZoom(px, get().fitPxPerSec) }),
   zoomBy: (factor) => set((s) => ({ pxPerSec: nextZoom(s.pxPerSec, s.fitPxPerSec, factor) })),
@@ -233,7 +283,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   },
   setSelection: (sel) => {
     if (!sel) {
-      set({ selection: null });
+      set({ selection: null, pendingIn: null, pendingOut: null });
       return;
     }
     const st = get();
@@ -242,7 +292,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     const ctx = snapContextOf(st);
     const startMs = Math.max(0, snapValue(Math.min(sel.startMs, sel.endMs), ctx).ms);
     const endMs = snapValue(Math.max(sel.startMs, sel.endMs), ctx).ms;
-    set({ selection: endMs - startMs < 20 ? null : { startMs: Math.round(startMs), endMs: Math.round(endMs) } });
+    set({ selection: endMs - startMs < MIN_RANGE_MS ? null : { startMs: Math.round(startMs), endMs: Math.round(endMs) } });
   },
   toggleLoop: () =>
     set((s) => {

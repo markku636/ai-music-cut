@@ -1,5 +1,4 @@
 import { seekBy, togglePlay } from "./preview/playerRef";
-import { usePlayback } from "./store/playback";
 
 export interface HotkeyHandlers {
   openMedia: () => void;
@@ -29,6 +28,15 @@ export interface HotkeyHandlers {
   toggleSnap?: () => void;
   /** Shift+Delete：提起（留白靜音，不關洞）。 */
   liftSelection?: () => void;
+  /** J / K / L 轉盤。slow = 按住 K 的時候點的（0.5x）。 */
+  shuttle?: (key: "J" | "K" | "L", opts: { slow: boolean }) => void;
+  /** I / O 標入點 / 出點；Shift 版是跳到那裡。 */
+  markIn?: () => void;
+  markOut?: () => void;
+  gotoIn?: () => void;
+  gotoOut?: () => void;
+  /** Alt+← / →：微調播放線（Shift 再細一級）。 */
+  nudge?: (ms: number) => void;
   escape?: () => void;
   /** Space：由 App 決定播選取或播放 / 暫停；未提供則播放 / 暫停。 */
   space?: () => void;
@@ -65,10 +73,13 @@ function typingTarget(e: KeyboardEvent): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
 }
 
-const RATES = [1, 1.25, 1.5, 2];
-
 /** 全域鍵盤快捷鍵。對話框開啟（body.dataset.modalCount）或焦點在輸入框時讓路。 */
 export function installHotkeys(h: HotkeyHandlers): () => void {
+  // 按住 K 再點 J / L 是慢速 —— 需要知道 K 現在有沒有被壓著
+  let kHeld = false;
+  const onKeyUp = (e: KeyboardEvent) => {
+    if (effectiveKey(e).toLowerCase() === "k") kHeld = false;
+  };
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "F1") {
       e.preventDefault();
@@ -79,6 +90,7 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
     if (typingTarget(e)) return;
     const ctrl = e.ctrlKey || e.metaKey;
     const k = effectiveKey(e);
+    if (k.toLowerCase() === "k" && !ctrl) kHeld = true;
     if (ctrl) {
       switch (k.toLowerCase()) {
         case "o":
@@ -131,6 +143,11 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
       case "Escape":
         h.escape?.();
         return;
+      case "x":
+      case "X":
+        // Alt+X：清掉入出點（跟 Esc 一樣，但不會關掉右鍵選單之類的東西）
+        if (e.altKey) h.escape?.();
+        return;
       case "v":
       case "V":
         h.toolSeek?.();
@@ -160,28 +177,36 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
       case "Z":
         h.zoomSelection?.();
         return;
+      // 轉盤：按住不放不會一直加速（剪輯軟體的 JKL 是「點一下走一格」）
       case "j":
       case "J":
-        seekBy(e.repeat ? -15000 : -5000);
-        return;
       case "k":
       case "K":
-        if (usePlayback.getState().playing) togglePlay();
-        return;
       case "l":
-      case "L": {
-        const pb = usePlayback.getState();
-        if (!pb.playing) togglePlay();
-        else pb.setRate(RATES[(RATES.indexOf(pb.rate) + 1) % RATES.length] ?? 1);
+      case "L":
+        if (e.repeat) return;
+        h.shuttle?.(k.toUpperCase() as "J" | "K" | "L", { slow: kHeld && k.toLowerCase() !== "k" });
         return;
-      }
+      case "i":
+      case "I":
+        if (e.shiftKey) h.gotoIn?.();
+        else h.markIn?.();
+        return;
+      case "o":
+      case "O":
+        if (e.shiftKey) h.gotoOut?.();
+        else h.markOut?.();
+        return;
       case "ArrowLeft":
         e.preventDefault();
-        seekBy(e.shiftKey ? -5000 : -1000);
+        // Alt = 微調（Shift 再細一級）；否則維持原本的 ∓1 / ∓5 秒
+        if (e.altKey) h.nudge?.(e.shiftKey ? -1 : -10);
+        else seekBy(e.shiftKey ? -5000 : -1000);
         return;
       case "ArrowRight":
         e.preventDefault();
-        seekBy(e.shiftKey ? 5000 : 1000);
+        if (e.altKey) h.nudge?.(e.shiftKey ? 1 : 10);
+        else seekBy(e.shiftKey ? 5000 : 1000);
         return;
       case "[":
         h.prevCandidate?.();
@@ -212,5 +237,15 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
     }
   };
   window.addEventListener("keydown", onKey);
-  return () => window.removeEventListener("keydown", onKey);
+  window.addEventListener("keyup", onKeyUp);
+  // 失焦時 keyup 收不到，K 會永遠卡在「按住」→ 之後每次 J / L 都變慢速
+  const onBlur = () => {
+    kHeld = false;
+  };
+  window.addEventListener("blur", onBlur);
+  return () => {
+    window.removeEventListener("keydown", onKey);
+    window.removeEventListener("keyup", onKeyUp);
+    window.removeEventListener("blur", onBlur);
+  };
 }

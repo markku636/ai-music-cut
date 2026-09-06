@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { effectLabel, type AudioEffect } from "../analysis/effects";
 import { thresholdsFor } from "../analysis/thresholds";
-import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, splitPointId, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState, type Opinion, type SplitPoint } from "../analysis/types";
+import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, markerId, splitPointId, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState, type Marker, type MarkerKind, type Opinion, type SplitPoint } from "../analysis/types";
 import { resolveOpinions } from "../analysis/llm/resolve";
 import { useProject } from "./project";
 
@@ -11,6 +11,7 @@ interface Snapshot {
   decisions: DecisionMap;
   effects: AudioEffect[];
   splits: SplitPoint[];
+  markers: Marker[];
 }
 
 interface Patch {
@@ -34,6 +35,8 @@ interface DecisionsStore {
   effects: Record<string, AudioEffect[]>;
   /** 刀片切點，同樣共用 undo 歷史。 */
   splits: Record<string, SplitPoint[]>;
+  /** 標記 / 章節 / 待辦，同樣共用 undo 歷史。 */
+  markers: Record<string, Marker[]>;
   selectedIds: string[];
   filter: DecisionFilter;
   /** 審核模式（一次一筆、鍵盤決定並自動前進）。 */
@@ -70,6 +73,12 @@ interface DecisionsStore {
   /** 設定這一刀要插多長的留白（0 = 純對接）。 */
   setSplitGap: (mediaId: string, id: string, gapMs: number) => void;
   removeSplit: (mediaId: string, id: string) => void;
+  /** 下一個標記；回傳 id。 */
+  addMarker: (mediaId: string, ms: number, kind?: MarkerKind, title?: string) => string;
+  updateMarker: (mediaId: string, id: string, patch: Partial<Omit<Marker, "id">>) => void;
+  removeMarker: (mediaId: string, id: string) => void;
+  /** AI 提的章節：整批取代既有的 chapter 標記（其他類型不動），一筆 undo。 */
+  setChapters: (mediaId: string, chapters: { ms: number; title: string }[]) => number;
   addEffect: (mediaId: string, e: AudioEffect) => void;
   updateEffect: (mediaId: string, id: string, patch: Partial<Omit<AudioEffect, "id">>) => void;
   removeEffect: (mediaId: string, id: string) => void;
@@ -87,7 +96,7 @@ interface DecisionsStore {
   redo: () => void;
   clear: (mediaId: string) => void;
   /** 專案載入：直接放入（不記 undo）。 */
-  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[], splits?: SplitPoint[]) => void;
+  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[], splits?: SplitPoint[], markers?: Marker[]) => void;
 }
 
 function now(): string {
@@ -108,20 +117,23 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     decisions: get().decisions[mediaId] ?? {},
     effects: get().effects[mediaId] ?? [],
     splits: get().splits[mediaId] ?? [],
+    markers: get().markers[mediaId] ?? [],
   });
-  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[]; splits?: SplitPoint[] }, record = true) => {
+  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[]; splits?: SplitPoint[]; markers?: Marker[] }, record = true) => {
     const before = snapshot(mediaId);
     const after: Snapshot = {
       candidates: next.candidates ?? before.candidates,
       decisions: next.decisions ?? before.decisions,
       effects: next.effects ?? before.effects,
       splits: next.splits ?? before.splits,
+      markers: next.markers ?? before.markers,
     };
     set((s) => ({
       candidates: { ...s.candidates, [mediaId]: after.candidates },
       decisions: { ...s.decisions, [mediaId]: after.decisions },
       effects: { ...s.effects, [mediaId]: after.effects },
       splits: { ...s.splits, [mediaId]: after.splits },
+      markers: { ...s.markers, [mediaId]: after.markers },
       past: record ? [...s.past.slice(-(MAX_HISTORY - 1)), { label, mediaId, before, after }] : s.past,
       future: record ? [] : s.future,
     }));
@@ -133,6 +145,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     decisions: {},
     effects: {},
     splits: {},
+    markers: {},
     selectedIds: [],
     filter: { kinds: null, states: null },
     reviewing: false,
@@ -290,6 +303,31 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       commit(mediaId, "移除切點", { splits: list.filter((s) => s.id !== id) });
     },
 
+    addMarker: (mediaId, ms, kind = "standard", title = "") => {
+      const list = get().markers[mediaId] ?? [];
+      const m: Marker = { id: markerId(ms), ms: Math.max(0, Math.round(ms)), kind, title };
+      commit(mediaId, kind === "chapter" ? "新增章節" : kind === "todo" ? "新增待辦" : "新增標記", { markers: [...list, m].sort((a, b) => a.ms - b.ms) });
+      return m.id;
+    },
+    updateMarker: (mediaId, id, p) => {
+      const list = get().markers[mediaId] ?? [];
+      if (!list.some((m) => m.id === id)) return;
+      const next = list.map((m) => (m.id === id ? { ...m, ...p } : m)).sort((a, b) => a.ms - b.ms);
+      commit(mediaId, "調整標記", { markers: next });
+    },
+    removeMarker: (mediaId, id) => {
+      const list = get().markers[mediaId] ?? [];
+      if (!list.some((m) => m.id === id)) return;
+      commit(mediaId, "移除標記", { markers: list.filter((m) => m.id !== id) });
+    },
+    setChapters: (mediaId, chapters) => {
+      // 只換 chapter，standard / todo 是人自己標的，不能被 AI 洗掉
+      const keep = (get().markers[mediaId] ?? []).filter((m) => m.kind !== "chapter");
+      const added: Marker[] = chapters.map((c) => ({ id: markerId(c.ms), ms: Math.max(0, Math.round(c.ms)), kind: "chapter" as const, title: c.title }));
+      commit(mediaId, `AI 章節 ${added.length} 個`, { markers: [...keep, ...added].sort((a, b) => a.ms - b.ms) });
+      return added.length;
+    },
+
     addEffect: (mediaId, e) => {
       const list = (get().effects[mediaId] ?? []).filter((x) => x.id !== e.id);
       commit(mediaId, `效果：${effectLabel(e)}`, { decisions: get().decisions[mediaId] ?? {}, effects: [...list, e].sort((a, b) => a.startMs - b.startMs) });
@@ -335,6 +373,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         decisions: { ...s.decisions, [p.mediaId]: p.before.decisions },
         effects: { ...s.effects, [p.mediaId]: p.before.effects },
         splits: { ...s.splits, [p.mediaId]: p.before.splits ?? [] },
+        markers: { ...s.markers, [p.mediaId]: p.before.markers ?? [] },
         past: s.past.slice(0, -1),
         future: [...s.future, p],
       }));
@@ -348,17 +387,19 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         decisions: { ...s.decisions, [p.mediaId]: p.after.decisions },
         effects: { ...s.effects, [p.mediaId]: p.after.effects },
         splits: { ...s.splits, [p.mediaId]: p.after.splits ?? [] },
+        markers: { ...s.markers, [p.mediaId]: p.after.markers ?? [] },
         future: s.future.slice(0, -1),
         past: [...s.past, p],
       }));
       useProject.getState().markDirty();
     },
-    load: (mediaId, candidates, decisions, effects = [], splits = []) =>
+    load: (mediaId, candidates, decisions, effects = [], splits = [], markers = []) =>
       set((s) => ({
         candidates: { ...s.candidates, [mediaId]: candidates },
         decisions: { ...s.decisions, [mediaId]: decisions },
         effects: { ...s.effects, [mediaId]: effects },
         splits: { ...s.splits, [mediaId]: splits },
+        markers: { ...s.markers, [mediaId]: markers },
       })),
     clear: (mediaId) =>
       set((s) => {
@@ -366,11 +407,13 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         const decisions = { ...s.decisions };
         const effects = { ...s.effects };
         const splits = { ...s.splits };
+        const markers = { ...s.markers };
         delete candidates[mediaId];
         delete decisions[mediaId];
         delete effects[mediaId];
         delete splits[mediaId];
-        return { candidates, decisions, effects, splits, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
+        delete markers[mediaId];
+        return { candidates, decisions, effects, splits, markers, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
       }),
   };
 });

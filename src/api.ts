@@ -167,6 +167,8 @@ export interface RenderPlan {
   channels: number;
   /** 預覽模式：跳過 loudnorm 兩趟，只做 limiter + mp3 q5。 */
   preview?: boolean;
+  /** 章節（ffmetadata 全文；mp3 → ID3 CHAP、m4a → QuickTime 章節）。wav / 預覽會忽略。 */
+  chapters_meta?: string;
 }
 export interface RenderProgress {
   job_id: string;

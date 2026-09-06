@@ -68,6 +68,13 @@ pub struct RenderPlan {
     /// 剪接（Cutter）完全一樣 —— 預覽跟成品的差別只在響度處理，接點與時間軸逐 frame 相同。
     #[serde(default)]
     pub preview: bool,
+    /// 章節（ffmetadata 全文，前端 analysis/chapters.ts 產生）。
+    ///
+    /// 這裡刻意收「已經格式化好的字串」而不是結構化的章節陣列：ffmetadata 的跳脫規則
+    /// （= ; # \\ 與換行）很細，前端那份有測試釘著，在 Rust 再寫一份就是第二個會出錯的地方，
+    /// 而且沒有對拍測試抓得到。Rust 這邊只負責寫檔與多帶兩個 ffmpeg 參數。
+    #[serde(default)]
+    pub chapters_meta: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -540,19 +547,27 @@ pub async fn measure(bins: &FfmpegBins, wav_path: &Path, plan: &RenderPlan, canc
 /// 第三階段：套用 + 編碼（pass 2），`-progress pipe:1` 回報進度。回 (output_i, output_tp)。
 pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &RenderPlan, m: &LoudnormStats, out_part: &Path, total_frames: u64, job_id: &str, cancel: &AtomicBool) -> AppResult<(Option<f64>, Option<f64>)> {
     let limit = 10f64.powf(plan.true_peak_dbtp / 20.0);
+    // 強制指定聲道佈局。concat.wav 是 hound 寫的，沒有 channel mask，ffmpeg 讀進來是
+    // 「1 channels (FL)」這種**未命名**佈局；pcm 與 mp3 不在意，但原生 aac 編碼器會直接
+    // 回 -22 (Invalid argument) —— 症狀是 m4a 輸出一律失敗，訊息只有 "Conversion failed!"。
+    // 佈局要依實際聲道數指定，不能寫 "mono|stereo" 讓 ffmpeg 自己挑 ——
+    // 輸入的佈局是未命名的，aformat 配不到 mono 就會選 stereo，把單聲道的
+    // podcast 升成雙聲道（檔案大一倍、內容完全一樣）。
+    let layout = if plan.channels <= 1 { "aformat=channel_layouts=mono" } else { "aformat=channel_layouts=stereo" };
     let filter = if plan.preview {
         // 預覽：不跑 loudnorm（那要先量測一趟，30 分鐘素材要幾十秒），只留 limiter 防爆
-        format!("alimiter=limit={limit:.4}:attack=5:release=50:level=false")
+        format!("alimiter=limit={limit:.4}:attack=5:release=50:level=false,{layout}")
     } else {
         format!(
-            "{}:measured_I={:.2}:measured_TP={:.2}:measured_LRA={:.2}:measured_thresh={:.2}:offset={:.2}:linear=true:print_format=json,alimiter=limit={:.4}:attack=5:release=50:level=false",
+            "{}:measured_I={:.2}:measured_TP={:.2}:measured_LRA={:.2}:measured_thresh={:.2}:offset={:.2}:linear=true:print_format=json,alimiter=limit={:.4}:attack=5:release=50:level=false,{}",
             loudnorm_base(plan),
             m.input_i,
             m.input_tp,
             m.input_lra,
             m.input_thresh,
             m.target_offset,
-            limit
+            limit,
+            layout
         )
     };
     let (fmt, codec): (&str, Vec<&str>) = if plan.preview {
@@ -565,9 +580,25 @@ pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &
             _ => ("mp3", vec!["-c:a", "libmp3lame", "-q:a", "2"]),
         }
     };
+    // 章節：wav 沒有章節容器，預覽也不需要
+    let meta_path = match (&plan.chapters_meta, plan.preview, fmt) {
+        (Some(t), false, "mp3") | (Some(t), false, "mp4") if !t.trim().is_empty() => {
+            let mp = wav_path.with_extension("chapters.txt");
+            tokio::fs::write(&mp, t.as_bytes()).await.map_err(|e| AppError::Ffmpeg(format!("寫章節 metadata 失敗：{e}")))?;
+            Some(mp)
+        }
+        _ => None,
+    };
+
     let mut c = proc::cmd(&bins.ffmpeg);
     c.args(["-nostdin", "-hide_banner", "-nostats", "-loglevel", "info", "-progress", "pipe:1", "-y", "-i"]);
     c.arg(wav_path);
+    if let Some(mp) = &meta_path {
+        c.arg("-i");
+        c.arg(mp);
+        // 只從第 0 個輸入拿音訊，metadata 從第 1 個輸入整份帶過來（章節就在裡面）
+        c.args(["-map", "0:a", "-map_metadata", "1"]);
+    }
     c.args(["-af", &filter, "-ar", "48000"]);
     c.args(codec);
     c.args(["-f", fmt]);
@@ -597,7 +628,11 @@ pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &
     let status = child.wait().await?;
     let err = err_task.await.unwrap_or_default();
     if !status.success() {
-        return Err(AppError::Ffmpeg(format!("編碼失敗：{}", err.lines().filter(|l| !l.trim().is_empty()).last().unwrap_or("").trim())));
+        // 只留最後一行的話，遇到 "Conversion failed!" 就完全看不出原因是編碼器、
+        // 容器還是 filter —— 真正的訊息通常在它前面幾行。
+        let tail: Vec<&str> = err.lines().map(str::trim).filter(|l| !l.is_empty()).rev().take(4).collect();
+        let msg = tail.into_iter().rev().collect::<Vec<_>>().join(" / ");
+        return Err(AppError::Ffmpeg(format!("編碼失敗：{msg}")));
     }
     let stats = parse_loudnorm_json(&err);
     Ok((stats.as_ref().and_then(|s| s.output_i), stats.as_ref().and_then(|s| s.output_tp)))
@@ -658,6 +693,7 @@ mod tests {
             out_path: String::new(),
             channels: 1,
             preview: false,
+            chapters_meta: None,
         }
     }
 

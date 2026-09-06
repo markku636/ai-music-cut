@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Crop, MoveHorizontal, Music, Palette, Play, Repeat, Scissors, Slice, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
+import { BookMarked, Check, Crop, Flag, ListTree, MoveHorizontal, Music, Palette, Play, Repeat, Scissors, Slice, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
 import type { AudioEffect } from "../analysis/effects";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
 import { activeRanges } from "../analysis/edl/build";
-import { isActiveState, type Candidate, type DecisionMap, type SplitPoint } from "../analysis/types";
+import { MARKER_KIND_LABEL, isActiveState, type Candidate, type DecisionMap, type Marker, type MarkerKind, type SplitPoint } from "../analysis/types";
 import { EmptyState, Button } from "../ui/index";
 import { useT } from "../i18n";
 import { restoreAnalysis } from "../pipeline/analyze";
@@ -21,6 +21,7 @@ import { useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
 import { selectActiveMedia, useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
+import { useUi } from "../store/ui";
 import { useTranscript } from "../store/transcript";
 import SelectionBar from "../timeline/SelectionBar";
 import { addEffectOnSelection, applyCandidateRange, clearSelection, cutSelection, keepOnlySelection, removeEffect, updateEffectRange } from "../timeline/selectionActions";
@@ -39,6 +40,7 @@ const EMPTY_C: Candidate[] = [];
 const EMPTY_D: DecisionMap = {};
 const EMPTY_E: AudioEffect[] = [];
 const EMPTY_S: SplitPoint[] = [];
+const EMPTY_MK: Marker[] = [];
 const GAIN_STEPS = [6, 3, -3, -6, -12];
 
 export interface MainAreaProps {
@@ -94,6 +96,11 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
   // 段落之間補呼吸用的常見長度；0 = 拿掉留白，回到直接對接
   const PAUSE_STEPS: number[] = [0, 200, 500, 1000];
   const [seamMenu, setSeamMenu] = useState<{ seam: SeamInfo; x: number; y: number } | null>(null);
+  const markers = useDecisions((s) => (mediaId ? s.markers[mediaId] ?? EMPTY_MK : EMPTY_MK));
+  const updateMarker = useDecisions((s) => s.updateMarker);
+  const removeMarker = useDecisions((s) => s.removeMarker);
+  const addMarker = useDecisions((s) => s.addMarker);
+  const [markerMenu, setMarkerMenu] = useState<{ marker: Marker; x: number; y: number } | null>(null);
   // 吸附目標：接縫（EDL 的保留段邊界，含刀片切點）+ 句界 + 字界 + 頭尾。
   // 只在 EDL / 逐字稿變動時攤平一次，拖曳過程中直接用。
   const setSnapSources = useTimeline((s) => s.setSnapSources);
@@ -105,11 +112,12 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
     }
     setSnapSources({
       seams,
+      markers: markers.map((m) => m.ms),
       sentences: transcript?.sentences ?? [],
       words: transcript?.words ?? [],
       durationMs: active?.probe?.duration_ms ?? transcript?.durationMs ?? 0,
     });
-  }, [edl, transcript, active?.probe?.duration_ms, setSnapSources]);
+  }, [edl, transcript, markers, active?.probe?.duration_ms, setSnapSources]);
 
   // 波形一好就算拍點（純 JS、5 ms 桶自相關；語音信心低會回 null → 不顯示網格）
   const setBeatGrid = useTimeline((s) => s.setBeatGrid);
@@ -188,6 +196,8 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
     return [
       { label: t("從這裡播放"), icon: Play, onClick: () => { seek(info.ms); playRange(info.ms, dur, { skip: true }); } },
       { label: t("在這裡切一刀"), icon: Slice, shortcut: "B", onClick: () => void bladeAt(info.ms) },
+      { label: t("在這裡下標記"), icon: Flag, shortcut: "M", onClick: () => mediaId && addMarker(mediaId, info.ms, "standard") },
+      { label: t("在這裡下章節"), icon: BookMarked, shortcut: "Shift+M", onClick: () => mediaId && addMarker(mediaId, info.ms, "chapter") },
       { separator: true },
       { label: t("從開頭選到這裡"), icon: SquareDashed, onClick: () => setSelection({ startMs: 0, endMs: info.ms }) },
       { label: t("從這裡選到結尾"), icon: SquareDashed, onClick: () => setSelection({ startMs: info.ms, endMs: dur }) },
@@ -196,6 +206,21 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
       { label: t("整段適配"), icon: ZoomIn, shortcut: "Ctrl+0", onClick: fitZoom },
     ];
   };
+
+  const markerMenuItems = (m: Marker): MenuItem[] => [
+    { label: `${MARKER_KIND_LABEL[m.kind]}　${formatMs(m.ms, { millis: true })}${m.title ? "　" + m.title : ""}`, disabled: true },
+    { separator: true },
+    { label: t("跳到這裡"), icon: Play, onClick: () => seek(m.ms) },
+    { label: t("在索引改標題…"), icon: ListTree, onClick: () => useUi.getState().setTab("index") },
+    { separator: true },
+    ...(["standard", "chapter", "todo"] as MarkerKind[]).map<MenuItem>((k) => ({
+      label: t("改成{kind}", { kind: MARKER_KIND_LABEL[k] }),
+      checked: m.kind === k,
+      onClick: () => mediaId && updateMarker(mediaId, m.id, { kind: k }),
+    })),
+    { separator: true },
+    { label: t("移除標記"), icon: Trash, danger: true, onClick: () => mediaId && removeMarker(mediaId, m.id) },
+  ];
 
   const seamMenuItems = (s: SeamInfo): MenuItem[] => {
     const around = () => playRange(Math.max(0, s.srcBeforeMs - 1200), s.srcAfterMs + 1200, { skip: true });
@@ -260,12 +285,16 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings }: MainArea
               onContextMenu={setMenu}
               seams={seams}
               onSeamMenu={(seam, x, y) => setSeamMenu({ seam, x, y })}
+              markers={markers}
+              onMarkerMove={(id, ms) => mediaId && updateMarker(mediaId, id, { ms })}
+              onMarkerMenu={(marker, x, y) => setMarkerMenu({ marker, x, y })}
               onRetry={() => void ensureLocalAnalysis(active.id).catch(() => {})}
               onOpenSettings={onOpenSettings}
             />
             <SelectionBar onStyle={(s, e) => setStyleFor({ startMs: s, endMs: e })} />
             {menu && <WaveContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
             {seamMenu && <WaveContextMenu x={seamMenu.x} y={seamMenu.y} items={seamMenuItems(seamMenu.seam)} onClose={() => setSeamMenu(null)} />}
+            {markerMenu && <WaveContextMenu x={markerMenu.x} y={markerMenu.y} items={markerMenuItems(markerMenu.marker)} onClose={() => setMarkerMenu(null)} />}
             {styleFor && mediaId && <StyleDialog mediaId={mediaId} startMs={styleFor.startMs} endMs={styleFor.endMs} onClose={() => setStyleFor(null)} />}
           </div>
           <Splitter axis="y" onPointerDown={timeline.onPointerDown} />

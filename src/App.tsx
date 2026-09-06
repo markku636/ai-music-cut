@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, errMessage } from "./api";
 import { AUDIO_EXTENSIONS } from "./brand";
@@ -11,7 +11,9 @@ import SeparateDialog from "./dialogs/SeparateDialog";
 import SettingsDialog, { type SettingsFocus } from "./dialogs/SettingsDialog";
 import VerifyDialog from "./dialogs/VerifyDialog";
 import ShortcutsHelp from "./dialogs/ShortcutsHelp";
+import type { AudioEffect } from "./analysis/effects";
 import { installHotkeys } from "./hotkeys";
+import { useUi } from "./store/ui";
 import { formatMs } from "./time";
 import { bladeAtPlayhead, currentEdl, liftSelection, seamsOfEdl } from "./timeline/trimActions";
 import { isSilentDirection, nextShuttle, shuttleLabel } from "./preview/shuttle";
@@ -145,8 +147,17 @@ function isAudioPath(p: string): boolean {
   return AUDIO_EXTENSIONS.includes(ext);
 }
 
+const EMPTY_FX: AudioEffect[] = [];
+
 export default function App() {
   const active = useProject(selectActiveMedia);
+  // 索引分頁要的接縫 / 效果。edlFor 直接讀 store，所以用這幾個當「該重算」的訊號。
+  const railCands = useDecisions((s) => (active ? s.candidates[active.id] : undefined));
+  const railDecs = useDecisions((s) => (active ? s.decisions[active.id] : undefined));
+  const railSplits = useDecisions((s) => (active ? s.splits[active.id] : undefined));
+  const railEffects = useDecisions((s) => (active ? s.effects[active.id] ?? EMPTY_FX : EMPTY_FX));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const railSeams = useMemo(() => seamsOfEdl(currentEdl()), [active?.id, railCands, railDecs, railSplits]);
   const dirty = useProject((s) => s.dirty);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsFocus, setSettingsFocus] = useState<SettingsFocus>(null);
@@ -346,6 +357,24 @@ export default function App() {
           if (sel) seekTo(sel.endMs);
         },
         nudge: (ms) => seekTo(Math.max(0, usePlayback.getState().currentMs + ms)),
+        addMarker: (chapter) => {
+          const id = useProject.getState().activeMediaId;
+          if (!id) return;
+          const ms = usePlayback.getState().currentMs;
+          useDecisions.getState().addMarker(id, ms, chapter ? "chapter" : "standard");
+          // 章節要取名字才有用，直接把索引分頁叫出來
+          if (chapter) useUi.getState().setTab("index");
+          toast.info(chapter ? t("下了章節 {at}　到「索引」分頁取名字", { at: formatMs(ms, { millis: false }) }) : t("下了標記 {at}", { at: formatMs(ms, { millis: false }) }));
+        },
+        stepMarker: (dir) => {
+          const id = useProject.getState().activeMediaId;
+          if (!id) return;
+          const list = (useDecisions.getState().markers[id] ?? []).slice().sort((a, b) => a.ms - b.ms);
+          if (!list.length) return;
+          const cur = usePlayback.getState().currentMs;
+          const next = dir > 0 ? list.find((m) => m.ms > cur + 5) : [...list].reverse().find((m) => m.ms < cur - 5);
+          if (next) seekTo(next.ms);
+        },
         blade: () => {
           const r = bladeAtPlayhead();
           if (r === null) toast.info(t("這裡切不了：太靠近既有的接縫，或落在已剪掉的區段裡"));
@@ -427,7 +456,7 @@ export default function App() {
         <Sidebar width={sidebar.size} onOpen={() => void openMedia()} onAnalyze={(id) => analyzeWithPreflight(id)} onOpenSettings={openSettings} />
         <Splitter axis="x" onPointerDown={sidebar.onPointerDown} />
         <MainArea onOpen={() => void openMedia()} onAnalyze={() => analyzeWithPreflight()} onOpenSettings={openSettings} />
-        <RightRail mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} onRerunRules={rerunRules} onVerify={openVerify} />
+        <RightRail mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} onRerunRules={rerunRules} onVerify={openVerify} seams={railSeams} effects={railEffects} />
       </div>
       <StatusBar onOpenSettings={openSettings} />
       <SettingsDialog open={settingsOpen} focus={settingsFocus} onClose={() => setSettingsOpen(false)} />

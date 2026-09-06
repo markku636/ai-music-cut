@@ -166,3 +166,34 @@ export interface SplitPoint {
 export function splitPointId(ms: number): string {
   return `split:${Math.round(ms)}`;
 }
+
+/**
+ * 標記（marker）。
+ *
+ * podcast 的標記有三種用途，語意差很多，所以分 kind 而不是只給一個 title：
+ * · standard —— 給自己看的定位點（「這裡笑場」）。
+ * · chapter  —— 會**寫進成品檔案**的章節（Apple Podcasts / Spotify 讀得到）。
+ * · todo     —— 待辦（「這裡要補音效」），可以打勾。
+ */
+export type MarkerKind = "standard" | "chapter" | "todo";
+
+export interface Marker {
+  id: string;
+  /** 來源時間（ms）。章節匯出時會經 mapSrcToOut 換成成品時間。 */
+  ms: number;
+  kind: MarkerKind;
+  title: string;
+  note?: string;
+  /** kind = todo 時：做完了沒。 */
+  done?: boolean;
+}
+
+export function markerId(ms: number): string {
+  return `mk:${Math.round(ms)}:${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export const MARKER_KIND_LABEL: Record<MarkerKind, string> = {
+  standard: "標記",
+  chapter: "章節",
+  todo: "待辦",
+};

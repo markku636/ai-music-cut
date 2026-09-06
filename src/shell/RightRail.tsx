@@ -1,12 +1,16 @@
-import { ChevronRight, ListChecks, ShieldCheck, Sparkles } from "lucide-react";
+import { ChevronRight, ListChecks, ListTree, ShieldCheck, Sparkles } from "lucide-react";
 import AssistantPanel from "../assistant/AssistantPanel";
 import DecisionPanel from "../decisions/DecisionPanel";
+import IndexPanel from "../decisions/IndexPanel";
 import { useT } from "../i18n";
 import { useDecisions } from "../store/decisions";
 import { useUi, RAIL_LIMITS, type RailTab } from "../store/ui";
 import { useVerify } from "../store/verify";
 import type { DecisionMap } from "../analysis/types";
 import type { AnalysisState } from "../store/project";
+import type { AudioEffect } from "../analysis/effects";
+import type { Marker } from "../analysis/types";
+import type { SeamInfo } from "../timeline/trimActions";
 import { Badge, IconButton } from "../ui/index";
 
 /**
@@ -21,11 +25,15 @@ export default function RightRail({
   analysisState,
   onRerunRules,
   onVerify,
+  seams,
+  effects,
 }: {
   mediaId: string | null;
   analysisState: AnalysisState | null;
   onRerunRules: () => void;
   onVerify: () => void;
+  seams: SeamInfo[];
+  effects: AudioEffect[];
 }) {
   const t = useT();
   const tab = useUi((s) => s.tab);
@@ -39,12 +47,15 @@ export default function RightRail({
   const report = useVerify((s) => (mediaId ? s.byMedia[mediaId] ?? null : null));
   const splice = useVerify((s) => (mediaId ? s.spliceByMedia[mediaId] ?? null : null));
 
+  const markers = useDecisions((s) => (mediaId ? s.markers[mediaId] ?? EMPTY_MK : EMPTY_MK));
+  const todoOpen = markers.reduce((n, m) => n + (m.kind === "todo" && !m.done ? 1 : 0), 0);
   const pending = candidates.reduce((n, c) => n + ((decisions[c.id]?.state ?? "pending") === "pending" ? 1 : 0), 0);
   const conflicts = candidates.reduce((n, c) => n + (decisions[c.id]?.conflict ? 1 : 0), 0);
   const verifyBadge = report ? report.findings.filter((f) => !f.lowConfidence).length : splice ? splice.segments.length - splice.okCount : 0;
 
   const TABS: { id: RailTab; icon: typeof ListChecks; label: string; badge: number; tone: "warning" | "danger" | "neutral" }[] = [
     { id: "decisions", icon: ListChecks, label: t("決策"), badge: conflicts || pending, tone: conflicts ? "danger" : "warning" },
+    { id: "index", icon: ListTree, label: t("索引"), badge: todoOpen, tone: "warning" },
     { id: "assistant", icon: Sparkles, label: t("AI 助手"), badge: 0, tone: "neutral" },
     { id: "verify", icon: ShieldCheck, label: t("驗收"), badge: verifyBadge, tone: "danger" },
   ];
@@ -73,6 +84,7 @@ export default function RightRail({
           <div onPointerDown={startResize} title={t("拖曳調整寬度")} className="absolute left-0 top-0 h-full w-1 cursor-col-resize hover:bg-accent/40 z-10" />
           <div className="flex-1 min-h-0 flex flex-col">
             {tab === "decisions" && <DecisionPanel mediaId={mediaId} analysisState={analysisState} onRerunRules={onRerunRules} embedded />}
+            {tab === "index" && <IndexPanel mediaId={mediaId} seams={seams} candidates={candidates} decisions={decisions} effects={effects} />}
             {tab === "assistant" && <AssistantPanel embedded />}
             {tab === "verify" && <VerifyTab mediaId={mediaId} onVerify={onVerify} />}
           </div>
@@ -153,3 +165,4 @@ function VerifyTab({ mediaId, onVerify }: { mediaId: string | null; onVerify: ()
 
 const EMPTY: never[] = [];
 const EMPTY_D: DecisionMap = {};
+const EMPTY_MK: Marker[] = [];

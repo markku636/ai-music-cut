@@ -8,7 +8,7 @@
 // 展開就是四千多個點，每次拖曳都掃一遍純屬浪費。用 beats.ts 的公式直接算最近拍。
 import { snapToBeat, type BeatGrid } from "./beats";
 
-export type SnapKind = "beat" | "seam" | "sentence" | "word" | "playhead" | "bound";
+export type SnapKind = "beat" | "seam" | "marker" | "sentence" | "word" | "playhead" | "bound";
 
 export interface SnapTarget {
   ms: number;
@@ -22,6 +22,8 @@ export interface SnapEnabled {
   words: boolean;
 }
 
+/** 標記一律當吸附目標：那是人自己放的點，沒有理由吸不到。 */
+
 export const ALL_SNAP: SnapEnabled = { beats: true, seams: true, sentences: true, words: true };
 
 export interface SnapContext {
@@ -34,7 +36,7 @@ export interface SnapContext {
 }
 
 /** 同距離時誰贏：接縫優先於句界，句界優先於字界 —— 越「結構性」的邊界越該吸。 */
-const PRIORITY: Record<SnapKind, number> = { seam: 0, sentence: 1, playhead: 2, bound: 3, word: 4, beat: 5 };
+const PRIORITY: Record<SnapKind, number> = { marker: 0, seam: 1, sentence: 2, playhead: 3, bound: 4, word: 5, beat: 6 };
 
 export interface SnapResult {
   ms: number;
@@ -70,6 +72,8 @@ export function snapValue(ms: number, ctx: SnapContext): SnapResult {
 export interface SnapSources {
   /** EDL 接縫（來源時間，剪除區的頭尾與切點）。 */
   seams?: number[];
+  /** 標記 / 章節（來源時間）。 */
+  markers?: number[];
   sentences?: { startMs: number; endMs: number }[];
   words?: { startMs: number; endMs: number }[];
   playheadMs?: number | null;
@@ -80,6 +84,7 @@ export interface SnapSources {
 export function collectTargets(src: SnapSources, on: SnapEnabled): SnapTarget[] {
   const out: SnapTarget[] = [];
   if (on.seams) for (const ms of src.seams ?? []) out.push({ ms, kind: "seam" });
+  for (const ms of src.markers ?? []) out.push({ ms, kind: "marker" });
   if (on.sentences) {
     for (const s of src.sentences ?? []) {
       out.push({ ms: s.startMs, kind: "sentence" });
@@ -110,6 +115,7 @@ export function toleranceMs(pxPerSec: number): number {
 export const SNAP_KIND_LABEL: Record<SnapKind, string> = {
   beat: "拍點",
   seam: "接縫",
+  marker: "標記",
   sentence: "句界",
   word: "字界",
   playhead: "播放線",

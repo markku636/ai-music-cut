@@ -37,6 +37,10 @@ export interface HotkeyHandlers {
   gotoOut?: () => void;
   /** Alt+← / →：微調播放線（Shift 再細一級）。 */
   nudge?: (ms: number) => void;
+  /** M：下標記；Shift+M：下章節（會寫進成品檔案）。 */
+  addMarker?: (chapter: boolean) => void;
+  /** Alt+[ / Alt+]：上 / 下一個標記。 */
+  stepMarker?: (dir: 1 | -1) => void;
   escape?: () => void;
   /** Space：由 App 決定播選取或播放 / 暫停；未提供則播放 / 暫停。 */
   space?: () => void;
@@ -209,10 +213,16 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
         else seekBy(e.shiftKey ? 5000 : 1000);
         return;
       case "[":
-        h.prevCandidate?.();
+        if (e.altKey) h.stepMarker?.(-1);
+        else h.prevCandidate?.();
         return;
       case "]":
-        h.nextCandidate?.();
+        if (e.altKey) h.stepMarker?.(1);
+        else h.nextCandidate?.();
+        return;
+      case "m":
+      case "M":
+        h.addMarker?.(e.shiftKey);
         return;
       case "a":
       case "A":

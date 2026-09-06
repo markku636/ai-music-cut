@@ -2,7 +2,7 @@
 // 不是專案內容，不該進專案檔、也不該跟著檔案走。
 import { create } from "zustand";
 
-export type RailTab = "decisions" | "assistant" | "verify";
+export type RailTab = "decisions" | "index" | "assistant" | "verify";
 export type Density = "compact" | "normal" | "comfortable";
 
 /** 密度 → 根字級縮放。CSS 變數 --ui-scale 由 applyDensity 寫到 <html>。 */
@@ -31,7 +31,7 @@ function load(): Persisted {
     if (!raw) return DEFAULTS;
     const v = JSON.parse(raw) as Partial<Persisted>;
     return {
-      tab: v.tab === "assistant" || v.tab === "verify" ? v.tab : "decisions",
+      tab: v.tab === "assistant" || v.tab === "verify" || v.tab === "index" ? v.tab : "decisions",
       railOpen: v.railOpen !== false,
       railWidth: Math.max(RAIL_MIN, Math.min(RAIL_MAX, Number(v.railWidth) || DEFAULTS.railWidth)),
       density: v.density === "compact" || v.density === "comfortable" ? v.density : "normal",

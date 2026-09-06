@@ -2,7 +2,8 @@
 // Rust 端只當 JSON-RPC 轉發器：claude 呼叫 → `mcp-tool-call` 事件 → 這裡執行 → `mcp_tool_result` 回寫。
 import { listen } from "@tauri-apps/api/event";
 import { api, type McpToolCall, type McpToolDef } from "../api";
-import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState } from "../analysis/types";
+import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState, type MarkerKind } from "../analysis/types";
+import { buildChapters } from "../analysis/chapters";
 import type { EffectKind } from "../analysis/effects";
 import { edlFor, runRulesFor } from "../pipeline/rules";
 import { useTimeline } from "../store/timeline";
@@ -364,6 +365,85 @@ export const TOOLS: ToolSpec[] = [
       const ok = setSeamPause(Math.round(num(a.afterKeepId, -1)), Math.round(num(a.ms, 0)));
       if (!ok) throw new ToolError("那個接縫不是刀片切點（一般接縫的呼吸由 breath 自動決定）");
       return { pauseMs: Math.round(num(a.ms, 0)) };
+    },
+  },
+  {
+    name: "list_markers",
+    description: "列出標記 / 章節 / 待辦。章節（kind=chapter）會寫進成品檔案的章節資訊（mp3 的 ID3 CHAP、m4a 的 QuickTime 章節）。",
+    inputSchema: {
+      type: "object",
+      properties: { kind: { type: "string", enum: ["standard", "chapter", "todo"], description: "只列這一類" } },
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctx();
+      const kind = typeof a.kind === "string" ? a.kind : null;
+      const list = (x.d.markers[x.media.id] ?? []).filter((m) => !kind || m.kind === kind);
+      return {
+        markers: list.map((m) => ({ id: m.id, kind: m.kind, ms: Math.round(m.ms), at: formatMs(m.ms, { millis: false }), title: m.title, done: m.done })),
+      };
+    },
+  },
+  {
+    name: "add_marker",
+    description: "在指定時間下一個標記。kind=chapter 的會寫進成品檔案當章節，所以一定要給 title。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ms: { type: "number" },
+        kind: { type: "string", enum: ["standard", "chapter", "todo"], default: "standard" },
+        title: { type: "string", maxLength: 60 },
+      },
+      required: ["ms"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctx();
+      const kind = (a.kind === "chapter" || a.kind === "todo" ? a.kind : "standard") as MarkerKind;
+      const title = typeof a.title === "string" ? a.title.trim() : "";
+      if (kind === "chapter" && !title) throw new ToolError("章節一定要給 title（那會顯示在 Podcast 播放器裡）");
+      const id = x.d.addMarker(x.media.id, num(a.ms, 0), kind, title);
+      return { id, kind, ms: Math.round(num(a.ms, 0)) };
+    },
+  },
+  {
+    name: "set_chapters",
+    description:
+      "整批設定章節（取代現有的章節標記，standard / todo 不動），一筆 undo。時間用**來源**時間軸；輸出時會自動換算成剪完之後的位置。標題請具體（「來賓怎麼開始寫程式」勝過「訪談」），≤ 14 字最好。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        chapters: {
+          type: "array",
+          maxItems: 60,
+          items: {
+            type: "object",
+            properties: { ms: { type: "number" }, title: { type: "string", maxLength: 60 } },
+            required: ["ms", "title"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["chapters"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctx();
+      const raw = Array.isArray(a.chapters) ? a.chapters : [];
+      const rows = raw
+        .map((c) => {
+          const o = (c ?? {}) as Record<string, unknown>;
+          return { ms: num(o.ms, -1), title: typeof o.title === "string" ? o.title.trim() : "" };
+        })
+        .filter((c) => c.ms >= 0 && c.title);
+      if (!rows.length) throw new ToolError("chapters 是空的（每一筆都要有 ms 與 title）");
+      const n = x.d.setChapters(x.media.id, rows);
+      const built = buildChapters(x.d.markers[x.media.id] ?? [], edlFor(x.media.id), { outDurationMs: edlFor(x.media.id)?.stats.outMs ?? 0 });
+      return {
+        set: n,
+        // 回報換算之後的成品時間，讓 claude 看得到剪輯造成的位移
+        inOutput: built.map((c) => ({ startMs: Math.round(c.startMs), at: formatMs(c.startMs, { millis: false }), title: c.title })),
+      };
     },
   },
   {

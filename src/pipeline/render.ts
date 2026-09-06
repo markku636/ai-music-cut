@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api, type RenderDone, type RenderJoin, type RenderPlan, type RenderProgress, type RenderSeg } from "../api";
 import type { Edl } from "../analysis/edl/build";
 import { DEFAULT_EDL_OPTIONS } from "../analysis/edl/build";
+import { buildChapters, toFfmetadata, type Chapter } from "../analysis/chapters";
 import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
 import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
 import { splitUnits } from "../analysis/loudness/units";
@@ -50,6 +51,8 @@ export interface BuiltPlan {
   gains: { unitId: number; gainDb: number }[];
   /** 這份計畫預期會產出多長（毫秒）。驗收比對成品時間軸要用這個，不是 edl.stats.keptMs。 */
   expectedOutMs: number;
+  /** 會寫進成品的章節（成品時間軸）。 */
+  chapters: Chapter[];
 }
 
 export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan | null {
@@ -90,6 +93,12 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   }
   const channels = Math.max(1, Math.min(2, media.probe?.audio?.channels ?? 1));
   const effects = (useDecisions.getState().effects[mediaId] ?? []).map((e) => ({ kind: e.kind, start_ms: e.startMs, end_ms: e.endMs, db: e.db ?? 0 }));
+  // 章節：標記是釘在來源上的，要換算成成品時間才寫進檔案
+  const expectedOutMs = planOutDurationMs(
+    segs.map((sg) => ({ startMs: sg.src_start_ms, endMs: sg.src_end_ms })),
+    joins,
+  );
+  const chapters = buildChapters(useDecisions.getState().markers[mediaId] ?? [], edl, { outDurationMs: expectedOutMs });
   return {
     plan: {
       segs,
@@ -103,14 +112,13 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       format: opts.format,
       out_path: opts.outPath,
       channels,
+      ...(chapters.length ? { chapters_meta: toFfmetadata(chapters) } : {}),
     },
     edl,
     units: units.length,
     gains,
-    expectedOutMs: planOutDurationMs(
-      segs.map((sg) => ({ startMs: sg.src_start_ms, endMs: sg.src_end_ms })),
-      joins,
-    ),
+    expectedOutMs,
+    chapters,
   };
 }
 

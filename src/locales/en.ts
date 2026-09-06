@@ -517,7 +517,34 @@ const en: Catalog = {
   "關閉精準修剪": "Close precision trim",
   "入點 {at}　再按 O 標出點": "In point {at}  press O to mark the out point",
   "出點 {at}　再按 I 標入點": "Out point {at}  press I to mark the in point",
+  // R12 標記 / 索引 / 章節
+  "索引": "Index",
+  "吸附開關（接縫 / 標記 / 句界 / 字界 / 拍點）": "Snapping on/off (seams / markers / sentences / words / beats)",
+  "下標記 / 下章節（章節會寫進成品檔案）": "Add marker / add chapter (chapters are written into the exported file)",
+  "上一個 / 下一個標記": "Previous / next marker",
+  "在這裡下標記": "Add marker here",
+  "在這裡下章節": "Add chapter here",
+  "下了標記 {at}": "Marker at {at}",
+  "下了章節 {at}　到「索引」分頁取名字": "Chapter at {at}  name it in the Index tab",
+  "標記": "Marker",
+  "章節": "Chapter",
+  "待辦": "To-do",
+  "效果": "Effects",
+  "搜尋標記 / 章節 / 接縫…": "Search markers / chapters / seams...",
+  "（未命名{kind}）": "(unnamed {kind})",
+  "還沒有標記。按 M 下一個標記、Shift+M 下一個章節（章節會寫進成品檔案）。": "No markers yet. Press M for a marker, Shift+M for a chapter (chapters are written into the exported file).",
+  "沒有符合的項目。": "Nothing matches.",
+  "點一下改標題": "Click to rename",
+  "標題（章節會寫進成品）": "Title (chapters go into the export)",
+  "做完了": "Mark done",
+  "剪掉 {ms} ms": "{ms} ms removed",
+  "{label}（拖曳移動 · 右鍵更多）": "{label} (drag to move, right-click for more)",
+  "跳到這裡": "Go here",
+  "在索引改標題…": "Rename in the Index...",
+  "改成{kind}": "Change to {kind}",
+  "移除標記": "Remove marker",
 };
+
 
 
 

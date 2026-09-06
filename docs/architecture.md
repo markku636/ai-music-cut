@@ -58,6 +58,21 @@
    精準修剪器用**位置**追接縫（`focusSeamMs`）而不是 `afterKeepId` —— keep 是推導出來的，
    剪除區一移開，原本被壓住的切點又會重新把保留段切開，編號整個往後移。
 
+5f. **標記與章節**（`analysis/chapters.ts`、`decisions/IndexPanel.tsx`）：
+   `Marker {id, ms, kind: standard|chapter|todo, title, note?, done?}` 一樣掛在 decisions store（進 Patch → undo）與專案檔。
+   章節匯出有三個容易錯的地方，所以整理成一支純函式 `buildChapters`：
+   ① 標記釘在**來源**時間，章節寫進的是**成品**，要用 `mapSrcToOut` 換算（剪愈多錯愈遠）；
+   ② 標記落在剪掉的區間時挪到下一段保留段的開頭，而不是默默丟掉；
+   ③ 章節必須連續不重疊、首章補到 0、末章補到成品結尾 —— 播放器對重疊章節的反應從忽略到整份 metadata 不讀都有。
+   `toFfmetadata` 產生 ffmetadata 全文（跳脫 `=` `;` `#` `\` 與換行），Rust 只負責寫檔並多帶
+   `-i meta -map 0:a -map_metadata 1`。**格式化刻意只有一份**：跳脫規則細，在 Rust 再寫一次
+   就是第二個會出錯的地方，而且沒有對拍測試抓得到。
+
+5g. **輸出一定要指定聲道佈局**（`render.rs` 的 `aformat=channel_layouts=mono|stereo`）：
+   `concat.wav` 是 hound 寫的，沒有 channel mask，ffmpeg 讀進來是「1 channels (FL)」這種**未命名**佈局。
+   pcm 與 mp3 不在意，但原生 aac 編碼器會直接回 -22 (Invalid argument) —— 症狀是 m4a 輸出一律失敗，
+   而 ffmpeg 的最後一行只寫 "Conversion failed!"，看不出原因。（編碼失敗的訊息現在會保留最後四行。）
+
 6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
 7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。

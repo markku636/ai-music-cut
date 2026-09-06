@@ -5,7 +5,7 @@ import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import HoverPlugin from "wavesurfer.js/dist/plugins/hover.esm.js";
 import { effectLabel, type AudioEffect } from "../analysis/effects";
 import { wavesurferPeaks, type LocalAnalysis } from "../analysis/peaks";
-import { isActiveState, type Candidate, type CandidateKind, type DecisionMap } from "../analysis/types";
+import { isActiveState, type Candidate, type CandidateKind, type DecisionMap, type Marker } from "../analysis/types";
 import { getPlayer } from "../preview/playerRef";
 import { usePlayback } from "../store/playback";
 import { useTimeline } from "../store/timeline";
@@ -13,6 +13,7 @@ import { useTheme } from "../theme";
 import { formatMs } from "../time";
 import BeatGridOverlay from "./BeatGridOverlay";
 import PlayheadOverlay from "./PlayheadOverlay";
+import MarkerOverlay from "./MarkerOverlay";
 import TrimHandles from "./TrimHandles";
 import type { SeamInfo } from "./trimActions";
 import TimelinePlaceholder from "./TimelinePlaceholder";
@@ -149,6 +150,9 @@ export interface TimelineProps {
   seams: SeamInfo[];
   /** 右鍵接縫。 */
   onSeamMenu: (seam: SeamInfo, x: number, y: number) => void;
+  markers: Marker[];
+  onMarkerMove: (id: string, ms: number) => void;
+  onMarkerMenu: (marker: Marker, x: number, y: number) => void;
 }
 
 /**
@@ -470,6 +474,7 @@ export default function Timeline(props: TimelineProps) {
         <div ref={boxRef} className="w-full h-full" onContextMenu={onContextMenu} />
         <BeatGridOverlay ws={wsInstance} height={waveH + RULER_H} />
         <TrimHandles ws={wsInstance} height={waveH + RULER_H} seams={props.seams} onOpenMenu={props.onSeamMenu} />
+        <MarkerOverlay ws={wsInstance} markers={props.markers} onMove={props.onMarkerMove} onMenu={props.onMarkerMenu} />
         <PlayheadOverlay ws={wsInstance} height={waveH + RULER_H} />
       </div>
       {hint && (

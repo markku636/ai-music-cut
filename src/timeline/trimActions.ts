@@ -59,22 +59,34 @@ export function currentEdl(): Edl | null {
   return mediaId ? edlFor(mediaId) : null;
 }
 
+export interface BladeOptions {
+  /**
+   * 同一個位置已經有切點時要不要拿掉它。
+   *
+   * 鍵盤的 B 是 true（按兩次＝反悔），但**工具 / API 一律用 false**：
+   * agent 重試或連續呼叫兩次是常態，toggle 會讓它安靜地把自己剛切的那一刀砍掉，
+   * 而且從回傳值看起來還像成功了（實測 claude 就這樣來回切了三次，什麼都沒留下）。
+   */
+  toggle?: boolean;
+}
+
 /**
- * 刀片：在 ms 切一刀（同位置已有切點則移除）。回傳切完之後那裡有沒有切點；
+ * 刀片：在 ms 切一刀。回傳切完之後那裡有沒有切點；
  * 位置不能切（會切出比 minKeepMs 短的碎片、或落在剪除區裡）時回 null。
  */
-export function bladeAt(ms: number): boolean | null {
+export function bladeAt(ms: number, opts: BladeOptions = {}): boolean | null {
   const c = mediaCtx();
   if (!c) return null;
   const at = useTimeline.getState().snapMs(ms);
   const edl = currentEdl();
   const existing = (useDecisions.getState().splits[c.mediaId] ?? []).some((s) => Math.abs(s.ms - at) <= 20);
+  if (existing && opts.toggle !== true) return true; // 已經有了就當作成功（冪等）
   if (!existing && edl && !canSplitAt(edl.keeps, at, 80)) return null;
   return useDecisions.getState().toggleSplit(c.mediaId, at);
 }
 
-export function bladeAtPlayhead(): boolean | null {
-  return bladeAt(usePlayback.getState().currentMs);
+export function bladeAtPlayhead(opts: BladeOptions = {}): boolean | null {
+  return bladeAt(usePlayback.getState().currentMs, opts);
 }
 
 /**

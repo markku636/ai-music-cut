@@ -138,6 +138,15 @@
    被切到頭的片段連**來源進點**一起移，否則音樂會從頭重播。
    章節與分軌只寫進完整成品（一段 60 秒的預告不需要章節，時間軸原點也不一樣）。
 
+5n. **給 agent 用的工具要冪等**（`assistant/tools.ts`）：兩個實際跑地端 claude 才發現的問題。
+   ① `get_project_summary` 原本沒有逐字稿就丟例外，而 MCP 的指示叫 claude **先呼叫它** ——
+   一丟例外，claude 就以為什麼都不能做而放棄整個任務。現在沒分析也回得出東西（`analyzed: false`
+   加一句說明），因為 App 本來就開檔即可剪。
+   ② `blade_at` 原本是 toggle（同位置再切一次＝移除），那對鍵盤的 B 是對的，
+   對工具是災難：agent 重試或連續呼叫是常態，實測 claude 來回切了三次、undo 歷史是
+   「切一刀 / 移除切點」× 3，最後什麼都沒留下，而每次回傳看起來都成功。
+   工具版改成冪等（已存在就當成功），要移除另給 `remove_blade`；鍵盤仍然 toggle。
+
 6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
 7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。

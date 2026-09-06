@@ -372,7 +372,7 @@ export default function App() {
           if (next) seekTo(next.ms);
         },
         blade: () => {
-          const r = bladeAtPlayhead();
+          const r = bladeAtPlayhead({ toggle: true });
           if (r === null) toast.info(t("這裡切不了：太靠近既有的接縫，或落在已剪掉的區段裡"));
           else toast.info(r ? t("切了一刀") : t("移除切點"));
         },

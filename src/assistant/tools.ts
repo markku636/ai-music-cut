@@ -83,22 +83,35 @@ const KIND_ENUM: CandidateKind[] = ["filler", "stutter", "restart", "long_pause"
 export const TOOLS: ToolSpec[] = [
   {
     name: "get_project_summary",
-    description: "目前開啟音檔的總覽：長度、逐字稿字數、候選各狀態/類型數量、目前會剪掉幾秒、激進度。任何操作前先呼叫。",
+    description:
+      "目前開啟音檔的總覽：長度、逐字稿字數（若已分析）、候選各狀態/類型數量、目前會剪掉幾秒、切點 / 標記 / 配樂的數量、激進度。任何操作前先呼叫。**沒有逐字稿也能用** —— 手動剪輯、刀片、標記、配樂都不需要先分析。",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: () => {
-      const x = ctx();
-      const counts = decisionCounts(x.cands, x.dec);
+      // 這是所有工作的入口，**不能**因為「還沒分析」就整個失敗 ——
+      // App 本身開檔就能剪，而且 MCP 的指示叫 claude 先呼叫這一支；
+      // 它一丟例外，claude 就會以為什麼都不能做而放棄整個任務（實測過）。
+      const x = ctxMedia();
+      const tr = useTranscript.getState().byMedia[x.media.id];
+      const cands = x.d.candidates[x.media.id] ?? [];
+      const dec = x.d.decisions[x.media.id] ?? {};
       const edl = edlFor(x.media.id);
       return {
-        media: { id: x.media.id, name: x.media.name, durationMs: x.media.probe?.duration_ms ?? x.tr.durationMs },
-        transcript: { words: x.tr.words.length, sentences: x.tr.sentences.length, model: x.tr.model, language: x.tr.language },
-        counts,
+        media: { id: x.media.id, name: x.media.name, durationMs: x.media.probe?.duration_ms ?? tr?.durationMs ?? 0 },
+        analyzed: !!tr,
+        transcript: tr ? { words: tr.words.length, sentences: tr.sentences.length, model: tr.model, language: tr.language } : null,
+        counts: decisionCounts(cands, dec),
         removedMs: edl?.stats.removedMs ?? 0,
         keptMs: edl?.stats.keptMs ?? 0,
         cutCount: edl?.stats.cutCount ?? 0,
+        splits: (x.d.splits[x.media.id] ?? []).length,
+        markers: (x.d.markers[x.media.id] ?? []).length,
+        overlays: (x.d.overlays[x.media.id] ?? []).length,
         aggressiveness: x.proj.aggressiveness,
         targetLufs: x.proj.targetLufs,
         stateMeaning: { auto: "規則自動剪（可 undo）", accepted: "使用者/AI 接受，會剪", pending: "待決建議，不剪", rejected: "不剪" },
+        ...(tr
+          ? {}
+          : { note: "這個檔案還沒做逐字稿分析，所以沒有候選可以判讀；但刀片、修剪、標記、章節、配樂這些都能直接做。" }),
       };
     },
   },
@@ -326,7 +339,8 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     name: "blade_at",
-    description: "刀片：在指定時間切一刀。切點本身不改變聲音，只是立一個可以修剪 / 插留白的接縫。同一位置再呼叫一次＝移除切點。",
+    description:
+      "刀片：在指定時間切一刀。切點本身不改變聲音，只是立一個可以修剪 / 插留白的接縫。**冪等** —— 同一個位置再呼叫一次不會把它拿掉（要移除請用 remove_blade）。切完接著呼叫 list_seams 拿 afterKeepId。",
     inputSchema: {
       type: "object",
       properties: { ms: { type: "number", description: "來源時間（毫秒）" } },
@@ -339,7 +353,21 @@ export const TOOLS: ToolSpec[] = [
       if (ms < 0) throw new ToolError("ms 必須是非負數");
       const r = bladeAt(ms);
       if (r === null) throw new ToolError("這個位置切不了：太靠近既有接縫，或落在已經剪掉的區段裡");
-      return { bladed: r, ms: Math.round(ms) };
+      return { bladed: r, ms: Math.round(ms), next: "用 list_seams 拿這一刀的 afterKeepId，再用 insert_pause / trim_seam 動它" };
+    },
+  },
+  {
+    name: "remove_blade",
+    description: "移除某個刀片切點（±20 ms 內）。blade_at 是冪等的，要拿掉切點只能用這一支。",
+    inputSchema: { type: "object", properties: { ms: { type: "number" } }, required: ["ms"], additionalProperties: false },
+    handler: (a) => {
+      const x = ctxMedia();
+      const ms = num(a.ms, -1);
+      if (ms < 0) throw new ToolError("ms 必須是非負數");
+      const hit = (x.d.splits[x.media.id] ?? []).find((s2) => Math.abs(s2.ms - ms) <= 20);
+      if (!hit) throw new ToolError("那個位置沒有切點");
+      x.d.removeSplit(x.media.id, hit.id);
+      return { removed: hit.id, ms: hit.ms };
     },
   },
   {

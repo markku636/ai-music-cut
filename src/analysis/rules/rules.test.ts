@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setFillerRules } from "../lexicon";
 import { normalizeTranscript, type ServerTranscript } from "../normalize";
 import { thresholdsFor } from "../thresholds";
 import type { Candidate, LoudnessWindow } from "../types";
@@ -212,5 +213,99 @@ describe("dedupe", () => {
     expect(fillers.length + stutters.length).toBeGreaterThanOrEqual(2);
     // 同類不重疊
     for (let i = 1; i < fillers.length; i++) expect(fillers[i].startMs).toBeGreaterThanOrEqual(fillers[i - 1].endMs);
+  });
+});
+
+describe("使用者贅字詞表", () => {
+  afterEach(() => setFillerRules({}));
+
+  // 字間間隔要 < 500ms，否則 normalize 會切成新句、贅字獨佔一句，
+  // 就撞到「剪掉後句子少於 2 個實詞不提候選」那道守門，測到的會是另一件事。
+  const line: Spec[] = [
+    ["然後", 0, 300],
+    ["我們", 600, 900],
+    ["就", 900, 1100],
+    ["開始", 1100, 1500],
+    ["錄", 1500, 1700],
+  ];
+
+  it("never 讓內建會提的詞完全不提", () => {
+    expect(run(line).filter((c) => c.kind === "filler").length).toBeGreaterThan(0);
+    setFillerRules({ 然後: "never" });
+    expect(run(line).filter((c) => c.kind === "filler")).toEqual([]);
+  });
+
+  it("always 把詞升到自動剪的門檻以上", () => {
+    setFillerRules({ 然後: "always" });
+    const f = run(line).find((c) => c.kind === "filler")!;
+    expect(f).toBeDefined();
+    expect(f.score).toBeGreaterThanOrEqual(thresholdsFor(50).fillerAutoScore);
+    expect(f.reason).toContain("自訂贅字");
+  });
+
+  it("自訂新詞（內建不認得的）也提得出候選", () => {
+    const specs: Spec[] = [
+      ["蛤", 0, 200],
+      ["這樣", 500, 800],
+      ["也", 800, 1000],
+      ["可以", 1000, 1400],
+      ["成立", 1400, 1800],
+    ];
+    expect(run(specs).filter((c) => c.kind === "filler" && c.wordIds[0] === 0)).toEqual([]);
+    setFillerRules({ 蛤: "always" });
+    const f = run(specs).find((c) => c.kind === "filler" && c.wordIds[0] === 0);
+    expect(f).toBeDefined();
+    expect(f!.score).toBeGreaterThan(0.9);
+  });
+
+  it("context 的分數壓在自動剪門檻以下（先讓人看過）", () => {
+    const specs: Spec[] = [
+      ["我跟你講", 0, 400],
+      ["這件事", 700, 1100],
+      ["很", 1100, 1250],
+      ["重要", 1250, 1600],
+      ["真的", 1600, 1900],
+    ];
+    setFillerRules({ 我跟你講: "context" });
+    const f = run(specs).find((c) => c.kind === "filler" && c.wordIds[0] === 0);
+    expect(f).toBeDefined();
+    expect(f!.score).toBeLessThan(thresholdsFor(50).fillerAutoScore);
+  });
+
+  it("Whisper 把自訂詞拆成好幾個 token 也接得回來", () => {
+    const specs: Spec[] = [
+      ["我", 0, 120],
+      ["跟", 120, 240],
+      ["你", 240, 360],
+      ["講", 360, 500],
+      ["這件事", 800, 1200],
+      ["很", 1200, 1350],
+      ["重要", 1350, 1700],
+    ];
+    setFillerRules({ 我跟你講: "always" });
+    const f = run(specs).find((c) => c.kind === "filler");
+    expect(f).toBeDefined();
+    expect(f!.wordIds).toEqual([0, 1, 2, 3]); // 四個 token 併成一個候選
+  });
+
+  it("中間有停頓就不算同一個詞", () => {
+    const specs: Spec[] = [
+      ["我", 0, 120],
+      ["跟", 120, 240],
+      ["你", 240, 360],
+      ["講", 900, 1040], // 跟前面差 540ms
+      ["這件事", 1300, 1700],
+      ["很", 1700, 1850],
+      ["重要", 1850, 2200],
+    ];
+    setFillerRules({ 我跟你講: "always" });
+    expect(run(specs).find((c) => c.kind === "filler" && c.wordIds.length === 4)).toBeUndefined();
+  });
+
+  it("詞表清掉之後行為回到內建", () => {
+    setFillerRules({ 然後: "never" });
+    expect(run(line).filter((c) => c.kind === "filler")).toEqual([]);
+    setFillerRules({});
+    expect(run(line).filter((c) => c.kind === "filler").length).toBeGreaterThan(0);
   });
 });

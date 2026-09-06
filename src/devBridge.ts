@@ -12,6 +12,8 @@ import { useDecisions } from "./store/decisions";
 import { usePlayback } from "./store/playback";
 import { skimStatus, skimTo } from "./preview/skimPlayer";
 import { useLang } from "./i18n";
+import * as lexicon from "./analysis/lexicon";
+import * as fillerStats from "./analysis/fillerStats";
 import * as prompts from "./analysis/prompts";
 import { useSettings } from "./store/settings";
 import { useCleanup } from "./store/cleanup";
@@ -59,6 +61,8 @@ export interface DevBridge {
   highlights: typeof useHighlights;
   showNotes: typeof useShowNotes;
   lang: typeof useLang;
+  lexicon: typeof lexicon;
+  fillerStats: typeof fillerStats;
   prompts: typeof prompts;
   settings: typeof useSettings;
   transcript: typeof useTranscript;
@@ -126,6 +130,8 @@ export function installDevBridge() {
     highlights: useHighlights,
     showNotes: useShowNotes,
     lang: useLang,
+    lexicon,
+    fillerStats,
     prompts,
     settings: useSettings,
     transcript: useTranscript,

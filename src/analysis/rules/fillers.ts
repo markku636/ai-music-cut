@@ -1,7 +1,7 @@
 // 贅字規則：純語助詞、語境相依的軟贅詞、英文口頭禪、過度使用的連接詞。
 import {
   COPULA_SUBJECTS, DUI_KEEP_NEXT, EN_PURE_FILLERS, EN_SOFT_FILLERS, LIKE_KEEP_PREV, MULTI_TOKEN, OVERUSE_MARKERS, ZH_PURE_FILLERS,
-  ZH_SOFT_FILLERS, isAnyFiller, isPureFiller,
+  ZH_SOFT_FILLERS, customFillerPhrases, fillerRuleFor, isAnyFiller, isPureFiller,
 } from "../lexicon";
 import type { Candidate } from "../types";
 import type { RuleContext } from "./context";
@@ -16,6 +16,27 @@ interface Hit {
   ids: number[];
   score: number;
   reason: string;
+}
+
+/**
+ * 從 i 起是否能組成使用者自訂的多字詞。
+ * 內建的 MULTI_TOKEN 是寫死的切法（["就是","說"]），使用者加的詞不可能預先知道
+ * Whisper 會怎麼切，所以這裡改成「一路接下去比對」。
+ */
+function customPhraseAt(ctx: RuleContext, i: number): { n: number; norm: string } | null {
+  const phrases = customFillerPhrases();
+  if (!phrases.length) return null;
+  const maxLen = [...phrases[0]].length; // 已依長度排序，第一個最長
+  let acc = "";
+  for (let k = 0; k < 8; k++) {
+    const w = ctx.words[i + k];
+    if (!w || !w.norm) break;
+    if (k > 0 && ctx.gapBefore(i + k) > 200) break; // 中間有停頓就不是同一個詞
+    acc += w.norm;
+    if ([...acc].length > maxLen) break;
+    if (k > 0 && fillerRuleFor(acc)) return { n: k + 1, norm: acc };
+  }
+  return null;
 }
 
 /** 從 i 起是否能組成 MULTI_TOKEN 詞；回組成的字數（0=否）。 */
@@ -47,6 +68,11 @@ function judgeToken(ctx: RuleContext, i: number, norm: string, span: number): Hi
   const s = ctx.sentence(i);
   const singleWordSentence = !!s && s.wordIds.length === span;
   const sentenceStart = ctx.isSentenceStart(i);
+
+  // 使用者詞表最優先 —— 他要是說了「『然後』永遠別剪」，內建那套語境判斷就不該再插嘴。
+  const userRule = fillerRuleFor(norm);
+  if (userRule === "never") return null;
+  if (userRule === "always") return { ids, score: 0.95, reason: `自訂贅字「${norm}」` };
 
   // 純語助詞
   if (isPureFiller(norm)) {
@@ -126,6 +152,15 @@ function judgeToken(ctx: RuleContext, i: number, norm: string, span: number): Hi
     if (norm === "我覺得") return null; // 語意詞，交給 LLM
     return { ids, score: 0.55, reason: `口頭禪「${norm}」` };
   }
+
+  // 自訂「看語境」的詞：內建沒有為它寫過規則，所以只用最通用的訊號（獨立成音 / 後接停頓），
+  // 而且分數壓在自動剪的門檻以下 —— 使用者自己加的詞，先讓他看過再說。
+  if (userRule === "context") {
+    if (ctx.isStandalone(i) || gapAfter >= 150 || isAnyFiller(nextNorm)) {
+      return { ids, score: 0.6, reason: `自訂贅字「${norm}」後接停頓` };
+    }
+    return { ids, score: 0.35, reason: `自訂贅字「${norm}」（語意需判斷）` };
+  }
   return null;
 }
 
@@ -140,7 +175,8 @@ export function fillerRule(ctx: RuleContext): Candidate[] {
       i += 1;
       continue;
     }
-    const multi = multiTokenAt(ctx, i);
+    // 自訂詞先比 —— 使用者加的「你知道我意思吧」要贏過內建的「你知道」
+    const multi = customPhraseAt(ctx, i) ?? multiTokenAt(ctx, i);
     let hit: Hit | null = null;
     let span = 1;
     if (multi) {

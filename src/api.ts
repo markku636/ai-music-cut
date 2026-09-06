@@ -24,6 +24,8 @@ export interface AppSettings {
   recent_projects: string[];
   /** 使用者改過的提示詞（id -> 內容）；只存被改過的那幾條。 */
   prompt_overrides: Record<string, string>;
+  /** 使用者的贅字裁決（詞 -> "always" | "context" | "never"）；只存被動過的那幾個。 */
+  filler_rules: Record<string, string>;
 }
 
 export interface FfmpegStatus {

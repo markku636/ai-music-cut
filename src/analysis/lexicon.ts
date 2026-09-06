@@ -1,4 +1,42 @@
 // 詞表（norm 形式：小寫、無標點）。台灣口語為主，含常見英文口頭禪。
+//
+// 使用者詞表疊在內建詞表**上面**（setFillerRules），不是取代它：
+// 每個主持人都有自己的口頭禪，而內建這份是通用的。只存被使用者動過的那幾個詞，
+// 之後改進了內建詞表，沒動過那個詞的人才拿得到新版本（跟提示詞覆寫同一個道理）。
+import { normText } from "./normalize";
+
+/** 使用者對某個詞的裁決：一定剪 / 看語境 / 永不剪。 */
+export type FillerMode = "always" | "context" | "never";
+
+let userRules = new Map<string, FillerMode>();
+/** 兩個字以上的自訂詞，長的排前面 —— Whisper 會把它們拆成好幾個 token，要自己接回來。 */
+let userPhrases: string[] = [];
+
+/** 從設定單向推進來（跟 prompts.ts 一樣，這支不反向讀設定）。 */
+export function setFillerRules(src: Record<string, string> | undefined | null): void {
+  userRules = new Map();
+  for (const [word, mode] of Object.entries(src ?? {})) {
+    const n = normText(word);
+    if (!n) continue;
+    if (mode === "always" || mode === "context" || mode === "never") userRules.set(n, mode);
+  }
+  userPhrases = [...userRules.keys()].filter((k) => [...k].length >= 2).sort((a, b) => b.length - a.length);
+}
+
+export function fillerRuleFor(norm: string): FillerMode | null {
+  return userRules.get(norm) ?? null;
+}
+
+/** 給規則層做多字比對用。 */
+export function customFillerPhrases(): string[] {
+  return userPhrases;
+}
+
+/** 這個詞在內建詞表裡本來就有嗎（UI 要告訴使用者「你在覆寫內建」）。 */
+export function isBuiltinFiller(norm: string): boolean {
+  return ZH_PURE_FILLERS.has(norm) || EN_PURE_FILLERS.has(norm) || ZH_SOFT_FILLERS.has(norm) || EN_SOFT_FILLERS.has(norm);
+}
+
 
 /** 純語助詞：幾乎永遠是贅字（除非是問句後的單字回答）。 */
 export const ZH_PURE_FILLERS = new Set(["嗯", "呃", "欸", "ㄟ", "唔", "呣", "嗯嗯", "呃呃", "痾", "厄", "呃呃呃", "嗯嗯嗯", "額", "誒", "欸欸"]);
@@ -50,11 +88,15 @@ export const OVERUSE_MARKERS = new Set(["然後", "就是", "其實"]);
 export const TRANSITION_WORDS = new Set(["好", "ok", "okay", "那"]);
 
 export function isPureFiller(norm: string): boolean {
+  const r = userRules.get(norm);
+  if (r) return r === "always"; // 使用者說了算：always 當純贅字，context / never 都不算
   return ZH_PURE_FILLERS.has(norm) || EN_PURE_FILLERS.has(norm);
 }
 
 export function isAnyFiller(norm: string): boolean {
-  return isPureFiller(norm) || ZH_SOFT_FILLERS.has(norm) || EN_SOFT_FILLERS.has(norm);
+  const r = userRules.get(norm);
+  if (r) return r !== "never";
+  return ZH_PURE_FILLERS.has(norm) || EN_PURE_FILLERS.has(norm) || ZH_SOFT_FILLERS.has(norm) || EN_SOFT_FILLERS.has(norm);
 }
 
 /** Whisper 非語音標記：[音樂]、(笑聲)、♪ … */

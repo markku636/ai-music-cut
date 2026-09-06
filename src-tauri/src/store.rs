@@ -56,6 +56,10 @@ pub struct AppSettings {
     /// 全部存下來的話，之後改了預設值，舊使用者永遠拿不到新的版本。
     #[serde(default)]
     pub prompt_overrides: std::collections::HashMap<String, String>,
+    /// 使用者的贅字裁決（詞 -> "always" | "context" | "never"）。
+    /// 同樣只存被動過的那幾個詞，內建詞表照樣會跟著版本進步。
+    #[serde(default)]
+    pub filler_rules: std::collections::HashMap<String, String>,
 }
 
 impl Default for AppSettings {
@@ -78,6 +82,7 @@ impl Default for AppSettings {
             hotwords: String::new(),
             recent_projects: Vec::new(),
             prompt_overrides: std::collections::HashMap::new(),
+            filler_rules: std::collections::HashMap::new(),
         }
     }
 }

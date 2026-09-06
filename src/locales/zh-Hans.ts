@@ -702,6 +702,10 @@ const zhHans: Catalog = {
   "下了待辦 {at}　到「索引」分頁寫要做什麼": "下了待办 {at}　到“索引”分页写要做什么",
   "在播放線新增": "在播放线新增",
   "下標記 / 下章節（會寫進成品檔案）/ 下待辦": "下标记 / 下章节（会写进成品文件）/ 下待办",
+  "結構化產出的後端": "结构化产出的后端",
+  "AI 判讀、審核、節目筆記走哪個 CLI。AI 助手不受影響 —— 它要透過 App 內建的 MCP server 操作剪輯，而 codex 要連上那個 server 得改你自己的 config.toml，所以助手一律走 claude。": "AI 判读、审核、节目笔记走哪个 CLI。AI 助手不受影响 —— 它要透过 App 内建的 MCP server 操作剪辑，而 codex 要连上那个 server 得改你自己的 config.toml，所以助手一律走 claude。",
+  "codex 走 `codex exec --output-schema`。模型請在 codex 自己的設定裡指定（$CODEX_HOME/config.toml 的 model）。": "codex 走 `codex exec --output-schema`。模型请在 codex 自己的设置里指定（$CODEX_HOME/config.toml 的 model）。",
+  "沒裝的話：npm i -g @openai/codex，然後執行 codex login。": "没装的话：npm i -g @openai/codex，然后运行 codex login。",
 };
 
 export default zhHans;

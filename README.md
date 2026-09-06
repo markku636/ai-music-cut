@@ -40,6 +40,17 @@ AI Podcast / 音訊粗剪桌面工具（Tauri 2 + React 18），也有 CLI。丟
 
 *上圖：修剪工具作用中、精準修剪器攤開一個切點（留白 500 ms）、右側是時間軸索引（章節 / 標記 / 待辦 / 接縫）、波形下緣是配樂軌（黃色那條是人聲閃避的音量控制點，可以直接拖）與音效軌。*
 
+## AI 後端
+
+**結構化產出**（AI 判讀、審核、節目筆記）可以選 **Claude Code** 或 **Codex**（設定 → 工具）。
+codex 走 `codex exec --output-schema`，模型在 codex 自己的 `$CODEX_HOME/config.toml` 指定。
+沒安裝的話：`npm i -g @openai/codex` 再 `codex login`。
+
+> **AI 助手（工具迴圈）一律走 claude**，不受這個設定影響。
+> 助手是透過 App 內建的 MCP server 直接操作剪輯決策，而 codex 要連上那個 server
+> 得改使用者自己的 `config.toml` —— 那是使用者環境的設定，App 寫不進去。
+> 設定畫面會把這件事講出來，不會讓人以為切過去什麼都能用。
+
 ## 語言
 
 介面有 **繁體中文 / 简体中文 / 日本語 / English** 四種（右上角切換）。

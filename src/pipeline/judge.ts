@@ -12,7 +12,7 @@ import { t, uiLanguageLine } from "../i18n";
 import { useDecisions } from "../store/decisions";
 import { newJobId, useJobs } from "../store/jobs";
 import { useProject } from "../store/project";
-import { useSettings } from "../store/settings";
+import { agentBackend, useSettings } from "../store/settings";
 import { useTranscript } from "../store/transcript";
 import { toast } from "../ui";
 
@@ -89,10 +89,10 @@ export async function runJudge(mediaId: string): Promise<void> {
       } else {
         const r = renderWindow(tr, w, candidates, decisions);
         try {
-          let raw = await api.claudeStructured(r.prompt, JUDGE_SCHEMA, model, sys, 240_000);
+          let raw = await api.claudeStructured(r.prompt, JUDGE_SCHEMA, model, sys, 240_000, agentBackend());
           let v = validateJudge(raw, w, r.alias, tr, candidates);
           if (v.warnings.includes("輸出不符 schema")) {
-            raw = await api.claudeStructured(`${r.prompt}\n\n（上次輸出不符 schema，請只輸出符合 schema 的 JSON）`, JUDGE_SCHEMA, model, sys, 240_000);
+            raw = await api.claudeStructured(`${r.prompt}\n\n（上次輸出不符 schema，請只輸出符合 schema 的 JSON）`, JUDGE_SCHEMA, model, sys, 240_000, agentBackend());
             v = validateJudge(raw, w, r.alias, tr, candidates);
           }
           allUpdates.push(...v.updates);

@@ -5,6 +5,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ttls_base_url: "https://ttls.markkulab.net",
   ffmpeg_path: null,
   claude_model: "sonnet",
+  agent_backend: "claude",
   claude_review_model: "haiku",
   judge_roles: "editor+reviewer",
   default_aggressiveness: 50,
@@ -81,3 +82,13 @@ export const useSettings = create<SettingsStore>((set, get) => ({
     set({ key: await api.ttlsKeyStatus().catch(() => null) });
   },
 }));
+
+/**
+ * 結構化產出要用哪個 CLI（"claude" 或 "codex"）。
+ *
+ * 只有這一條路徑吃這個設定 —— AI 助手的工具迴圈一律走 claude，
+ * 因為 codex 要連上 App 的 MCP server 得靠使用者自己的 config.toml，App 寫不進去。
+ */
+export function agentBackend(): string {
+  return useSettings.getState().s.agent_backend || "claude";
+}

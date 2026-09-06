@@ -1,5 +1,6 @@
 mod agent;
 mod cleanup;
+mod codex;
 mod commands;
 mod error;
 mod ffmpeg;
@@ -105,6 +106,7 @@ pub fn run() {
             commands::open_path,
             commands::open_external,
             agent::claude_detect,
+            agent::codex_detect,
             agent::claude_send,
             agent::claude_cancel,
             agent::claude_structured,

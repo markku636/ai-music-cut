@@ -140,7 +140,7 @@ async fn claude_version(bin: &ClaudeBin) -> Option<String> {
 }
 
 /// 助手工作目錄：設定目錄下，刻意沒有 CLAUDE.md（避免使用者其他專案記憶被載入）。
-async fn workspace_dir(app: &AppHandle) -> AppResult<PathBuf> {
+pub(crate) async fn workspace_dir(app: &AppHandle) -> AppResult<PathBuf> {
     let dir = crate::store::app_config_dir(app)?.join("agent-workspace");
     tokio::fs::create_dir_all(&dir).await.map_err(|e| AppError::Storage(format!("建立助手工作目錄失敗：{e}")))?;
     Ok(dir)
@@ -226,6 +226,15 @@ fn parse_and_emit(app: &AppHandle, req: &str, line: &str) {
         }
         _ => {}
     }
+}
+
+/// codex CLI 的狀態（設定畫面用）。
+#[tauri::command]
+pub async fn codex_detect() -> ClaudeStatus {
+    let (installed, version, path) = crate::codex::detect().await;
+    // codex 沒有「登入與否」的輕量查法（要真的送一次請求），所以裝了就當可用，
+    // 沒登入的話第一次呼叫會回錯誤訊息，比在這裡假裝知道誠實。
+    ClaudeStatus { installed, version, logged_in: installed, path }
 }
 
 #[tauri::command]
@@ -340,6 +349,8 @@ pub async fn claude_cancel(state: State<'_, AppState>, req_id: String) -> AppRes
 
 /// 一次性結構化輸出（AI 判讀）：零工具、限回合；回 `structured_output`（退回解析 `result` 字串）。
 #[tauri::command]
+/// 結構化產出。`backend` 只認 "codex"，其他一律走 claude ——
+/// 不認得的字串當成 claude 而不是報錯：後端是使用者設定，設錯不該讓整個判讀掛掉。
 pub async fn claude_structured(
     app: AppHandle,
     prompt: String,
@@ -347,7 +358,12 @@ pub async fn claude_structured(
     model: Option<String>,
     system_prompt: Option<String>,
     timeout_ms: Option<u64>,
+    backend: Option<String>,
 ) -> AppResult<serde_json::Value> {
+    if backend.as_deref() == Some("codex") {
+        let workspace = workspace_dir(&app).await?;
+        return crate::codex::structured(workspace, prompt, schema, model, system_prompt, timeout_ms).await;
+    }
     let bin = resolve_claude_bin().await.ok_or_else(|| AppError::Agent("找不到 claude CLI，請先安裝 Claude Code 並登入".into()))?;
     let workspace = workspace_dir(&app).await?;
     let mut cmd = make_cmd(&bin);

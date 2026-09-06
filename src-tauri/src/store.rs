@@ -16,6 +16,10 @@ pub const SETTINGS_FILE: &str = "settings.json";
 pub const TTLS_KEY_ACCOUNT: &str = "ttls-api-key";
 
 /// App 全域設定（磁碟格式）。**沒有任何 secret 欄位**——金鑰在 keychain。
+fn default_agent_backend() -> String {
+    "claude".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -24,6 +28,10 @@ pub struct AppSettings {
     pub ffmpeg_path: Option<String>,
     /// claude CLI 的 --model（空＝CLI 預設）。
     pub claude_model: String,
+    /// 結構化產出要用哪個 CLI："claude"（預設）或 "codex"。
+    /// 助手的工具迴圈不受這個影響，一律 claude。
+    #[serde(default = "default_agent_backend")]
+    pub agent_backend: String,
     /// 審核 agent 用的模型（第二輪覆核；預設用比較便宜的 haiku）。
     pub claude_review_model: String,
     /// AI 判讀跑幾個角色："editor"＝只有剪輯；"editor+reviewer"＝剪輯提議、審核覆核。
@@ -45,6 +53,7 @@ impl Default for AppSettings {
             ttls_base_url: "https://ttls.markkulab.net".to_string(),
             ffmpeg_path: None,
             claude_model: "sonnet".to_string(),
+            agent_backend: default_agent_backend(),
             claude_review_model: "haiku".to_string(),
             judge_roles: "editor+reviewer".to_string(),
             default_aggressiveness: 50,

@@ -813,6 +813,11 @@ const ja: Catalog = {
   "在這裡下待辦": "ここに「やること」を追加",
   "下了待辦 {at}　到「索引」分頁寫要做什麼": "{at} に「やること」を追加しました。内容はインデックスタブで書けます",
   "在播放線新增": "再生位置に追加",
+  // Codex 後端（v0.46.0）
+  "結構化產出的後端": "構造化出力のバックエンド",
+  "Claude Code（claude CLI）": "Claude Code（claude CLI）",
+  "Codex（codex CLI）": "Codex（codex CLI）",
+  "沒裝的話：npm i -g @openai/codex，然後執行 codex login。": "未インストールの場合：npm i -g @openai/codex を実行し、codex login でログインしてください。",
 };
 
 export default ja;

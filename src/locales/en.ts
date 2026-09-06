@@ -843,6 +843,14 @@ const en: Catalog = {
   "M / Shift+M / Alt+M": "M / Shift+M / Alt+M",
   "下標記 / 下章節（會寫進成品檔案）/ 下待辦": "Add marker / chapter (written into the export) / to-do",
   // 人工標記與待辦（v0.45.0）
+  // Codex 後端（v0.46.0）
+  "結構化產出的後端": "Backend for structured output",
+  "AI 判讀、審核、節目筆記走哪個 CLI。AI 助手不受影響 —— 它要透過 App 內建的 MCP server 操作剪輯，而 codex 要連上那個 server 得改你自己的 config.toml，所以助手一律走 claude。": "Which CLI runs the AI review, the reviewer and the show notes. The AI assistant is unaffected: it drives editing through the app's built-in MCP server, and pointing codex at that server means editing your own config.toml, so the assistant always uses claude.",
+  "Claude Code（claude CLI）": "Claude Code (claude CLI)",
+  "Codex（codex CLI）": "Codex (codex CLI)",
+  "codex 走 `codex exec --output-schema`。模型請在 codex 自己的設定裡指定（$CODEX_HOME/config.toml 的 model）。": "Codex runs via `codex exec --output-schema`. Set the model in codex's own config ($CODEX_HOME/config.toml, key `model`).",
+  "沒裝的話：npm i -g @openai/codex，然後執行 codex login。": "Not installed? Run: npm i -g @openai/codex, then codex login.",
+  // Codex 後端（v0.46.0）
 };
 
 

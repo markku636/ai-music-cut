@@ -6,6 +6,8 @@ export interface AppSettings {
   ttls_base_url: string;
   ffmpeg_path: string | null;
   claude_model: string;
+  /** 結構化產出的 CLI："claude" 或 "codex"。 */
+  agent_backend: string;
   claude_review_model: string;
   /** "editor" | "editor+reviewer" */
   judge_roles: string;
@@ -380,11 +382,17 @@ export const api = {
   openPath: (path: string) => invoke<void>("open_path", { path }),
   openExternal: (url: string) => invoke<void>("open_external", { url }),
   claudeDetect: () => invoke<ClaudeStatus>("claude_detect"),
+  codexDetect: () => invoke<ClaudeStatus>("codex_detect"),
   claudeSend: (reqId: string, prompt: string, sessionId: string | null, model: string | null, mode: "agent" | "advise", systemPrompt: string | null) =>
     invoke<void>("claude_send", { reqId, prompt, sessionId, model, mode, systemPrompt }),
   claudeCancel: (reqId: string) => invoke<void>("claude_cancel", { reqId }),
-  claudeStructured: (prompt: string, schema: unknown, model: string | null, systemPrompt: string | null, timeoutMs?: number) =>
-    invoke<unknown>("claude_structured", { prompt, schema, model, systemPrompt, timeoutMs: timeoutMs ?? null }),
+  /**
+   * 結構化產出。`backend` 給 "codex" 就走 codex CLI，其餘一律 claude。
+   * 助手的工具迴圈沒有這個開關 —— codex 要連我們的 MCP server 得靠使用者自己的
+   * config.toml，App 寫不進去，所以助手仍然只走 claude。
+   */
+  claudeStructured: (prompt: string, schema: unknown, model: string | null, systemPrompt: string | null, timeoutMs?: number, backend?: string | null) =>
+    invoke<unknown>("claude_structured", { prompt, schema, model, systemPrompt, timeoutMs: timeoutMs ?? null, backend: backend ?? null }),
   mcpSetTools: (tools: McpToolDef[]) => invoke<number>("mcp_set_tools", { tools }),
   mcpToolResult: (id: string, result: unknown, error: string | null) => invoke<boolean>("mcp_tool_result", { id, result, error }),
   mcpInfo: () => invoke<McpInfo>("mcp_info"),

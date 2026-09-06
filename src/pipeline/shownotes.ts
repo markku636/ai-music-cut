@@ -3,7 +3,7 @@ import { normalizeShowNotes, notesPrompt, notesSource, SHOW_NOTES_SCHEMA, type R
 import { aiOutputLanguage, t } from "../i18n";
 import { languageName, outputLanguageLine } from "../analysis/lang";
 import { useProject } from "../store/project";
-import { useSettings } from "../store/settings";
+import { agentBackend, useSettings } from "../store/settings";
 import { useTranscript } from "../store/transcript";
 import { edlFor } from "./rules";
 
@@ -46,7 +46,7 @@ export async function generateShowNotes(mediaId: string): Promise<ShowNotes> {
 
   let raw: unknown;
   try {
-    raw = await api.claudeStructured(prompt, SHOW_NOTES_SCHEMA, model, `${SYSTEM_BASE}${langLine}`, 240_000);
+    raw = await api.claudeStructured(prompt, SHOW_NOTES_SCHEMA, model, `${SYSTEM_BASE}${langLine}`, 240_000, agentBackend());
   } catch (e) {
     throw new ShowNotesError(e instanceof Error ? e.message : String(e));
   }

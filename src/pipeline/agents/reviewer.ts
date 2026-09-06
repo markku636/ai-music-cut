@@ -11,6 +11,7 @@ import { renderReviewWindow, REVIEWER_SYSTEM_PROMPT } from "../../analysis/llm/p
 import { REVIEW_SCHEMA, type ReviewOutput } from "../../analysis/llm/schema";
 import type { JudgeWindow } from "../../analysis/llm/windows";
 import type { Candidate, DecisionMap, Opinion, Transcript } from "../../analysis/types";
+import { agentBackend } from "../../store/settings";
 
 export interface ReviewResult {
   /** 候選 id → 審核意見。 */
@@ -67,7 +68,7 @@ export async function reviewWindow(
   const sys = opts.systemPrompt ?? REVIEWER_SYSTEM_PROMPT;
   const now = new Date().toISOString();
   try {
-    const raw = await api.claudeStructured(r.prompt, REVIEW_SCHEMA, opts.model, sys, opts.timeoutMs ?? 240_000);
+    const raw = await api.claudeStructured(r.prompt, REVIEW_SCHEMA, opts.model, sys, opts.timeoutMs ?? 240_000, agentBackend());
     return validateReview(raw, w, r.alias, opts.model, now);
   } catch (e) {
     // 單一視窗失敗就降級成「只有剪輯意見」，不要讓整趟判讀失敗

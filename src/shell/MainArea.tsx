@@ -169,10 +169,21 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   }, [active?.id, active?.probe, local]);
 
   // 切換媒體：若專案檔有分析記錄但 store 還沒有 → 還原；清掉上一個媒體的選取。
+  //
+  // **選取只在真的換檔案時才清**，不能跟著 `analysis` 狀態變化一起清。
+  // 這個 effect 的相依包含 analysis（還原分析要等它變 "ready"），但分析狀態在同一個檔案上
+  // 也會轉換（開檔算波形、重跑規則…）。跟著清的話，使用者選好一段、期間分析剛好跑完，
+  // 選取就無聲無息不見了。人通常選完馬上就動作所以很難察覺；**AI 助手是隔著好幾秒的
+  // 工具往返，中招率接近 100%** —— 實測地端 claude 連續三次 set_selection → lift_selection
+  // 都拿到「沒有選取」，最後放棄那項任務。
+  const lastMediaId = useRef<string | null>(null);
   useEffect(() => {
     if (active && active.analysis === "ready") void restoreAnalysis(active.id);
-    setSelection(null);
-    anchorWord.current = null;
+    if (active?.id !== lastMediaId.current) {
+      lastMediaId.current = active?.id ?? null;
+      setSelection(null);
+      anchorWord.current = null;
+    }
   }, [active?.id, active?.analysis]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** 右鍵選單內容：依游標下是候選 / 效果 / 有無選取決定。 */

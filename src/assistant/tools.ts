@@ -900,7 +900,10 @@ export const TOOLS: ToolSpec[] = [
       if (s < 0 || e <= s) throw new ToolError("startMs / endMs 不合法");
       useTimeline.getState().setSelection({ startMs: s, endMs: e });
       const sel = useTimeline.getState().selection;
-      return { selection: sel, note: sel && (Math.abs(sel.startMs - s) > 1 || Math.abs(sel.endMs - e) > 1) ? "已吸附到最近的接縫 / 句界 / 拍點" : undefined };
+      // 沒選起來就要明講。回一個 `selection: null` 看起來像成功，助手會照著往下走，
+      // 然後在 lift_selection 那裡撞牆，而且不知道是哪一步出的錯。
+      if (!sel) throw new ToolError("這段沒有被接受（太短？最短 20 毫秒），選取沒有建立");
+      return { selection: sel, note: Math.abs(sel.startMs - s) > 1 || Math.abs(sel.endMs - e) > 1 ? "已吸附到最近的接縫 / 句界 / 拍點" : undefined };
     },
   },
   {
@@ -910,7 +913,7 @@ export const TOOLS: ToolSpec[] = [
     handler: () => {
       ctxMedia();
       const id = liftSelection();
-      if (!id) throw new ToolError("目前沒有選取（先用 set_selection）");
+      if (!id) throw new ToolError("目前沒有選取 —— 先用 set_selection，並且就在下一步呼叫 lift_selection");
       return { lifted: id };
     },
   },

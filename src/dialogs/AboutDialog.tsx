@@ -58,7 +58,7 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} title={t("關於 {app}").replace("{app}", APP_NAME)} icon={Info} size="sm">
       <div className="flex flex-col items-center text-center gap-1 py-2">
-        <img src="/app-icon.png" alt={APP_NAME} className="w-16 h-16 mb-2" draggable={false} />
+        <img src="/app-icon.png" alt={APP_NAME} className="w-28 h-28 mb-1" draggable={false} />
         <div className="text-lg font-semibold">{APP_NAME}</div>
         <div className="flex items-center gap-1 text-xs text-fg/40 tabular-nums">
           <span>

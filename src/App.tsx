@@ -148,6 +148,22 @@ function isAudioPath(p: string): boolean {
 
 const EMPTY_FX: AudioEffect[] = [];
 
+
+/** 開場畫面至少待這麼久（毫秒），動畫才看得完；淡出另外算。 */
+const SPLASH_MIN_MS = 780;
+const SPLASH_FADE_MS = 300;
+
+function hideBootSplash(): void {
+  const el = document.getElementById("boot-splash");
+  if (!el || el.classList.contains("done")) return; // StrictMode 會跑兩次
+  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  const wait = reduced ? 0 : Math.max(0, SPLASH_MIN_MS - performance.now());
+  window.setTimeout(() => {
+    el.classList.add("done");
+    window.setTimeout(() => el.remove(), SPLASH_FADE_MS);
+  }, wait);
+}
+
 export default function App() {
   const active = useProject(selectActiveMedia);
   // 索引分頁要的接縫 / 效果。edlFor 直接讀 store，所以用這幾個當「該重算」的訊號。
@@ -207,8 +223,10 @@ export default function App() {
   useEffect(() => {
     applyAppTheme(useTheme.getState().themeId);
     void useSettings.getState().load();
-    // React 已掛載 → 撤掉 index.html 的靜態骨架屏。
-    document.getElementById("boot-splash")?.remove();
+    // React 已掛載 → 撤掉 index.html 的開場畫面。
+    // 直接 remove() 的話，開場動畫在快的機器上只會閃一下就不見（等於白做），
+    // 所以從網頁開始算至少讓它待滿 SPLASH_MIN_MS 再淡出；減少動態偏好時不等。
+    hideBootSplash();
     // dev 煙霧測試：AICUT_DEV_OPEN=<音檔> [AICUT_DEV_ANALYZE=1 AICUT_DEV_REVIEW=1 …] npm run tauri dev
     void (async () => {
       if (devAutoOpened) return; // React StrictMode 會跑兩次 effect

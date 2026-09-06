@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookMarked, Check, Crop, Flag, ListTree, MoveHorizontal, Music, Palette, Play, Repeat, Scissors, Slice, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
 import type { AudioEffect } from "../analysis/effects";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
@@ -35,6 +35,8 @@ import { bladeAt, liftSelection, removeSeamSplit, seamsOfEdl, setSeamPause, type
 import { formatMs } from "../time";
 import TranscriptEditor from "../transcript/TranscriptEditor";
 import TranscriptPlaceholder from "../transcript/TranscriptPlaceholder";
+import TranscriptSearch from "../transcript/TranscriptSearch";
+import type { TextHit } from "../analysis/textSearch";
 import ReviewMode from "../decisions/ReviewMode";
 import StyleDialog from "../dialogs/StyleDialog";
 import Splitter from "./Splitter";
@@ -87,6 +89,12 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   const setSelection = useTimeline((s) => s.setSelection);
   const setFocusSeam = useTimeline((s) => s.setFocusSeam);
   const anchorWord = useRef<number | null>(null);
+  const searchOpen = useUi((s) => s.transcriptSearch);
+  const setSearchOpen = useUi((s) => s.setTranscriptSearch);
+  const [searchHits, setSearchHits] = useState<{ hits: TextHit[]; at: number }>({ hits: [], at: 0 });
+  const hitWordIds = useMemo(() => new Set(searchHits.hits.flatMap((h) => h.wordIds)), [searchHits]);
+  const activeHitWordIds = useMemo(() => new Set(searchHits.hits[searchHits.at]?.wordIds ?? []), [searchHits]);
+  const onSearchHits = useCallback((hits: TextHit[], at: number) => setSearchHits({ hits, at }), []);
   const timeline = useResizable({ storageKey: "aicut:timelineH", initial: 220, min: 140, max: () => window.innerHeight * 0.6, axis: "y" });
 
   // 跳播與輸出必須看同一份剪除區。舊版跳播吃 activeRanges（原始候選直接合併），
@@ -400,6 +408,9 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
             {styleFor && mediaId && <StyleDialog mediaId={mediaId} startMs={styleFor.startMs} endMs={styleFor.endMs} onClose={() => setStyleFor(null)} />}
           </div>
           <Splitter axis="y" onPointerDown={timeline.onPointerDown} />
+          {transcript && searchOpen && mediaId && (
+            <TranscriptSearch mediaId={mediaId} transcript={transcript} onHits={onSearchHits} onClose={() => setSearchOpen(false)} />
+          )}
           {transcript ? (
             <TranscriptEditor
               transcript={transcript}
@@ -426,6 +437,8 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
                 toggleWordCut(mediaId, wordId, w, sid);
               }}
               onSentenceSelect={(s) => setSelection({ startMs: s.startMs, endMs: s.endMs })}
+              hitWordIds={hitWordIds}
+              activeHitWordIds={activeHitWordIds}
             />
           ) : (
             <TranscriptPlaceholder mediaId={mediaId} onAnalyze={onAnalyze} onOpenSettings={onOpenSettings} />

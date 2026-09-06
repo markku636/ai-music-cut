@@ -388,6 +388,7 @@ export default function App() {
           const m = selectActiveMedia(useProject.getState());
           if (m?.probe) useTimeline.getState().setSelection({ startMs: 0, endMs: m.probe.duration_ms });
         },
+        findText: () => useUi.getState().setTranscriptSearch(true),
       }),
     [],
   );

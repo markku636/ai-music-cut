@@ -105,3 +105,48 @@ describe("decisions store", () => {
     for (const x of many) expect(useDecisions.getState().decisions.m[x.id]).toMatchObject({ state: "rejected", origin: "user" });
   });
 });
+
+describe("addManualCuts（逐字稿批次剪除）", () => {
+  beforeEach(() => useDecisions.setState({ candidates: {}, decisions: {}, past: [], future: [], selectedIds: [] }));
+
+  const cuts = [
+    { startMs: 100, endMs: 200, wordIds: [1], sentenceId: 0 },
+    { startMs: 500, endMs: 620, wordIds: [5], sentenceId: 1 },
+    { startMs: 900, endMs: 1000, wordIds: [9], sentenceId: 2 },
+  ];
+
+  it("N 筆剪除只佔一筆 undo —— 剪掉 23 個「呃」不該要按 23 次 Ctrl+Z", () => {
+    const st = useDecisions.getState();
+    expect(st.addManualCuts("m", cuts)).toBe(3);
+    expect(useDecisions.getState().candidates.m).toHaveLength(3);
+    expect(useDecisions.getState().past).toHaveLength(1);
+
+    useDecisions.getState().undo();
+    expect(useDecisions.getState().candidates.m ?? []).toHaveLength(0);
+    useDecisions.getState().redo();
+    expect(useDecisions.getState().candidates.m).toHaveLength(3);
+  });
+
+  it("每一筆都直接是 accepted（人說要剪就是要剪，不用再審一次）", () => {
+    useDecisions.getState().addManualCuts("m", cuts);
+    const { candidates, decisions } = useDecisions.getState();
+    for (const c of candidates.m) {
+      expect(decisions.m[c.id].state).toBe("accepted");
+      expect(c.source).toBe("user");
+      expect(c.kind).toBe("manual");
+    }
+  });
+
+  it("候選依時間排序，重複範圍不會生出第二筆", () => {
+    useDecisions.getState().addManualCuts("m", [...cuts].reverse());
+    expect(useDecisions.getState().candidates.m.map((c) => c.startMs)).toEqual([100, 500, 900]);
+    // 同一段再剪一次：不新增（回 0），總數不變
+    expect(useDecisions.getState().addManualCuts("m", [cuts[0]])).toBe(0);
+    expect(useDecisions.getState().candidates.m).toHaveLength(3);
+  });
+
+  it("空陣列不留下 undo 紀錄", () => {
+    expect(useDecisions.getState().addManualCuts("m", [])).toBe(0);
+    expect(useDecisions.getState().past).toHaveLength(0);
+  });
+});

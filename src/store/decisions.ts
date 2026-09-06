@@ -67,6 +67,13 @@ interface DecisionsStore {
   decide: (mediaId: string, ids: string[], state: DecisionState, opts?: { origin?: Decision["origin"]; label?: string; reason?: string }) => void;
   toggleWordCut: (mediaId: string, wordId: number, word: { startMs: number; endMs: number; text: string }, sentenceId: number) => void;
   addManualCut: (mediaId: string, startMs: number, endMs: number, wordIds: number[], reason?: string, sentenceId?: number) => string;
+  /**
+   * 一次加入多筆手動剪除（逐字稿搜尋批次剪用）。
+   *
+   * 不可以拿 addManualCut 跑迴圈：那會塞 N 筆 undo，剪掉 23 個「呃」之後
+   * 要按 23 次 Ctrl+Z 才回得來。這裡合成**一次 commit**。回傳實際新增幾筆。
+   */
+  addManualCuts: (mediaId: string, cuts: { startMs: number; endMs: number; wordIds: number[]; sentenceId?: number }[], reason?: string, label?: string) => number;
   /** 人工拉邊界：改候選的時間範圍（id 不變）；標記 meta.userRange 讓規則重跑時保留人工調整。 */
   updateCandidateRange: (mediaId: string, id: string, startMs: number, endMs: number, wordIds?: number[]) => void;
   removeCandidate: (mediaId: string, id: string) => void;
@@ -251,6 +258,32 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       get().addManualCut(mediaId, word.startMs, word.endMs, [wordId], `手動剪除「${word.text.trim()}」`, sentenceId);
     },
 
+    addManualCuts: (mediaId, cuts, reason = "逐字稿剪除", label = "逐字稿剪除") => {
+      if (!cuts.length) return 0;
+      const byId = new Map((get().candidates[mediaId] ?? []).map((c) => [c.id, c] as const));
+      const dec: DecisionMap = { ...(get().decisions[mediaId] ?? {}) };
+      const at = now();
+      let added = 0;
+      for (const cut of cuts) {
+        const id = candidateId("manual", cut.startMs, cut.endMs, "user");
+        // 同一段已經有候選就只是改決定，不要生出兩筆相同範圍的候選
+        if (!byId.has(id)) added++;
+        byId.set(id, {
+          id,
+          kind: "manual",
+          startMs: cut.startMs,
+          endMs: cut.endMs,
+          wordIds: cut.wordIds,
+          reason,
+          score: 1,
+          source: "user",
+          sentenceId: cut.sentenceId ?? -1,
+        });
+        dec[id] = { state: "accepted", origin: "user", at };
+      }
+      commit(mediaId, label, { candidates: [...byId.values()].sort((a, b) => a.startMs - b.startMs), decisions: dec });
+      return added;
+    },
     addManualCut: (mediaId, startMs, endMs, wordIds, reason = "手動剪除", sentenceId = -1) => {
       const id = candidateId("manual", startMs, endMs, "user");
       const cands = (get().candidates[mediaId] ?? []).filter((c) => c.id !== id);

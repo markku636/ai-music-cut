@@ -19,12 +19,26 @@ export interface TranscriptEditorProps {
   selection?: { startMs: number; endMs: number } | null;
   /** 右鍵句子時間戳：把整句變成時間選取。 */
   onSentenceSelect?: (s: Sentence) => void;
+  /** 搜尋命中的字（畫底色）；目前跳到的那一筆另外標起來。 */
+  hitWordIds?: Set<number>;
+  activeHitWordIds?: Set<number>;
 }
 
 /**
  * 逐字稿：句子列 + 字 chip。劃線＝會被剪；虛框＝待決建議；點字 seek；雙擊直接剪 / 還原。
  */
-export default function TranscriptEditor({ transcript, candidates, decisions, selectedIds, selection = null, onWordClick, onWordToggle, onSentenceSelect }: TranscriptEditorProps) {
+export default function TranscriptEditor({
+  transcript,
+  candidates,
+  decisions,
+  selectedIds,
+  selection = null,
+  onWordClick,
+  onWordToggle,
+  onSentenceSelect,
+  hitWordIds,
+  activeHitWordIds,
+}: TranscriptEditorProps) {
   const currentMs = usePlayback((s) => s.currentMs);
   const follow = usePlayback((s) => s.followMode !== "off");
   const seek = usePlayback((s) => s.seek);
@@ -94,6 +108,8 @@ export default function TranscriptEditor({ transcript, candidates, decisions, se
           onWordClick={onWordClick}
           onWordToggle={onWordToggle}
           onSentenceSelect={onSentenceSelect}
+          hitWordIds={hitWordIds}
+          activeHitWordIds={activeHitWordIds}
         />
       ))}
     </div>
@@ -112,6 +128,8 @@ const SentenceRow = memo(function SentenceRow({
   onWordClick,
   onWordToggle,
   onSentenceSelect,
+  hitWordIds,
+  activeHitWordIds,
 }: {
   sentence: Sentence;
   words: Word[];
@@ -124,6 +142,8 @@ const SentenceRow = memo(function SentenceRow({
   onWordClick: (wordId: number, candidateIds: string[], shift: boolean) => void;
   onWordToggle: (wordId: number) => void;
   onSentenceSelect?: (s: Sentence) => void;
+  hitWordIds?: Set<number>;
+  activeHitWordIds?: Set<number>;
 }) {
   return (
     <div data-sid={sentence.id} className={`flex gap-3 rounded-md px-2 py-1 ${isActive ? "bg-accent/8" : ""}`}>
@@ -150,6 +170,7 @@ const SentenceRow = memo(function SentenceRow({
             m === "cut" ? "word-chip--cut" : m === "pending" ? "word-chip--pending" : "",
             selectedWordIds.has(id) ? "ring-1 ring-accent" : "",
             selection && w.startMs < selection.endMs && w.endMs > selection.startMs ? "word-chip--sel" : "",
+            activeHitWordIds?.has(id) ? "word-chip--hit word-chip--hit-active" : hitWordIds?.has(id) ? "word-chip--hit" : "",
             w.prob < 0.4 ? "word-chip--lowconf" : "",
           ]
             .filter(Boolean)

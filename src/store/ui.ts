@@ -55,6 +55,9 @@ export function applyDensity(d: Density) {
 }
 
 interface UiStore extends Persisted {
+  /** 逐字稿搜尋列開著沒（Ctrl+F）。不持久化 —— 每次開檔案都從收起來的狀態開始。 */
+  transcriptSearch: boolean;
+  setTranscriptSearch: (v: boolean) => void;
   setTab: (t: RailTab) => void;
   /** 點同一個分頁 = 收合；點別的 = 切過去並展開。 */
   toggleTab: (t: RailTab) => void;
@@ -71,6 +74,8 @@ export const useUi = create<UiStore>((set, get) => {
   };
   return {
     ...init,
+    transcriptSearch: false,
+    setTranscriptSearch: (transcriptSearch) => set({ transcriptSearch }),
     setTab: (tab) => {
       set({ tab, railOpen: true });
       persist();

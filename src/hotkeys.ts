@@ -46,6 +46,8 @@ export interface HotkeyHandlers {
   space?: () => void;
   zoomSelection?: () => void;
   selectAll?: () => void;
+  /** Ctrl+F：在逐字稿裡找字（找到之後可以整集一次剪掉）。 */
+  findText?: () => void;
 }
 
 /** 中文輸入法開著時 keydown 的 key 是 "Process"，改由實體鍵 code 推回字元，讓字母快捷鍵照常運作。 */
@@ -130,6 +132,10 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
         case "a":
           e.preventDefault();
           h.selectAll?.();
+          return;
+        case "f":
+          e.preventDefault();
+          h.findText?.();
           return;
         default:
           return;

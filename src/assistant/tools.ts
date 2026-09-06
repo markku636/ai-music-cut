@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { api, type McpToolCall, type McpToolDef } from "../api";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState, type MarkerKind } from "../analysis/types";
 import { buildChapters } from "../analysis/chapters";
+import { fillerCandidates, findText, totalMs } from "../analysis/textSearch";
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutput } from "../analysis/overlays";
 import { analyzeMicSync, combineMics } from "../pipeline/syncMics";
 import type { EffectKind } from "../analysis/effects";
@@ -231,6 +232,60 @@ export const TOOLS: ToolSpec[] = [
       const sid = wordIds.length ? (x.tr.sentences.find((st) => st.wordIds.includes(wordIds[0]))?.id ?? -1) : -1;
       const id = x.d.addManualCut(x.media.id, s, e, wordIds, typeof a.reason === "string" ? a.reason : "AI 助手新增剪除", sid);
       return { id, wordIds, text: wordIds.map((w) => x.tr.words[w].text).join("") };
+    },
+  },
+  {
+    name: "find_text",
+    description:
+      "在逐字稿裡找一段文字，回所有命中（來源時間、原文）。比對忽略標點與空白，所以「那個那個」找得到「那個，那個」，也可以跨句。用於回答「這集講過幾次 X」或先確認要剪什麼。",
+    inputSchema: {
+      type: "object",
+      properties: { query: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 500 } },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctx();
+      const q = typeof a.query === "string" ? a.query : "";
+      const hits = findText(x.tr, q, { limit: num(a.limit, 200) });
+      return {
+        query: q,
+        count: hits.length,
+        totalMs: Math.round(totalMs(hits)),
+        hits: hits.map((h) => ({ startMs: Math.round(h.startMs), endMs: Math.round(h.endMs), text: h.text, sentenceId: h.sentenceId })),
+        // 沒命中不是錯誤：可能只是這集真的沒講過。順手提供這集真正的口頭禪，省一輪往返。
+        fillers: hits.length ? undefined : fillerCandidates(x.tr).slice(0, 8),
+      };
+    },
+  },
+  {
+    name: "cut_text",
+    description:
+      "把逐字稿裡所有（或指定第幾個）命中的文字剪掉，一次 undo 就能全部還原。用於「把整集的『呃』拿掉」這種批次清理。沒有命中時回 0，不算錯誤。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        occurrences: { type: "array", items: { type: "integer", minimum: 1 }, description: "只剪第幾個（1 起算）；不給就是全部" },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctx();
+      const q = typeof a.query === "string" ? a.query : "";
+      const all = findText(x.tr, q);
+      const picked = Array.isArray(a.occurrences) && a.occurrences.length
+        ? (a.occurrences as unknown[]).map((n) => all[Math.round(Number(n)) - 1]).filter((h) => h != null)
+        : all;
+      if (!picked.length) return { query: q, cut: 0, removedMs: 0, note: all.length ? "指定的序號超出命中範圍" : "逐字稿裡找不到這段文字" };
+      const added = x.d.addManualCuts(
+        x.media.id,
+        picked.map((h) => ({ startMs: h.startMs, endMs: h.endMs, wordIds: h.wordIds, sentenceId: h.sentenceId })),
+        `AI 助手：逐字稿剪除「${q}」`,
+        `AI：剪掉「${q}」×${picked.length}`,
+      );
+      return { query: q, cut: picked.length, added, removedMs: Math.round(totalMs(picked)) };
     },
   },
   {

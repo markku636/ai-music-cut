@@ -663,6 +663,18 @@ const en: Catalog = {
   "剪掉 {s}s": "{s}s removed",
   "改成另一種曲風…": "Change the style...",
   "把這段改成另一種曲風（AI）": "Change the style of this range (AI)",
+  // 逐字稿搜尋與批次剪除（v0.34.0）
+  "在逐字稿裡找…（Enter 跳下一個）": "Find in the transcript... (Enter for the next one)",
+  "沒有命中": "No matches",
+  "上一個（Shift+Enter）": "Previous (Shift+Enter)",
+  "下一個（Enter）": "Next (Enter)",
+  "全部剪掉（{n}）": "Cut all ({n})",
+  "把命中的全部剪掉，一次 undo 就能還原": "Cuts every match; a single undo brings them all back",
+  "關閉搜尋（Esc）": "Close search (Esc)",
+  "這集的口頭禪：": "Verbal tics in this episode:",
+  "逐字稿搜尋：{q}": "Transcript search: {q}",
+  "剪掉全部「{q}」（{n}）": "Cut every “{q}” ({n})",
+  "在逐字稿裡找字（找到可整集一次剪掉）": "Find text in the transcript (then cut every match at once)",
 };
 
 

@@ -100,6 +100,7 @@ pub fn run() {
             commands::render_start,
             commands::render_cancel,
             commands::project_save,
+            commands::write_text_file,
             commands::project_load,
             commands::open_path,
             commands::open_external,

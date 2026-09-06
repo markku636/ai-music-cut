@@ -473,6 +473,20 @@ pub async fn project_save(path: String, doc: serde_json::Value) -> AppResult<()>
     project::save(&path, &doc).await
 }
 
+/// 寫一份純文字檔（節目筆記的 .md）。
+///
+/// 只做這一件事：建好上層資料夾、以 UTF-8 覆寫。**不加 BOM** ——
+/// Markdown 帶 BOM 的話很多靜態網站產生器會把第一行的 `#` 當成內文。
+#[tauri::command]
+pub async fn write_text_file(path: String, content: String) -> AppResult<()> {
+    let p = std::path::PathBuf::from(&path);
+    if let Some(dir) = p.parent() {
+        tokio::fs::create_dir_all(dir).await.map_err(|e| AppError::Io(format!("建立資料夾失敗：{e}")))?;
+    }
+    tokio::fs::write(&p, content.as_bytes()).await.map_err(|e| AppError::Io(format!("寫入失敗：{e}")))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn project_load(path: String) -> AppResult<serde_json::Value> {
     project::load(&path).await

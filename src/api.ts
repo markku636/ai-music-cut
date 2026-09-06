@@ -374,6 +374,8 @@ export const api = {
   renderStart: (jobId: string, src: string, plan: RenderPlan) => invoke<void>("render_start", { jobId, src, plan }),
   renderCancel: (jobId: string) => invoke<void>("render_cancel", { jobId }),
   projectSave: (path: string, doc: unknown) => invoke<void>("project_save", { path, doc }),
+  /** 寫純文字檔（節目筆記的 .md）。不加 BOM。 */
+  writeTextFile: (path: string, content: string) => invoke<void>("write_text_file", { path, content }),
   projectLoad: (path: string) => invoke<unknown>("project_load", { path }),
   openPath: (path: string) => invoke<void>("open_path", { path }),
   openExternal: (url: string) => invoke<void>("open_external", { url }),

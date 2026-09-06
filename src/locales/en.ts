@@ -723,6 +723,26 @@ const en: Catalog = {
   "整支預告底下鋪同一首，頭尾自動淡進淡出，音量 {db} dB。": "One track under the whole promo, faded in and out, at {db} dB.",
   "不加墊樂": "No bed",
   "媒體清單裡只有這一個檔案，沒有東西可以當墊樂。": "This is the only file in the media list, so there is nothing to use as a bed.",
+  // 節目筆記（v0.39.0）
+  "找不到這個音檔": "That audio file could not be found",
+  "還沒有逐字稿：節目筆記是從逐字稿寫出來的，請先跑一次分析": "No transcript yet. Show notes are written from the transcript, so run an analysis first.",
+  "還沒有剪輯結果": "Nothing has been edited yet",
+  "剪完之後沒有留下任何句子": "No sentences survived the edit",
+  "claude 沒有回出可用的節目筆記，再試一次或換個模型": "Claude did not return usable show notes. Try again, or switch models.",
+  "已存成 {p}": "Saved to {p}",
+  "已套用 {n} 個章節（會寫進成品檔案）": "Applied {n} chapters (they are written into the exported file)",
+  "節目筆記": "Show notes",
+  "章節寫成標記": "Turn chapters into markers",
+  "存成 .md": "Save as .md",
+  "已複製 Markdown": "Markdown copied",
+  "複製 Markdown": "Copy Markdown",
+  "讓地端 claude 讀這一集，寫出節目筆記": "Let the local Claude read this episode and write the show notes",
+  "摘要、章節、值得引用的句子、關鍵字。時間戳是**成品**時間，剪掉的段落不會被算進去。": "Summary, chapters, quotable lines and keywords. Timestamps are positions in the finished export; what you cut is not counted.",
+  "產生": "Generate",
+  "claude 正在讀這一集…（40 分鐘的節目大約要一兩分鐘）": "Claude is reading the episode... (a 40-minute show takes a minute or two)",
+  "跳到這裡（成品時間換算回來源）": "Jump here (export time mapped back to the source)",
+  "節錄": "Quotes",
+  "節目筆記（摘要 / 章節 / 節錄）": "Show notes (summary, chapters, quotes)",
 };
 
 

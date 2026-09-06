@@ -206,6 +206,18 @@
    畫面上就有逐筆移除按鈕，塞進剪輯的復原歷史只會讓 Ctrl+Z 難以預期），存檔走 persist.ts。
    實測三段各 3 秒、交越 120 ms：預估 8760 ms、成品 8760 ms，差 0。
 
+5s. **節目筆記**（`analysis/shownotes.ts` + `pipeline/shownotes.ts`）：
+   走 `claude_structured`（帶 JSON schema）而不是聊天 —— 這是一次性的結構化產出，
+   不需要工具迴圈，也不該塞進助手的對話歷史。
+   **這裡唯一難的事情是時間**：逐字稿在來源時間軸上，節目筆記給的是聽眾在成品裡看到的時間，
+   中間隔著整份 EDL。所以餵給 claude 的素材先用 `mapSrcToOut` 換算好、被剪掉的句子直接不餵，
+   它回來之後再對節目長度驗一次。claude 完全不需要知道 EDL 的存在。
+   `normalizeShowNotes` 擋掉四種會出事的回應：時間戳看不懂、超出節目長度、章節沒有遞增、
+   第一個章節不是 0（開頭會有一段沒有章節的空窗）。**寧可丟掉一筆，也不要寫出聽眾按下去
+   跳到空氣的章節。** 章節要寫成標記時再 `mapOutToSrc` 換回來源時間（標記釘在來源上）。
+   實測：成品 8000 ms 的章節 → 來源 12254 ms（正確落在 5–9 秒的剪除區之後）→ 換回來還是 8000 ms，
+   寫進檔案的那一份也一致。
+
 6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
 7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。

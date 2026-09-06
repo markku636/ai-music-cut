@@ -580,6 +580,15 @@ const en: Catalog = {
   "每支麥都收得到別人講話，合起來同一句會聽到兩次 —— 一次清楚、一次糊的。門檻由每一軌自己的能量分布量出來，不是寫死的數字。": "Every mic picks up the other people, so the combined track plays each sentence twice: once clear, once smeared. The threshold is measured from each track's own energy distribution, not a hard-coded number.",
   "套用到 {n} 軌": "applies to {n} track(s)",
   "（{skip} 軌本來就沒有安靜段，跳過）": " ({skip} skipped: no quiet passages to work from)",
+  // 分軌輸出
+  "同時輸出分軌（人聲一個檔、配樂與音效一個檔）": "Also export stems (voice in one file, music and SFX in another)",
+  "三個檔共用同一組響度量測，所以各軌之間的相對音量跟完整混音一致（每一軌各自正規化的話，配樂會被拉到跟人聲一樣大聲）。真實峰值限制器仍然是逐檔套用，所以把兩軌相加不會逐樣本等於完整混音 —— 影片剪接端本來也會重新做一次混音。": "All three files share one loudness measurement, so the levels between stems match the full mix (normalising each stem separately would push the music up to the level of the voice). The true-peak limiter still runs per file, so adding the stems back together will not be sample-identical to the full mix — the video editor re-mixes anyway.",
+  "這一集沒有配樂 / 音效，沒有東西可以分軌": "This episode has no music or SFX, so there is nothing to split out",
+  "分軌輸出 {i}/{n}：{label}": "Stem {i}/{n}: {label}",
+  "分軌輸出完成：{files}": "Stems exported: {files}",
+  "完整混音": "Full mix",
+  "人聲": "Voice",
+  "配樂與音效": "Music & SFX",
 };
 
 

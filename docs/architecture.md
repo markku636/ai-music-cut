@@ -119,6 +119,13 @@
    衰減深度刻意不提供「完全靜音」：串音底下還有房間的空氣聲，切到 0 之後每次換人講話
    都會有一個空間感落差，比留一點串音更明顯。
 
+5l. **分軌輸出**（`pipeline/stems.ts`）：先輸出完整混音拿到 `LoudnormStats`，再用**同一組**
+   量測值輸出人聲軌（`overlays: []`）與配樂軌（`mute_main: true`）。每一軌各自 loudnorm 的話，
+   配樂會被拉到跟人聲一樣大聲，各軌之間的相對音量就跟核可的混音對不上。
+   **不會逐樣本相加等於完整混音** —— 真實峰值限制器逐檔套用，完整混音的峰值比任何單軌都高、
+   被壓的量也不一樣（實測完整混音 mean −16.4 dB、兩軌相加 −14.5 dB）。這跟所有 DAW 的 stem
+   匯出一樣：stem 是給人重新混音的素材，不是母帶的代數分解。UI 上明講，不要宣稱相加相等。
+
 6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
 7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。

@@ -1,6 +1,6 @@
 // 輸出流程：EDL → 響度單元 / 增益 → RenderPlan → Rust（串流剪接 + loudnorm 兩趟）；進度 / 完成事件回報。
 import { listen } from "@tauri-apps/api/event";
-import { api, type RenderDone, type RenderJoin, type RenderOverlay, type RenderPlan, type RenderProgress, type RenderSeg } from "../api";
+import { api, type LoudnormStats, type RenderDone, type RenderJoin, type RenderOverlay, type RenderPlan, type RenderProgress, type RenderSeg } from "../api";
 import type { Edl } from "../analysis/edl/build";
 import { DEFAULT_EDL_OPTIONS } from "../analysis/edl/build";
 import { buildChapters, toFfmetadata, type Chapter } from "../analysis/chapters";
@@ -27,6 +27,10 @@ export interface RenderOptions {
    * 不會寫進「最近一次輸出」—— 驗收要對的是成品，不是預覽檔。
    */
   preview?: boolean;
+  /** 分軌輸出：full = 完整混音、voice = 只有人聲（不含 overlays）、music = 只有 overlays。 */
+  stem?: "full" | "voice" | "music";
+  /** 沿用主混音那一趟的響度量測（分軌一定要帶，各軌才加得回原本的混音）。 */
+  loudnormMeasured?: LoudnormStats | null;
 }
 
 function sep(p: string): string {
@@ -130,7 +134,10 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       out_path: opts.outPath,
       channels,
       ...(chapters.length ? { chapters_meta: toFfmetadata(chapters) } : {}),
-      ...(overlays.length ? { overlays } : {}),
+      // 人聲 stem 不帶 overlays；配樂 stem 把主聲軌靜音
+      ...(overlays.length && opts.stem !== "voice" ? { overlays } : {}),
+      ...(opts.stem === "music" ? { mute_main: true } : {}),
+      ...(opts.loudnormMeasured ? { loudnorm_measured: opts.loudnormMeasured } : {}),
     },
     edl,
     units: units.length,
@@ -179,7 +186,7 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
   void api.clientLog(`[render] done ok=${r.ok} err=${r.error ?? ""} lufs=${r.output_lufs ?? ""}`).catch(() => {});
   if (r.ok) {
     // 預覽檔不算「最近一次輸出」：驗收要對的是成品
-    if (r.out_path && !opts.preview)
+    if (r.out_path && !opts.preview && (opts.stem ?? "full") === "full")
       useVerify.getState().setLastOutput(mediaId, {
         path: r.out_path,
         expectedOutMs: built.expectedOutMs,

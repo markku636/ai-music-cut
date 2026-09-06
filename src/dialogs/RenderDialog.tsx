@@ -6,6 +6,8 @@ import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
 import { pickSaveFile, toast } from "../ui";
 import { useT } from "../i18n";
 import { buildRenderPlan, defaultOutPath, runRender, type RenderFormat } from "../pipeline/render";
+import { renderStems, STEM_LABEL, type StemProgress } from "../pipeline/stems";
+import { useDecisions } from "../store/decisions";
 import { useProject } from "../store/project";
 import { useVerify } from "../store/verify";
 import { useSettings } from "../store/settings";
@@ -19,6 +21,9 @@ export default function RenderDialog({ mediaId, onClose, onVerify }: { mediaId: 
   const [format, setFormat] = useState<RenderFormat>("mp3");
   const [outPath, setOutPath] = useState("");
   const [leveling, setLeveling] = useState(true);
+  const [stems, setStems] = useState(false);
+  const [stemStep, setStemStep] = useState<StemProgress | null>(null);
+  const hasOverlays = useDecisions((s2) => (s2.overlays[mediaId] ?? []).length > 0);
   const [target, setTarget] = useState<number>(projTarget || settings.target_lufs || -16);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<RenderProgress | null>(null);
@@ -41,16 +46,26 @@ export default function RenderDialog({ mediaId, onClose, onVerify }: { mediaId: 
     setBusy(true);
     setDone(null);
     try {
-      const r = await runRender(mediaId, { format, outPath: outPath.trim(), leveling, targetLufs: target }, setProgress);
-      setDone(r);
-      useVerify.getState().clear(mediaId); // 換了成品，舊的驗收報告就不算數
-      if (r.ok) toast.success(t("輸出完成：{lufs} LUFS", { lufs: r.output_lufs?.toFixed(1) ?? "?" }));
-      else if (r.error !== "已取消") toast.error(r.error ?? t("輸出失敗"));
+      const base = { format, outPath: outPath.trim(), leveling, targetLufs: target };
+      if (stems && hasOverlays) {
+        const files = await renderStems(mediaId, base, true, (p) => setStemStep(p));
+        setStemStep(null);
+        useVerify.getState().clear(mediaId);
+        toast.success(t("分軌輸出完成：{files}", { files: files.map((f) => t(STEM_LABEL[f.kind])).join("、") }));
+        setDone({ job_id: "", ok: true, out_path: files[0].path, error: null, input_lufs: null, output_lufs: null, output_tp: null, elapsed_ms: 0 });
+      } else {
+        const r = await runRender(mediaId, base, setProgress);
+        setDone(r);
+        useVerify.getState().clear(mediaId); // 換了成品，舊的驗收報告就不算數
+        if (r.ok) toast.success(t("輸出完成：{lufs} LUFS", { lufs: r.output_lufs?.toFixed(1) ?? "?" }));
+        else if (r.error !== "已取消") toast.error(r.error ?? t("輸出失敗"));
+      }
     } catch (e) {
       toast.error(errMessage(e));
     } finally {
       setBusy(false);
       setProgress(null);
+      setStemStep(null);
     }
   };
 
@@ -152,6 +167,20 @@ export default function RenderDialog({ mediaId, onClose, onVerify }: { mediaId: 
           <input type="checkbox" checked={leveling} onChange={(e) => setLeveling(e.target.checked)} disabled={busy} />
           {t("逐段音量平衡（把忽大忽小的段落拉齊，再整體正規化到目標響度）")}
         </label>
+        <label className={`flex items-center gap-2 ${hasOverlays ? "" : "opacity-45"}`} title={hasOverlays ? undefined : t("這一集沒有配樂 / 音效，沒有東西可以分軌")}>
+          <input type="checkbox" checked={stems && hasOverlays} onChange={(e) => setStems(e.target.checked)} disabled={busy || !hasOverlays} />
+          {t("同時輸出分軌（人聲一個檔、配樂與音效一個檔）")}
+        </label>
+        {stems && hasOverlays && (
+          <p className="text-[11px] text-fg/40 leading-relaxed -mt-1">
+            {t("三個檔共用同一組響度量測，所以各軌之間的相對音量跟完整混音一致（每一軌各自正規化的話，配樂會被拉到跟人聲一樣大聲）。真實峰值限制器仍然是逐檔套用，所以把兩軌相加不會逐樣本等於完整混音 —— 影片剪接端本來也會重新做一次混音。")}
+          </p>
+        )}
+        {stemStep && (
+          <div className="text-xs text-fg/60">
+            {t("分軌輸出 {i}/{n}：{label}", { i: stemStep.index + 1, n: stemStep.total, label: t(STEM_LABEL[stemStep.kind]) })}
+          </div>
+        )}
         {(busy || progress) && (
           <div className="space-y-1">
             <div className="text-xs text-fg/60">{progress ? `${STAGE[progress.stage]} ${Math.round(progress.pct)}%` : t("準備中…")}</div>

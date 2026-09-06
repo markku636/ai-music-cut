@@ -78,6 +78,17 @@ pub struct RenderPlan {
     /// 墊樂 / 音效軌。位置是**成品時間**（剪完之後的時間軸），不是來源時間。
     #[serde(default)]
     pub overlays: Vec<crate::mix::RenderOverlay>,
+    /// 分軌輸出：把主聲軌靜音，只留 overlays（配樂 stem 用）。
+    ///
+    /// 「人聲 stem」不需要這個旗標 —— 把 overlays 清空就是了。
+    #[serde(default)]
+    pub mute_main: bool,
+    /// 已經量好的響度。有值就跳過量測那一趟，直接用它。
+    ///
+    /// 分軌輸出必須用**同一組**量測值，各軌才會加得回原本的混音；
+    /// 每一軌各自 loudnorm 的話，配樂 stem 會被拉到跟人聲一樣大聲。
+    #[serde(default)]
+    pub loudnorm_measured: Option<LoudnormStats>,
 }
 
 #[derive(Serialize, Clone)]
@@ -98,6 +109,8 @@ pub struct RenderDone {
     pub output_lufs: Option<f64>,
     pub output_tp: Option<f64>,
     pub elapsed_ms: u64,
+    /// 這一趟量到的響度，分軌輸出要沿用同一組。
+    pub measured: Option<LoudnormStats>,
 }
 
 pub(crate) fn emit_progress(app: &AppHandle, job_id: &str, stage: &str, pct: f32) {
@@ -483,7 +496,7 @@ pub async fn cut_to_wav(app: &AppHandle, bins: &FfmpegBins, src: &str, plan: &Re
     Ok(written)
 }
 
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LoudnormStats {
     pub input_i: f64,
     pub input_tp: f64,
@@ -647,7 +660,7 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
     let out_path = PathBuf::from(&plan.out_path);
     let out_part = PathBuf::from(format!("{}.part", plan.out_path));
     let wav_path = work_dir.join(format!("concat-{job_id}.wav"));
-    let result: AppResult<(Option<f64>, Option<f64>, f64)> = async {
+    let result: AppResult<(Option<f64>, Option<f64>, f64, LoudnormStats)> = async {
         if plan.segs.is_empty() {
             return Err(AppError::Invalid("沒有可輸出的保留段".into()));
         }
@@ -659,7 +672,7 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
         // 墊樂 / 音效疊在主聲軌上。**一定要在量測之前**：loudnorm 要對的是使用者聽到的
         // 那一份（含配樂），先量主聲軌再加音樂的話成品會比目標響度大。
         let mixed_path = work_dir.join(format!("mixed-{job_id}.wav"));
-        let stage_wav = if plan.overlays.is_empty() {
+        let stage_wav = if plan.overlays.is_empty() && !plan.mute_main {
             wav_path.clone()
         } else {
             crate::mix::mix_overlays(&app, &bins, &plan, &wav_path, &mixed_path, &job_id, &cancel).await?;
@@ -668,6 +681,9 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
         // 預覽跳過量測那一趟（30 分鐘素材要幾十秒），直接進編碼
         let m = if plan.preview {
             LoudnormStats::default()
+        } else if let Some(m0) = plan.loudnorm_measured.clone() {
+            // 分軌輸出：沿用主混音那一趟的量測，各軌才加得回原本的混音
+            m0
         } else {
             emit_progress(&app, &job_id, "measure", 0.0);
             let m = measure(&bins, &stage_wav, &plan, &cancel).await?;
@@ -676,7 +692,7 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
         };
         let (oi, otp) = encode(&app, &bins, &stage_wav, &plan, &m, &out_part, total, &job_id, &cancel).await?;
         tokio::fs::rename(&out_part, &out_path).await?;
-        Ok((oi, otp, m.input_i))
+        Ok((oi, otp, m.input_i, m))
     }
     .await;
     let _ = tokio::fs::remove_file(&wav_path).await;
@@ -685,8 +701,8 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
         let _ = tokio::fs::remove_file(&out_part).await;
     }
     match result {
-        Ok((oi, otp, ii)) => RenderDone { job_id, ok: true, out_path: Some(plan.out_path), error: None, input_lufs: Some(ii), output_lufs: oi, output_tp: otp, elapsed_ms: t0.elapsed().as_millis() as u64 },
-        Err(e) => RenderDone { job_id, ok: false, out_path: None, error: Some(e.message()), input_lufs: None, output_lufs: None, output_tp: None, elapsed_ms: t0.elapsed().as_millis() as u64 },
+        Ok((oi, otp, ii, m)) => RenderDone { job_id, ok: true, out_path: Some(plan.out_path), error: None, input_lufs: Some(ii), output_lufs: oi, output_tp: otp, elapsed_ms: t0.elapsed().as_millis() as u64, measured: Some(m) },
+        Err(e) => RenderDone { job_id, ok: false, out_path: None, error: Some(e.message()), input_lufs: None, output_lufs: None, output_tp: None, elapsed_ms: t0.elapsed().as_millis() as u64, measured: None },
     }
 }
 
@@ -708,6 +724,8 @@ mod tests {
             preview: false,
             chapters_meta: None,
             overlays: vec![],
+            mute_main: false,
+            loudnorm_measured: None,
         }
     }
 

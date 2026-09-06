@@ -171,6 +171,21 @@ export interface RenderPlan {
   chapters_meta?: string;
   /** 墊樂 / 音效軌（位置是成品時間）。 */
   overlays?: RenderOverlay[];
+  /** 分軌輸出：主聲軌靜音，只留 overlays（配樂 stem）。 */
+  mute_main?: boolean;
+  /** 已量好的響度；有值就跳過量測那一趟。分軌一定要沿用主混音的那一組。 */
+  loudnorm_measured?: LoudnormStats | null;
+}
+
+/** loudnorm 第一趟量到的數字。 */
+export interface LoudnormStats {
+  input_i: number;
+  input_tp: number;
+  input_lra: number;
+  input_thresh: number;
+  target_offset: number;
+  output_i: number | null;
+  output_tp: number | null;
 }
 
 /** 串音衰減（ffmpeg agate 的參數；門檻由該軌自己的能量分布量出來）。 */
@@ -203,6 +218,8 @@ export interface RenderDone {
   ok: boolean;
   out_path: string | null;
   error: string | null;
+  /** 這一趟量到的響度（分軌輸出要沿用同一組）。 */
+  measured?: LoudnormStats | null;
   input_lufs: number | null;
   output_lufs: number | null;
   output_tp: number | null;

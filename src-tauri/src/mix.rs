@@ -220,10 +220,12 @@ pub async fn mix_overlays(
             return Err(AppError::Canceled);
         }
         for s in frame.iter_mut() {
-            *s = match samples.next() {
-                Some(Ok(v)) => v,
+            let v = match samples.next() {
+                Some(Ok(x)) => x,
                 _ => 0.0,
             };
+            // 配樂 stem：主聲軌靜音，但仍然要把樣本讀掉（不然時間軸會錯位）
+            *s = if plan.mute_main { 0.0 } else { v };
         }
 
         // 開啟這一 frame 該開始的片段

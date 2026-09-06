@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { BrainCircuit, Link2, ChevronDown, Cog, Disc3, FileMusic, FolderOpen, Info, Keyboard, MicOff, Save, Sparkles, Wand2, WandSparkles, Zap } from "lucide-react";
+import { BrainCircuit, Link2, ChevronDown, Cog, Disc3, FileMusic, FolderOpen, Info, Keyboard, MicOff, Save, Sparkles, Star, Wand2, WandSparkles, Zap } from "lucide-react";
 import Icon from "../ui/Icon";
 import { APP_NAME } from "../brand";
 import { useT } from "../i18n";
@@ -24,6 +24,8 @@ export interface ToolbarProps {
   onMusic: () => void;
   onCleanup: () => void;
   canCleanup: boolean;
+  onHighlights: () => void;
+  canHighlights: boolean;
   onSave: () => void;
   dirty: boolean;
   onHelp: () => void;
@@ -52,6 +54,7 @@ export default function Toolbar(p: ToolbarProps) {
     { icon: <Icon icon={MicOff} size={16} />, label: t("去人聲"), onClick: p.onSeparate, disabled: !p.canSeparate, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Wand2} size={16} />, label: t("修聲（降噪 / 去隆隆 / 齒音）"), onClick: p.onCleanup, disabled: !p.canCleanup, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Zap} size={16} />, label: t("精華片段"), onClick: p.onHighlight, disabled: !p.canHighlight, hint: t("先開啟一個音檔") },
+    { icon: <Icon icon={Star} size={16} />, label: t("精華合輯（串成一支預告）"), onClick: p.onHighlights, disabled: !p.canHighlights, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Link2} size={16} />, label: t("同步麥克風"), onClick: p.onSyncMics, disabled: !p.canSyncMics, hint: t("媒體清單裡要有兩個以上的檔案") },
   ];
   const utilTools: Tool[] = [

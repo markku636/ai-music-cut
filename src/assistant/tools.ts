@@ -7,6 +7,8 @@ import { buildChapters } from "../analysis/chapters";
 import { fillerCandidates, findText, totalMs } from "../analysis/textSearch";
 import { describeCleanup, estimateCleanup, isCleanupActive, normalizeCleanup, CLEANUP_OFF } from "../analysis/cleanup";
 import { useCleanup } from "../store/cleanup";
+import { useHighlights } from "../store/highlights";
+import { normalizeRanges, reelSourceMs } from "../analysis/reel";
 
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutput } from "../analysis/overlays";
 import { analyzeMicSync, combineMics } from "../pipeline/syncMics";
@@ -296,6 +298,57 @@ export const TOOLS: ToolSpec[] = [
         // 重試同一個查詢時講清楚「已經剪過了」，否則模型會以為沒生效而一直重打
         note: added === 0 ? "這些段落先前就已經剪掉了，這次沒有變動" : undefined,
       };
+    },
+  },
+  {
+    name: "list_highlights",
+    description: "列出目前挑好的精華片段（之後可以串成一支預告輸出）。回每段的來源時間、長度與名稱。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      const x = ctxMedia();
+      const list = useHighlights.getState().list(x.media.id);
+      return {
+        count: list.length,
+        mergedCount: normalizeRanges(list).length,
+        totalMs: Math.round(reelSourceMs(list)),
+        highlights: list.map((h) => ({ id: h.id, startMs: Math.round(h.startMs), endMs: Math.round(h.endMs), title: h.title ?? null })),
+      };
+    },
+  },
+  {
+    name: "add_highlight",
+    description:
+      "把一段標成精華（來源時間 ms）。用於「這句很適合放預告」。重疊的段落輸出時會自動合併，所以重複標同一處是安全的。",
+    inputSchema: {
+      type: "object",
+      properties: { startMs: { type: "number" }, endMs: { type: "number" }, title: { type: "string" } },
+      required: ["startMs", "endMs"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctxMedia();
+      const st = num(a.startMs, -1);
+      const en = num(a.endMs, -1);
+      if (st < 0 || en <= st) throw new ToolError("startMs/endMs 無效");
+      const hl = useHighlights.getState();
+      // 已經標過同一段就不再加一筆（agent 會重試）
+      const same = hl.list(x.media.id).find((h) => Math.abs(h.startMs - st) < 20 && Math.abs(h.endMs - en) < 20);
+      if (same) return { id: same.id, added: false, note: "這一段先前就標過了", count: hl.list(x.media.id).length };
+      const id = hl.add(x.media.id, st, en, typeof a.title === "string" ? a.title : undefined);
+      return { id, added: true, count: hl.list(x.media.id).length };
+    },
+  },
+  {
+    name: "remove_highlight",
+    description: "移除一個精華片段（id 來自 list_highlights）。",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+    handler: (a) => {
+      const x = ctxMedia();
+      const hl = useHighlights.getState();
+      const id = typeof a.id === "string" ? a.id : "";
+      const existed = hl.list(x.media.id).some((h) => h.id === id);
+      hl.remove(x.media.id, id);
+      return { removed: existed, count: hl.list(x.media.id).length, note: existed ? undefined : "沒有這個 id（可能先前就移除了）" };
     },
   },
   {

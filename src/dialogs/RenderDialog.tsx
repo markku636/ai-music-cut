@@ -6,6 +6,7 @@ import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
 import { pickSaveFile, toast } from "../ui";
 import { useT } from "../i18n";
 import { clipPath } from "../analysis/clip";
+import { normalizeRanges, reelSourceMs, type ReelRange } from "../analysis/reel";
 import { buildRenderPlan, defaultOutPath, runRender, type RenderFormat } from "../pipeline/render";
 import { renderStems, STEM_LABEL, type StemProgress } from "../pipeline/stems";
 import { useDecisions } from "../store/decisions";
@@ -19,12 +20,15 @@ export default function RenderDialog({
   onClose,
   onVerify,
   range,
+  reel,
 }: {
   mediaId: string;
   onClose: () => void;
   onVerify?: (outPath: string, durationMs: number | null) => void;
   /** 只輸出這一段（來源時間）。有值時預設檔名帶 _clip，而且不寫章節、不做分軌。 */
   range?: { startMs: number; endMs: number } | null;
+  /** 精華合輯：把好幾段不相鄰的範圍串成一支預告（與 range 互斥）。 */
+  reel?: ReelRange[] | null;
 }) {
   const t = useT();
   const media = useProject((s) => s.media.find((m) => m.id === mediaId) ?? null);
@@ -42,10 +46,15 @@ export default function RenderDialog({
   const [done, setDone] = useState<RenderDone | null>(null);
 
   useEffect(() => {
-    if (media) setOutPath(range ? clipPath(defaultOutPath(media, format, settings.output_dir)) : defaultOutPath(media, format, settings.output_dir));
-  }, [media, format, settings.output_dir, range]);
+    if (!media) return;
+    const base = defaultOutPath(media, format, settings.output_dir);
+    setOutPath(reel?.length ? clipPath(base, "_reel") : range ? clipPath(base) : base);
+  }, [media, format, settings.output_dir, range, reel]);
 
-  const built = useMemo(() => (media ? buildRenderPlan(mediaId, { format, outPath, leveling, targetLufs: target, rangeMs: range ?? null }) : null), [media, mediaId, format, outPath, leveling, target, range]);
+  const built = useMemo(
+    () => (media ? buildRenderPlan(mediaId, { format, outPath, leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null }) : null),
+    [media, mediaId, format, outPath, leveling, target, range, reel],
+  );
   const stats = built?.edl.stats;
   const gainRange = useMemo(() => {
     if (!built?.gains.length) return null;
@@ -58,8 +67,8 @@ export default function RenderDialog({
     setBusy(true);
     setDone(null);
     try {
-      const base = { format, outPath: outPath.trim(), leveling, targetLufs: target, rangeMs: range ?? null };
-      if (stems && hasOverlays && !range) {
+      const base = { format, outPath: outPath.trim(), leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null };
+      if (stems && hasOverlays && !range && !reel?.length) {
         const files = await renderStems(mediaId, base, true, (p) => setStemStep(p));
         setStemStep(null);
         useVerify.getState().clear(mediaId);
@@ -175,7 +184,14 @@ export default function RenderDialog({
             </Button>
           </div>
         </Field>
-        {range && (
+        {!!reel?.length && (
+          <div className="rounded-md border border-fg/10 px-3 py-2 text-xs text-fg/70">
+            {t("精華合輯：{n} 段、素材共 {len} 秒，段落之間自動交越。不寫章節、不帶配樂（散落的範圍上「配樂該在哪」沒有定義）。")
+              .replace("{n}", String(normalizeRanges(reel).length))
+              .replace("{len}", (reelSourceMs(reel) / 1000).toFixed(1))}
+          </div>
+        )}
+        {range && !reel?.length && (
           <div className="rounded border border-accent/30 bg-accent/5 px-2 py-1.5 text-[11px] leading-relaxed text-fg/70">
             {t("只輸出 {a}–{b}（{len} 秒）。剪輯、配樂與閃避都照舊，專案不會被改到；章節與分軌只寫進完整成品。", {
               a: formatMs(range.startMs, { millis: false }),
@@ -188,11 +204,11 @@ export default function RenderDialog({
           <input type="checkbox" checked={leveling} onChange={(e) => setLeveling(e.target.checked)} disabled={busy} />
           {t("逐段音量平衡（把忽大忽小的段落拉齊，再整體正規化到目標響度）")}
         </label>
-        <label className={`flex items-center gap-2 ${hasOverlays && !range ? "" : "opacity-45"}`} title={hasOverlays ? undefined : t("這一集沒有配樂 / 音效，沒有東西可以分軌")}>
-          <input type="checkbox" checked={stems && hasOverlays} onChange={(e) => setStems(e.target.checked)} disabled={busy || !hasOverlays || !!range} />
+        <label className={`flex items-center gap-2 ${hasOverlays && !range && !reel?.length ? "" : "opacity-45"}`} title={hasOverlays ? undefined : t("這一集沒有配樂 / 音效，沒有東西可以分軌")}>
+          <input type="checkbox" checked={stems && hasOverlays} onChange={(e) => setStems(e.target.checked)} disabled={busy || !hasOverlays || !!range || !!reel?.length} />
           {t("同時輸出分軌（人聲一個檔、配樂與音效一個檔）")}
         </label>
-        {stems && hasOverlays && !range && (
+        {stems && hasOverlays && !range && !reel?.length && (
           <p className="text-[11px] text-fg/40 leading-relaxed -mt-1">
             {t("三個檔共用同一組響度量測，所以各軌之間的相對音量跟完整混音一致（每一軌各自正規化的話，配樂會被拉到跟人聲一樣大聲）。真實峰值限制器仍然是逐檔套用，所以把兩軌相加不會逐樣本等於完整混音 —— 影片剪接端本來也會重新做一次混音。")}
           </p>

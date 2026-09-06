@@ -5,6 +5,7 @@ import type { Edl } from "../analysis/edl/build";
 import { DEFAULT_EDL_OPTIONS } from "../analysis/edl/build";
 import { buildChapters, toFfmetadata, type Chapter } from "../analysis/chapters";
 import { clipOverlays, clipUnits } from "../analysis/clip";
+import { clipUnitsMulti, normalizeRanges, REEL_CROSSFADE_MS, type ReelRange } from "../analysis/reel";
 import { outputDurationWithOverlays } from "../analysis/overlays";
 import { mapSrcToOut } from "../analysis/edl/map";
 import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
@@ -38,6 +39,11 @@ export interface RenderOptions {
   loudnormMeasured?: LoudnormStats | null;
   /** 修聲；不給就用這個媒體目前存的設定。傳 null 表示這一趟不修聲（A/B 比較用）。 */
   cleanup?: CleanupSpec | null;
+  /**
+   * 精華合輯：把好幾段**不相鄰**的範圍串成一支預告。與 `rangeMs` 互斥（同時給以這個為準）。
+   * 專案不動、章節不寫、配樂不帶（散落的範圍上「配樂該在哪」沒有定義）。
+   */
+  reelRanges?: ReelRange[] | null;
   /**
    * 只輸出這一段（**來源**時間）。剪輯、配樂、閃避全部照舊，只是頭尾被夾掉；
    * 專案本身不動。社群短片用。
@@ -81,13 +87,24 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   const allUnits = splitUnits(edl.keeps, tr?.vad ?? []);
   // 只輸出一段：把響度單元夾在來源範圍內。範圍是連續的，所以只有頭尾會被切，
   // 中間不會出現洞 —— 接點因此可以原樣沿用。
-  const units = opts.rangeMs ? clipUnits(allUnits, opts.rangeMs) : allUnits;
+  // 精華合輯：每個單元帶著自己屬於第幾個範圍，接點才判得出「這裡是範圍交界」
+  const reel = opts.reelRanges?.length ? normalizeRanges(opts.reelRanges) : null;
+  const units = reel ? clipUnitsMulti(allUnits, reel) : opts.rangeMs ? clipUnits(allUnits, opts.rangeMs) : allUnits;
   if (!units.length) return null;
   const measured = local ? measureUnits(units, local) : units.map((u) => ({ ...u, lufs: null, peakDb: 0 }));
   const gains = opts.leveling && local ? planGains(measured, { ...DEFAULT_GAIN_OPTIONS, targetLufs: opts.targetLufs }) : units.map((u) => ({ unitId: u.id, gainDb: 0 }));
   const segs: RenderSeg[] = units.map((u, i) => ({ src_start_ms: u.startMs, src_end_ms: u.endMs, gain_db: gains[i]?.gainDb ?? 0 }));
   const joins: RenderJoin[] = [];
   for (let i = 0; i + 1 < units.length; i++) {
+    // 精華合輯的範圍交界：兩邊在原本的錄音裡毫無關係，一定要交越。
+    // **這一條要排在 keepId 判斷前面** —— 同一段話挑了兩句時 keepId 會相同，
+    // 落到下面就會被當成「同段內的單元邊界」直接對接，聽起來是中間被挖掉一塊。
+    const ri = (units[i] as { rangeIdx?: number }).rangeIdx;
+    const rj = (units[i + 1] as { rangeIdx?: number }).rangeIdx;
+    if (ri !== undefined && rj !== undefined && ri !== rj) {
+      joins.push({ kind: "crossfade", ms: effectiveXfMs(REEL_CROSSFADE_MS, units[i].endMs - units[i].startMs, units[i + 1].endMs - units[i + 1].startMs) });
+      continue;
+    }
     if (units[i].keepId === units[i + 1].keepId) {
       // 同一保留段內的響度單元邊界：直接接，不淡也不重疊
       joins.push({ kind: "seam", ms: 0 });
@@ -119,13 +136,15 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     joins,
   );
   // 章節只寫進完整成品：一段 60 秒的預告不需要章節，而且時間軸原點不一樣
-  const chapters = opts.rangeMs ? [] : buildChapters(useDecisions.getState().markers[mediaId] ?? [], edl, { outDurationMs: mainOutMs });
+  const chapters = opts.rangeMs || reel ? [] : buildChapters(useDecisions.getState().markers[mediaId] ?? [], edl, { outDurationMs: mainOutMs });
   // 墊樂 / 音效。**先夾再轉成 RenderOverlay** —— 夾的邏輯用的是 store 的欄位名，
   // 而且只輸出一段時要連來源進出點一起移（不然音樂會從頭重播）。
   // 配樂的位置是成品時間，所以要先知道選取起點落在成品的哪裡。
   const storeOverlays = useDecisions.getState().overlays[mediaId] ?? [];
   const outOffsetMs = opts.rangeMs ? mapSrcToOut(edl.keeps, opts.rangeMs.startMs) : 0;
-  const kept = opts.rangeMs ? clipOverlays(storeOverlays, outOffsetMs, mainOutMs) : storeOverlays;
+  // 合輯不帶配樂：範圍是散落的，「這段音樂該落在合輯的哪裡」沒有定義。
+  // 硬帶會得到一堆被切碎、對不上任何東西的片段 —— 不如明確地不帶。
+  const kept = reel ? [] : opts.rangeMs ? clipOverlays(storeOverlays, outOffsetMs, mainOutMs) : storeOverlays;
   const clipped: RenderOverlay[] = [];
   for (const o of kept) {
     const srcMedia = proj.media.find((m) => m.id === o.mediaId);

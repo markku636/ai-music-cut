@@ -4,6 +4,9 @@ import { api, errMessage } from "./api";
 import { AUDIO_EXTENSIONS } from "./brand";
 import { installToolBridge } from "./assistant/tools";
 import CleanupDialog from "./dialogs/CleanupDialog";
+import HighlightsDialog from "./dialogs/HighlightsDialog";
+import type { ReelRange } from "./analysis/reel";
+import { useHighlights } from "./store/highlights";
 import HighlightDialog from "./dialogs/HighlightDialog";
 import MusicDialog from "./dialogs/MusicDialog";
 import AboutDialog from "./dialogs/AboutDialog";
@@ -165,6 +168,8 @@ export default function App() {
   const [highlightOpen, setHighlightOpen] = useState(false);
   const [musicOpen, setMusicOpen] = useState(false);
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [reelOpen, setReelOpen] = useState(false);
+  const [renderReel, setRenderReel] = useState<ReelRange[] | null>(null);
   const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
@@ -443,6 +448,8 @@ export default function App() {
         canHighlight={!!active}
         onMusic={() => setMusicOpen(true)}
         onCleanup={() => setCleanupOpen(true)}
+        onHighlights={() => setReelOpen(true)}
+        canHighlights={!!active}
         canCleanup={!!active}
         onSave={() => void saveProject()}
         dirty={dirty}
@@ -484,9 +491,11 @@ export default function App() {
         <RenderDialog
           mediaId={active.id}
           range={renderRange}
+          reel={renderReel}
           onClose={() => {
             setRenderOpen(false);
             setRenderRange(null);
+            setRenderReel(null);
           }}
           onVerify={startVerify}
         />
@@ -497,6 +506,17 @@ export default function App() {
       {highlightOpen && active && <HighlightDialog mediaId={active.id} onClose={() => setHighlightOpen(false)} />}
       {musicOpen && <MusicDialog onClose={() => setMusicOpen(false)} />}
       {cleanupOpen && active && <CleanupDialog mediaId={active.id} onClose={() => setCleanupOpen(false)} />}
+      {reelOpen && active && (
+        <HighlightsDialog
+          mediaId={active.id}
+          onClose={() => setReelOpen(false)}
+          onExport={() => {
+            setRenderReel(useHighlights.getState().list(active.id));
+            setReelOpen(false);
+            setRenderOpen(true);
+          }}
+        />
+      )}
       <UiHost />
     </div>
   );

@@ -1,10 +1,13 @@
-import { Crop, Palette, Play, Repeat, Scissors, Share2, Square, TrendingDown, TrendingUp, VolumeX, X, ZoomIn } from "lucide-react";
+import { Crop, Palette, Play, Repeat, Scissors, Share2, Square, Star, TrendingDown, TrendingUp, VolumeX, X, ZoomIn } from "lucide-react";
 import { useT } from "../i18n";
 import { playRange, stopRange } from "../preview/playerRef";
+import { useHighlights } from "../store/highlights";
 import { usePlayback } from "../store/playback";
+import { useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
 import { formatMs } from "../time";
 import { IconButton } from "../ui/index";
+import { toast } from "../ui";
 import { addEffectOnSelection, clearSelection, cutSelection, keepOnlySelection } from "./selectionActions";
 
 /**
@@ -38,6 +41,16 @@ export default function SelectionBar({ onStyle, onExportRange }: { onStyle?: (st
       <IconButton icon={Repeat} label={t("循環播放選取")} active={loop} onClick={toggleLoop} />
       <span className="w-px h-4 bg-fg/10 mx-0.5" aria-hidden />
       <IconButton icon={Scissors} label={t("剪掉這段（Delete）")} className="text-danger" onClick={() => void cutSelection()} />
+      <IconButton
+        icon={Star}
+        label={t("加進精華片段（之後可以串成一支預告）")}
+        onClick={() => {
+          const id = useProject.getState().activeMediaId;
+          if (!id) return;
+          useHighlights.getState().add(id, selection.startMs, selection.endMs);
+          toast.success(t("已加進精華片段（共 {n} 段）").replace("{n}", String(useHighlights.getState().list(id).length)));
+        }}
+      />
       {onExportRange && (
         <IconButton icon={Share2} label={t("只輸出這一段（社群短片；剪輯與配樂照舊，專案不動）")} onClick={() => onExportRange(selection.startMs, selection.endMs)} />
       )}

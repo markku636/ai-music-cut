@@ -705,6 +705,18 @@ const en: Catalog = {
   "滑過就聽得到（開，Shift+S）": "Skimming on (Shift+S)",
   "滑過波形就聽得到（Shift+S）": "Hear the waveform as you move over it (Shift+S)",
   "滑過波形就聽得到（skimming）開關": "Toggle skimming (hear the waveform as you move over it)",
+  // 精華合輯（v0.37.0）
+  "輸出精華合輯": "Export the reel",
+  "還沒有精華片段": "No highlights yet",
+  "在波形上拖一段，按動作列的星號就會加進來。之後可以把這幾段串成一支預告。": "Drag a range on the waveform and press the star in the action bar. Later you can string those pieces into one promo.",
+  "{n} 段、素材共 {len} 秒；段落之間自動交越 {xf} ms。": "{n} pieces, {len}s of material; a {xf} ms crossfade joins them.",
+  "（有重疊的段落會自動合併）": "(overlapping pieces are merged)",
+  "（可以給它一個名字）": "(give it a name)",
+  "在時間軸上選起來": "Select it on the timeline",
+  "精華合輯：{n} 段、素材共 {len} 秒，段落之間自動交越。不寫章節、不帶配樂（散落的範圍上「配樂該在哪」沒有定義）。": "Reel: {n} pieces, {len}s of material, joined by crossfades. No chapters and no music beds — where a bed belongs across scattered ranges is undefined.",
+  "精華合輯（串成一支預告）": "Highlight reel (string them into a promo)",
+  "加進精華片段（之後可以串成一支預告）": "Add to highlights (string them into a promo later)",
+  "已加進精華片段（共 {n} 段）": "Added to highlights ({n} in total)",
 };
 
 

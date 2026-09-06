@@ -3,9 +3,11 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { BookMarked, Copy, FileText, RefreshCw, Save, Sparkles } from "lucide-react";
 import { api, errMessage } from "../api";
 import { stamp, toMarkdown } from "../analysis/shownotes";
-import { Button, EmptyState, Modal, Spinner } from "../ui/index";
+import { Button, EmptyState, Modal, Select, Spinner } from "../ui/index";
 import { copyToClipboard, toast } from "../ui";
-import { useT } from "../i18n";
+import { useLang, useT } from "../i18n";
+import { isKnownLanguage, languageName, pickableLanguages, resolveOutputLang } from "../analysis/lang";
+import { useTranscript } from "../store/transcript";
 import { generateShowNotes } from "../pipeline/shownotes";
 import { edlFor } from "../pipeline/rules";
 import { mapOutToSrc } from "../analysis/edl/map";
@@ -26,6 +28,11 @@ export default function ShowNotesDialog({ mediaId, onClose }: { mediaId: string;
   const media = useProject((s) => s.media.find((m) => m.id === mediaId) ?? null);
   const setChapters = useDecisions((s) => s.setChapters);
   const seek = usePlayback((s) => s.seek);
+  const uiLang = useLang((s) => s.lang);
+  const aiLang = useLang((s) => s.aiLang);
+  const setAiLang = useLang((s) => s.setAiLang);
+  // 這一集在講什麼語言（ASR 回報的）—— 節目筆記預設跟著它，因為筆記是給聽眾看的
+  const mediaLang = useTranscript((s) => s.byMedia[mediaId]?.language ?? null);
   // 已經產過就直接顯示 —— 重跑一次要 claude 讀完整集，不該因為關掉視窗就重來
   const notes = useShowNotes((s) => s.byMedia[mediaId] ?? null);
   const setNotes = useShowNotes((s) => s.set);
@@ -103,6 +110,23 @@ export default function ShowNotesDialog({ mediaId, onClose }: { mediaId: string;
       }
     >
       <div className="space-y-3 text-sm">
+        {!busy && (
+          <label className="flex flex-wrap items-center gap-2 text-xs text-fg/60">
+            <span className="shrink-0">{t("產出語言")}</span>
+            <Select value={aiLang} onChange={(e) => setAiLang(e.target.value)} className="h-7 text-xs w-auto">
+              <option value="media">{t("跟著節目（{name}）").replace("{name}", languageName(resolveOutputLang("media", mediaLang, uiLang)))}</option>
+              <option value="ui">{t("跟著介面（{name}）").replace("{name}", languageName(resolveOutputLang("ui", null, uiLang)))}</option>
+              {pickableLanguages().map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.name}
+                </option>
+              ))}
+            </Select>
+            {!isKnownLanguage(resolveOutputLang("media", mediaLang, uiLang)) && (
+              <span className="text-warning">{t("這一集的語言沒見過，會用代碼要求 claude 照著寫")}</span>
+            )}
+          </label>
+        )}
         {!notes && !busy && (
           <EmptyState
             icon={Sparkles}

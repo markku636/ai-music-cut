@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { api, errMessage, type ClaudeStreamEvent } from "../api";
-import { replyLanguageLine, useLang } from "../i18n";
+import { uiLanguageLine } from "../i18n";
 import { useSettings } from "./settings";
 
 export interface ToolRow {
@@ -163,7 +163,8 @@ export const useAssistantChat = create<AssistantChatStore>((set, get) => {
         ].slice(-MAX_MSGS),
       }));
       const model = useSettings.getState().s.claude_model || "sonnet";
-      const lang = replyLanguageLine(useLang.getState().lang);
+      // 助手是在跟剪輯的人講話，跟著介面語言
+      const lang = uiLanguageLine();
       const sys = lang ? `${SYSTEM_PROMPT}\n${lang}` : SYSTEM_PROMPT;
       try {
         await api.claudeSend(reqId, text, get().sessionId, model, "agent", sys);

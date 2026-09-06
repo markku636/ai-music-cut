@@ -1,6 +1,7 @@
 import { api } from "../api";
 import { normalizeShowNotes, notesPrompt, notesSource, SHOW_NOTES_SCHEMA, type RawShowNotes, type ShowNotes } from "../analysis/shownotes";
-import { t } from "../i18n";
+import { aiOutputLanguage, t } from "../i18n";
+import { languageName, outputLanguageLine } from "../analysis/lang";
 import { useProject } from "../store/project";
 import { useSettings } from "../store/settings";
 import { useTranscript } from "../store/transcript";
@@ -17,7 +18,7 @@ import { edlFor } from "./rules";
  * 它回來的時間戳再對節目長度驗一次，claude 完全不需要知道 EDL 的存在。
  */
 
-const SYSTEM = "你是 podcast 製作人。只輸出符合 schema 的 JSON，不要加任何說明文字。用繁體中文。";
+const SYSTEM_BASE = "你是 podcast 製作人。只輸出符合 schema 的 JSON，不要加任何說明文字。";
 
 export class ShowNotesError extends Error {}
 
@@ -36,12 +37,16 @@ export async function generateShowNotes(mediaId: string): Promise<ShowNotes> {
   if (!src.length) throw new ShowNotesError(t("剪完之後沒有留下任何句子"));
 
   const durationMs = edl.stats.outMs;
-  const prompt = notesPrompt(src, { title: media.name, durationMs });
+  // 節目筆記是給**聽眾**看的：聽眾講什麼語言就寫什麼語言，不是剪輯的人用什麼介面。
+  // 沒有這一段的話，用繁中介面剪日文節目會拿到一份聽眾看不懂的筆記。
+  const outLang = aiOutputLanguage(tr.language);
+  const langLine = outputLanguageLine(outLang);
+  const prompt = notesPrompt(src, { title: media.name, durationMs, languageLine: langLine });
   const model = useSettings.getState().s.claude_model || null;
 
   let raw: unknown;
   try {
-    raw = await api.claudeStructured(prompt, SHOW_NOTES_SCHEMA, model, SYSTEM, 240_000);
+    raw = await api.claudeStructured(prompt, SHOW_NOTES_SCHEMA, model, `${SYSTEM_BASE}${langLine}`, 240_000);
   } catch (e) {
     throw new ShowNotesError(e instanceof Error ? e.message : String(e));
   }
@@ -49,5 +54,5 @@ export async function generateShowNotes(mediaId: string): Promise<ShowNotes> {
   const notes = normalizeShowNotes((raw ?? {}) as RawShowNotes, durationMs);
   // 全部被驗證擋掉 = claude 沒有給出可用的東西。回一份空的比回一份亂的好，但要說清楚。
   if (!notes.summary && !notes.chapters.length) throw new ShowNotesError(t("claude 沒有回出可用的節目筆記，再試一次或換個模型"));
-  return notes;
+  return { ...notes, language: outLang, languageName: languageName(outLang) };
 }

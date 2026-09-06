@@ -21,6 +21,10 @@ export interface ShowNoteChapter {
 }
 
 export interface ShowNotes {
+  /** 這份筆記寫成哪一種語言（BCP-47 風格代碼）。 */
+  language?: string;
+  /** 給人看的語言名稱。 */
+  languageName?: string;
   summary: string;
   chapters: ShowNoteChapter[];
   quotes: { outMs: number; text: string }[];
@@ -68,18 +72,21 @@ export function notesSource(tr: Transcript | null, edl: Edl | null, opts: { maxC
 }
 
 /** 餵給 claude 的文字：每行一個成品時間戳 + 那句話。 */
-export function notesPrompt(src: NotesSource[], opts: { title?: string; durationMs: number }): string {
+export function notesPrompt(src: NotesSource[], opts: { title?: string; durationMs: number; languageLine?: string }): string {
   const lines = src.map((s) => `[${stamp(s.outMs)}] ${s.text}`).join("\n");
   return [
     `這是一集 podcast 剪完之後的逐字稿。每一行前面的時間戳是**成品**裡的位置（聽眾按下播放之後的時間）。`,
     `節目長度 ${stamp(opts.durationMs)}。${opts.title ? `檔名：${opts.title}` : ""}`,
     ``,
     `請產生節目筆記：`,
-    `- summary：150–250 字的繁體中文摘要，講這一集在談什麼、聽眾會得到什麼。不要寫「本集」開頭的公式句。`,
+    `- summary：150–250 字的摘要，講這一集在談什麼、聽眾會得到什麼。不要寫「本集」開頭的公式句。`,
     `- chapters：5–10 個章節。標題要具體（「來賓怎麼開始寫程式」勝過「訪談」），≤ 14 字。`,
     `  時間戳**只能用上面出現過的**，而且必須遞增。第一個章節從 00:00 開始。`,
     `- quotes：2–4 句最值得引用的原話，逐字照抄，附上它的時間戳。`,
     `- keywords：5–8 個關鍵字。`,
+    ``,
+    // 語言指示放在**最後**：夾在一堆規則中間的指示比較容易被忽略掉
+    opts.languageLine ? `\n所有輸出（summary / chapters / quotes / keywords）都用同一種語言。${opts.languageLine}` : "",
     ``,
     `逐字稿：`,
     lines,

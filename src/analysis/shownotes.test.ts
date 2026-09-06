@@ -102,6 +102,29 @@ describe("notesPrompt", () => {
   });
 });
 
+describe("notesPrompt 的語言指示", () => {
+  it("有語言指示時會出現在 prompt 裡", () => {
+    const p = notesPrompt([{ outMs: 0, text: "hello" }], { durationMs: 60_000, languageLine: "Write in English." });
+    expect(p).toContain("Write in English.");
+  });
+
+  it("指示放在逐字稿之前（夾在規則中間容易被忽略）", () => {
+    const p = notesPrompt([{ outMs: 0, text: "hello" }], { durationMs: 60_000, languageLine: "日本語で書いてください。" });
+    // 用小節標題（開頭那句話也有「逐字稿」兩個字，indexOf 會抓到那個）
+    expect(p.indexOf("日本語")).toBeLessThan(p.lastIndexOf("逐字稿："));
+  });
+
+  it("沒給指示時不會留下空行殘骸", () => {
+    const p = notesPrompt([{ outMs: 0, text: "hello" }], { durationMs: 60_000 });
+    expect(p).not.toContain("都用同一種語言");
+  });
+
+  it("prompt 本文不再寫死繁體中文", () => {
+    const p = notesPrompt([{ outMs: 0, text: "hello" }], { durationMs: 60_000 });
+    expect(p).not.toContain("繁體中文");
+  });
+});
+
 describe("normalizeShowNotes", () => {
   const DUR = 600_000;
 

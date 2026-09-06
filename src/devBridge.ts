@@ -11,6 +11,7 @@ import { tickCount, tickRunning } from "./preview/ticker";
 import { useDecisions } from "./store/decisions";
 import { usePlayback } from "./store/playback";
 import { skimStatus, skimTo } from "./preview/skimPlayer";
+import { useLang } from "./i18n";
 import { useCleanup } from "./store/cleanup";
 import { useHighlights } from "./store/highlights";
 import { useShowNotes } from "./store/showNotes";
@@ -55,6 +56,7 @@ export interface DevBridge {
   cleanup: typeof useCleanup;
   highlights: typeof useHighlights;
   showNotes: typeof useShowNotes;
+  lang: typeof useLang;
   transcript: typeof useTranscript;
   seams: () => SeamInfo[];
 }
@@ -119,6 +121,7 @@ export function installDevBridge() {
     cleanup: useCleanup,
     highlights: useHighlights,
     showNotes: useShowNotes,
+    lang: useLang,
     transcript: useTranscript,
     seams: () => {
       const id = useProject.getState().activeMediaId;

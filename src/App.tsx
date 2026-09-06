@@ -6,6 +6,7 @@ import { installToolBridge } from "./assistant/tools";
 import CleanupDialog from "./dialogs/CleanupDialog";
 import HighlightsDialog from "./dialogs/HighlightsDialog";
 import ShowNotesDialog from "./dialogs/ShowNotesDialog";
+import AutoCutDialog from "./dialogs/AutoCutDialog";
 import type { ReelRange } from "./analysis/reel";
 import { useHighlights } from "./store/highlights";
 import HighlightDialog from "./dialogs/HighlightDialog";
@@ -173,6 +174,7 @@ export default function App() {
   const [renderReel, setRenderReel] = useState<ReelRange[] | null>(null);
   const [reelBed, setReelBed] = useState<string | null>(null);
   const [notesOpen, setNotesOpen] = useState(false);
+  const [autoCutOpen, setAutoCutOpen] = useState(false);
   const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
@@ -469,6 +471,8 @@ export default function App() {
         canHighlights={!!active}
         onShowNotes={() => setNotesOpen(true)}
         canShowNotes={!!active}
+        onAutoCut={() => setAutoCutOpen(true)}
+        canAutoCut={!!active}
         canCleanup={!!active}
         onSave={() => void saveProject()}
         dirty={dirty}
@@ -526,6 +530,7 @@ export default function App() {
       {syncOpen && <SyncDialog onClose={() => setSyncOpen(false)} />}
       {highlightOpen && active && <HighlightDialog mediaId={active.id} onClose={() => setHighlightOpen(false)} />}
       {musicOpen && <MusicDialog onClose={() => setMusicOpen(false)} />}
+      {autoCutOpen && active && <AutoCutDialog mediaId={active.id} onClose={() => setAutoCutOpen(false)} />}
       {notesOpen && active && <ShowNotesDialog mediaId={active.id} onClose={() => setNotesOpen(false)} />}
       {cleanupOpen && active && <CleanupDialog mediaId={active.id} onClose={() => setCleanupOpen(false)} />}
       {reelOpen && active && (

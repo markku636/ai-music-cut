@@ -8,7 +8,7 @@ import { JUDGE_SCHEMA } from "../analysis/llm/schema";
 import { validateJudge, type ValidatedJudge } from "../analysis/llm/validate";
 import { makeWindows } from "../analysis/llm/windows";
 import type { Candidate } from "../analysis/types";
-import { replyLanguageLine, t, useLang } from "../i18n";
+import { t, uiLanguageLine } from "../i18n";
 import { useDecisions } from "../store/decisions";
 import { newJobId, useJobs } from "../store/jobs";
 import { useProject } from "../store/project";
@@ -60,7 +60,8 @@ export async function runJudge(mediaId: string): Promise<void> {
   const rec = (useProject.getState().analysis[mediaId] ?? {}) as Record<string, unknown>;
   const cache = { ...((rec.llm as Record<string, CachedWindow> | undefined) ?? {}) };
   const model = useSettings.getState().s.claude_model || "sonnet";
-  const lang = replyLanguageLine(useLang.getState().lang);
+  // 判讀理由是給**剪輯的人**看的，所以跟著介面語言，不跟著節目語言
+  const lang = uiLanguageLine();
   const sys = lang ? `${EDITOR_SYSTEM_PROMPT}\n${lang}` : EDITOR_SYSTEM_PROMPT;
   const reviewSys = lang ? `${REVIEWER_SYSTEM_PROMPT}\n${lang}` : REVIEWER_SYSTEM_PROMPT;
   const st = useSettings.getState().s;

@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Cog } from "lucide-react";
-import { api, errMessage, type AppSettings } from "../api";
+import { api, errMessage, type AppSettings, type LocalAsrStatus } from "../api";
 import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
-import { pickDirectory, pickOpenFile, toast } from "../ui";
+import { copyToClipboard, pickDirectory, pickOpenFile, toast } from "../ui";
 import { useT } from "../i18n";
 import { ffmpegSourceLabel } from "../ffmpegSource";
 import { useUi, type Density } from "../store/ui";
@@ -266,6 +266,16 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
                 {t("分析後自動用 Claude 判讀自然度")}
               </label>
             </Field>
+            <Field
+              label={t("逐字稿來源")}
+              hint={t("ttls 是把音檔上傳到伺服器轉寫；本機是用你電腦上的 faster-whisper，不上傳、不需要金鑰，但第一次會下載模型。")}
+            >
+              <Select value={draft.asr_source || "ttls"} onChange={(e) => void commit({ asr_source: e.target.value })}>
+                <option value="ttls">{t("ttls 伺服器（上傳）")}</option>
+                <option value="local">{t("本機 faster-whisper（不上傳）")}</option>
+              </Select>
+            </Field>
+            {(draft.asr_source || "ttls") === "local" && <LocalAsrStatusRow />}
             <Field label={t("辨識語言")}>
               <Select value={draft.asr_language} onChange={(e) => void commit({ asr_language: e.target.value })}>
                 <option value="zh">中文（zh/en 混講）</option>
@@ -320,5 +330,59 @@ export default function SettingsDialog({ open, focus = null, onClose }: { open: 
         </Section>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * 本機辨識的可用狀態。
+ *
+ * 刻意**現場探測**而不是相信設定值：使用者可能在別的地方裝好了 python 套件，
+ * 也可能剛移除。這一格要回答的是「現在按下分析會不會動」，不是「我以為裝了沒」。
+ */
+function LocalAsrStatusRow() {
+  const t = useT();
+  const [st, setSt] = useState<LocalAsrStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const probe = async () => {
+    setBusy(true);
+    try {
+      setSt(await api.localAsrDetect());
+    } catch {
+      setSt(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    void probe();
+  }, []);
+
+  const ready = st?.python && st?.faster_whisper;
+  return (
+    <div className="rounded-md border border-fg/10 px-3 py-2 text-[11px] space-y-1.5">
+      <div className="flex items-center gap-2">
+        <span className={ready ? "text-success" : "text-warning"}>{ready ? t("可以使用") : t("尚未就緒")}</span>
+        <span className="text-fg/45">
+          {st ? `Python ${st.python ? (st.python_version ?? "OK") : t("找不到")} · faster-whisper ${st.faster_whisper ? "OK" : t("未安裝")}` : t("檢查中…")}
+        </span>
+        <Button size="sm" variant="ghost" className="ml-auto" loading={busy} onClick={() => void probe()}>
+          {t("重新檢查")}
+        </Button>
+      </div>
+      {st && !st.python && <div className="text-fg/60">{t("先安裝 Python 3.9 以上，並確認它在 PATH 上。")}</div>}
+      {st && st.python && !st.faster_whisper && (
+        <div className="space-y-1">
+          <div className="text-fg/60">{t("在終端機執行這一行，裝好之後按「重新檢查」：")}</div>
+          <div className="flex items-center gap-1">
+            <code className="flex-1 rounded bg-inset px-2 py-1 font-mono text-[11px] select-all">{st.install_hint}</code>
+            <Button size="sm" variant="ghost" onClick={() => void copyToClipboard(st.install_hint, t("已複製"))}>
+              {t("複製")}
+            </Button>
+          </div>
+          <div className="text-fg/45">{t("第一次分析時會自動下載模型（large-v3 約 1 GB），之後就不用了。沒有顯示卡也跑得動，只是比較慢。")}</div>
+        </div>
+      )}
+    </div>
   );
 }

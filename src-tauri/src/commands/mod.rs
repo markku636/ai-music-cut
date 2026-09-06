@@ -487,6 +487,24 @@ pub async fn write_text_file(path: String, content: String) -> AppResult<()> {
     Ok(())
 }
 
+/// 本機辨識的可用狀態（設定畫面用）。
+#[tauri::command]
+pub async fn local_asr_detect() -> crate::local_asr::LocalAsrStatus {
+    crate::local_asr::detect().await
+}
+
+/// 用本機 faster-whisper 轉寫；回傳與 ttls 相同形狀的逐字稿文件。
+#[tauri::command]
+pub async fn local_asr_transcribe(
+    app: tauri::AppHandle,
+    job_id: String,
+    audio_path: String,
+    model: String,
+    language: String,
+) -> AppResult<serde_json::Value> {
+    crate::local_asr::transcribe(app, job_id, audio_path, model, language).await
+}
+
 #[tauri::command]
 pub async fn project_load(path: String) -> AppResult<serde_json::Value> {
     project::load(&path).await

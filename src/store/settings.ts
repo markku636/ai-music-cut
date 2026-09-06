@@ -7,6 +7,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ffmpeg_path: null,
   claude_model: "sonnet",
   agent_backend: "claude",
+  asr_source: "ttls",
   prompt_overrides: {},
   claude_review_model: "haiku",
   judge_roles: "editor+reviewer",

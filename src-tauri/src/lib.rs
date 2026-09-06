@@ -1,6 +1,7 @@
 mod agent;
 mod cleanup;
 mod codex;
+mod local_asr;
 mod commands;
 mod error;
 mod ffmpeg;
@@ -107,6 +108,8 @@ pub fn run() {
             commands::open_external,
             agent::claude_detect,
             agent::codex_detect,
+            commands::local_asr_detect,
+            commands::local_asr_transcribe,
             agent::claude_send,
             agent::claude_cancel,
             agent::claude_structured,

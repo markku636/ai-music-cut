@@ -88,6 +88,14 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
           return cached as ServerTranscript;
         }
       }
+      // 本機辨識：不上傳、不需要金鑰。整條流程唯一的硬依賴就是那台轉寫伺服器，
+      // 這條路讓沒有它的人也能用完整功能（候選、逐字稿、章節、驗收都靠逐字稿）。
+      if ((settings.asr_source || "ttls") === "local") {
+        step(t("本機辨識中…（第一次會先下載模型）"), null, "", "transcribe");
+        const doc = (await api.localAsrTranscribe(jobId, prep.upload_path, settings.asr_model, settings.asr_language)) as ServerTranscript;
+        await api.mediaCacheWriteTranscript(fp, doc).catch(() => {});
+        return doc;
+      }
       step(t("上傳到 ttls 轉寫…"), null, "", "transcribe");
       ttlsJobId = await withBackoff(
         () => withVramRetry(() => api.ttlsTranscribeStart(prep.upload_path, settings.asr_language, settings.asr_model, settings.hotwords), (m) => step(m, null, "", "transcribe")),

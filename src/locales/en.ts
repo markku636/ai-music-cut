@@ -890,6 +890,20 @@ const en: Catalog = {
   "檔案位置": "File locations",
   "隱藏檔案位置": "Hide file locations",
   "MIT 授權 · Tauri + React 打造": "MIT licence - built with Tauri + React",
+  // 本機辨識（v0.49.0）
+  "逐字稿來源": "Transcript source",
+  "ttls 是把音檔上傳到伺服器轉寫；本機是用你電腦上的 faster-whisper，不上傳、不需要金鑰，但第一次會下載模型。": "ttls uploads the audio to a server to transcribe it. Local uses faster-whisper on your own machine: nothing is uploaded and no key is needed, but the model downloads the first time.",
+  "ttls 伺服器（上傳）": "ttls server (uploads)",
+  "本機 faster-whisper（不上傳）": "Local faster-whisper (no upload)",
+  "本機辨識中…（第一次會先下載模型）": "Transcribing locally... (the model downloads the first time)",
+  "可以使用": "Ready",
+  "尚未就緒": "Not ready",
+  "找不到": "not found",
+  "重新檢查": "Re-check",
+  "先安裝 Python 3.9 以上，並確認它在 PATH 上。": "Install Python 3.9 or newer and make sure it is on your PATH.",
+  "在終端機執行這一行，裝好之後按「重新檢查」：": "Run this in a terminal, then press Re-check:",
+  "第一次分析時會自動下載模型（large-v3 約 1 GB），之後就不用了。沒有顯示卡也跑得動，只是比較慢。": "The model downloads automatically on the first analysis (large-v3 is about 1 GB); after that it is reused. It runs without a GPU, just slower.",
+  "找不到 python，無法用本機辨識": "Python not found, so local transcription cannot run",
 };
 
 

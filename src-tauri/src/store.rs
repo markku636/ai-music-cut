@@ -16,6 +16,10 @@ pub const SETTINGS_FILE: &str = "settings.json";
 pub const TTLS_KEY_ACCOUNT: &str = "ttls-api-key";
 
 /// App 全域設定（磁碟格式）。**沒有任何 secret 欄位**——金鑰在 keychain。
+fn default_asr_source() -> String {
+    "ttls".to_string()
+}
+
 fn default_agent_backend() -> String {
     "claude".to_string()
 }
@@ -41,6 +45,9 @@ pub struct AppSettings {
     pub output_dir: Option<String>,
     pub lang: String,
     pub judge_enabled: bool,
+    /// 逐字稿來源："ttls"（預設）或 "local"（本機 faster-whisper）。
+    #[serde(default = "default_asr_source")]
+    pub asr_source: String,
     pub asr_language: String,
     pub asr_model: String,
     pub hotwords: String,
@@ -65,6 +72,7 @@ impl Default for AppSettings {
             output_dir: None,
             lang: "zh-TW".to_string(),
             judge_enabled: true,
+            asr_source: default_asr_source(),
             asr_language: "zh".to_string(),
             asr_model: "auto".to_string(),
             hotwords: String::new(),

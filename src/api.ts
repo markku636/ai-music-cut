@@ -8,6 +8,8 @@ export interface AppSettings {
   claude_model: string;
   /** 結構化產出的 CLI："claude" 或 "codex"。 */
   agent_backend: string;
+  /** 逐字稿來源："ttls"（預設，上傳到伺服器）或 "local"（本機 faster-whisper）。 */
+  asr_source: string;
   claude_review_model: string;
   /** "editor" | "editor+reviewer" */
   judge_roles: string;
@@ -192,6 +194,14 @@ export interface CleanupPlan {
   denoise_db: number;
   noise_floor_db: number;
   deess_amount: number;
+}
+
+/** 本機辨識的可用狀態。 */
+export interface LocalAsrStatus {
+  python: boolean;
+  python_version: string | null;
+  faster_whisper: boolean;
+  install_hint: string;
 }
 
 /** loudnorm 第一趟量到的數字。 */
@@ -385,6 +395,10 @@ export const api = {
   openExternal: (url: string) => invoke<void>("open_external", { url }),
   claudeDetect: () => invoke<ClaudeStatus>("claude_detect"),
   codexDetect: () => invoke<ClaudeStatus>("codex_detect"),
+  localAsrDetect: () => invoke<LocalAsrStatus>("local_asr_detect"),
+  /** 本機 faster-whisper 轉寫；回傳與 ttls 相同形狀的逐字稿。 */
+  localAsrTranscribe: (jobId: string, audioPath: string, model: string, language: string) =>
+    invoke<unknown>("local_asr_transcribe", { jobId, audioPath, model, language }),
   claudeSend: (reqId: string, prompt: string, sessionId: string | null, model: string | null, mode: "agent" | "advise", systemPrompt: string | null) =>
     invoke<void>("claude_send", { reqId, prompt, sessionId, model, mode, systemPrompt }),
   claudeCancel: (reqId: string) => invoke<void>("claude_cancel", { reqId }),

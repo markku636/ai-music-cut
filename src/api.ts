@@ -175,6 +175,19 @@ export interface RenderPlan {
   mute_main?: boolean;
   /** 已量好的響度；有值就跳過量測那一趟。分軌一定要沿用主混音的那一組。 */
   loudnorm_measured?: LoudnormStats | null;
+  /**
+   * 修聲（去隆隆 / 降噪 / 齒音）。濾鏡字串在 Rust 端組（`cleanup.rs`），這裡只送數字。
+   * 這條鏈會同時進響度量測與編碼兩趟 —— 只進編碼那趟的話成品響度會偏。
+   */
+  cleanup?: CleanupPlan | null;
+}
+
+/** 與 `analysis/cleanup.ts` 的 CleanupSpec 同一組數字，欄名用 Rust 的 snake_case。 */
+export interface CleanupPlan {
+  rumble_hz: number;
+  denoise_db: number;
+  noise_floor_db: number;
+  deess_amount: number;
 }
 
 /** loudnorm 第一趟量到的數字。 */

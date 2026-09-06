@@ -3,6 +3,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, errMessage } from "./api";
 import { AUDIO_EXTENSIONS } from "./brand";
 import { installToolBridge } from "./assistant/tools";
+import CleanupDialog from "./dialogs/CleanupDialog";
 import HighlightDialog from "./dialogs/HighlightDialog";
 import MusicDialog from "./dialogs/MusicDialog";
 import AboutDialog from "./dialogs/AboutDialog";
@@ -163,6 +164,7 @@ export default function App() {
   const [syncOpen, setSyncOpen] = useState(false);
   const [highlightOpen, setHighlightOpen] = useState(false);
   const [musicOpen, setMusicOpen] = useState(false);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
@@ -439,6 +441,8 @@ export default function App() {
         onHighlight={() => setHighlightOpen(true)}
         canHighlight={!!active}
         onMusic={() => setMusicOpen(true)}
+        onCleanup={() => setCleanupOpen(true)}
+        canCleanup={!!active}
         onSave={() => void saveProject()}
         dirty={dirty}
         onHelp={() => setHelpOpen(true)}
@@ -491,6 +495,7 @@ export default function App() {
       {syncOpen && <SyncDialog onClose={() => setSyncOpen(false)} />}
       {highlightOpen && active && <HighlightDialog mediaId={active.id} onClose={() => setHighlightOpen(false)} />}
       {musicOpen && <MusicDialog onClose={() => setMusicOpen(false)} />}
+      {cleanupOpen && active && <CleanupDialog mediaId={active.id} onClose={() => setCleanupOpen(false)} />}
       <UiHost />
     </div>
   );

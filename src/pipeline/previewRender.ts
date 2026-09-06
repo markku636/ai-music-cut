@@ -17,6 +17,8 @@ function planFingerprint(plan: RenderPlan): string {
     j: plan.joins.map((x) => [x.kind, Math.round(x.ms * 100)]),
     e: plan.effects.map((x) => [x.kind, Math.round(x.start_ms * 100), Math.round(x.end_ms * 100), Math.round((x.db ?? 0) * 100)]),
     c: plan.channels,
+    // 修聲改了聽起來就不一樣 —— 沒進指紋的話，調完降噪按預覽會拿到上一份快取檔
+    n: plan.cleanup ? [plan.cleanup.rumble_hz, plan.cleanup.denoise_db, plan.cleanup.noise_floor_db, Math.round(plan.cleanup.deess_amount * 100)] : 0,
   });
 }
 

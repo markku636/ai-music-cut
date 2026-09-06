@@ -5,6 +5,9 @@ import { api, type McpToolCall, type McpToolDef } from "../api";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState, type MarkerKind } from "../analysis/types";
 import { buildChapters } from "../analysis/chapters";
 import { fillerCandidates, findText, totalMs } from "../analysis/textSearch";
+import { describeCleanup, estimateCleanup, isCleanupActive, normalizeCleanup, CLEANUP_OFF } from "../analysis/cleanup";
+import { useCleanup } from "../store/cleanup";
+
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutput } from "../analysis/overlays";
 import { analyzeMicSync, combineMics } from "../pipeline/syncMics";
 import type { EffectKind } from "../analysis/effects";
@@ -293,6 +296,61 @@ export const TOOLS: ToolSpec[] = [
         // 重試同一個查詢時講清楚「已經剪過了」，否則模型會以為沒生效而一直重打
         note: added === 0 ? "這些段落先前就已經剪掉了，這次沒有變動" : undefined,
       };
+    },
+  },
+  {
+    name: "get_cleanup",
+    description:
+      "看這個音檔的底噪量測與目前的修聲設定（去隆隆 / 降噪 / 齒音）。回建議值與「值不值得降噪」的判斷。不用先分析也能呼叫，只是沒分析就量不到底噪。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      const x = ctxMedia();
+      const local = useTranscript.getState().local[x.media.id] ?? null;
+      const est = estimateCleanup(local);
+      const current = useCleanup.getState().get(x.media.id);
+      return {
+        measured: local ? { floorDb: +est.floorDb.toFixed(1), speechDb: +est.speechDb.toFixed(1), marginDb: +est.marginDb.toFixed(1) } : null,
+        worthDenoise: est.worthDenoise,
+        suggested: est.suggested,
+        current,
+        currentDescription: describeCleanup(current),
+        summary: est.summary,
+      };
+    },
+  },
+  {
+    name: "set_cleanup",
+    description:
+      "設定修聲。只給要改的欄位，其他沿用目前的設定。`useSuggested: true` 直接套建議值；`off: true` 全部關掉。修聲在響度正規化之前套用，輸出與預覽都會生效。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        useSuggested: { type: "boolean" },
+        off: { type: "boolean" },
+        rumbleHz: { type: "number", description: "高通截止 Hz，0 = 關" },
+        denoiseDb: { type: "number", description: "降噪量 dB，0 = 關；超過 18 安靜處會出現水聲" },
+        deessAmount: { type: "number", description: "齒音抑制 0–1，0 = 關" },
+      },
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctxMedia();
+      const cl = useCleanup.getState();
+      if (a.off === true) {
+        cl.set(x.media.id, null);
+        return { cleanup: null, description: describeCleanup(null) };
+      }
+      const local = useTranscript.getState().local[x.media.id] ?? null;
+      const base = a.useSuggested === true ? estimateCleanup(local).suggested : (cl.get(x.media.id) ?? CLEANUP_OFF);
+      const next = normalizeCleanup({
+        ...base,
+        ...(typeof a.rumbleHz === "number" ? { rumbleHz: a.rumbleHz } : {}),
+        ...(typeof a.denoiseDb === "number" ? { denoiseDb: a.denoiseDb } : {}),
+        ...(typeof a.deessAmount === "number" ? { deessAmount: a.deessAmount } : {}),
+      });
+      cl.set(x.media.id, isCleanupActive(next) ? next : null);
+      const saved = cl.get(x.media.id);
+      return { cleanup: saved, description: describeCleanup(saved) };
     },
   },
   {

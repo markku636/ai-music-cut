@@ -83,6 +83,9 @@ pub struct RenderPlan {
     /// 「人聲 stem」不需要這個旗標 —— 把 overlays 清空就是了。
     #[serde(default)]
     pub mute_main: bool,
+    /// 修聲（底噪 / 隆隆 / 齒音）。會同時進量測與編碼兩趟。
+    #[serde(default)]
+    pub cleanup: Option<crate::cleanup::CleanupSpec>,
     /// 已經量好的響度。有值就跳過量測那一趟，直接用它。
     ///
     /// 分軌輸出必須用**同一組**量測值，各軌才會加得回原本的混音；
@@ -535,7 +538,10 @@ pub async fn measure(bins: &FfmpegBins, wav_path: &Path, plan: &RenderPlan, canc
     let mut c = proc::cmd(&bins.ffmpeg);
     c.args(["-nostdin", "-hide_banner", "-i"]);
     c.arg(wav_path);
-    c.args(["-af", &format!("{}:print_format=json", loudnorm_base(plan)), "-f", "null", "-"]);
+    // 修聲要**在量測之前**發生：loudnorm 是 linear=true，pass 1 量到的數字直接決定
+    // pass 2 要套多少增益。這裡不修、編碼時才修，成品響度就會偏掉。
+    let af = crate::cleanup::prepend_cleanup(plan.cleanup.as_ref(), &format!("{}:print_format=json", loudnorm_base(plan)));
+    c.args(["-af", &af, "-f", "null", "-"]);
     c.stdout(Stdio::null()).stderr(Stdio::piped()).kill_on_drop(true);
     let mut child = c.spawn().map_err(|e| AppError::Ffmpeg(format!("ffmpeg 啟動失敗：{e}")))?;
     let mut stderr = child.stderr.take().expect("stderr");
@@ -571,19 +577,26 @@ pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &
     // podcast 升成雙聲道（檔案大一倍、內容完全一樣）。
     let layout = if plan.channels <= 1 { "aformat=channel_layouts=mono" } else { "aformat=channel_layouts=stereo" };
     let filter = if plan.preview {
-        // 預覽：不跑 loudnorm（那要先量測一趟，30 分鐘素材要幾十秒），只留 limiter 防爆
-        format!("alimiter=limit={limit:.4}:attack=5:release=50:level=false,{layout}")
+        // 預覽：不跑 loudnorm（那要先量測一趟，30 分鐘素材要幾十秒），只留 limiter 防爆。
+        // 修聲照樣要套 —— 預覽的用途就是讓人聽修聲有沒有效。
+        crate::cleanup::prepend_cleanup(
+            plan.cleanup.as_ref(),
+            &format!("alimiter=limit={limit:.4}:attack=5:release=50:level=false,{layout}"),
+        )
     } else {
-        format!(
-            "{}:measured_I={:.2}:measured_TP={:.2}:measured_LRA={:.2}:measured_thresh={:.2}:offset={:.2}:linear=true:print_format=json,alimiter=limit={:.4}:attack=5:release=50:level=false,{}",
-            loudnorm_base(plan),
-            m.input_i,
-            m.input_tp,
-            m.input_lra,
-            m.input_thresh,
-            m.target_offset,
-            limit,
-            layout
+        crate::cleanup::prepend_cleanup(
+            plan.cleanup.as_ref(),
+            &format!(
+                "{}:measured_I={:.2}:measured_TP={:.2}:measured_LRA={:.2}:measured_thresh={:.2}:offset={:.2}:linear=true:print_format=json,alimiter=limit={:.4}:attack=5:release=50:level=false,{}",
+                loudnorm_base(plan),
+                m.input_i,
+                m.input_tp,
+                m.input_lra,
+                m.input_thresh,
+                m.target_offset,
+                limit,
+                layout
+            ),
         )
     };
     let (fmt, codec): (&str, Vec<&str>) = if plan.preview {
@@ -726,6 +739,7 @@ mod tests {
             overlays: vec![],
             mute_main: false,
             loudnorm_measured: None,
+            cleanup: None,
         }
     }
 

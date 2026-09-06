@@ -11,6 +11,8 @@ import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
 import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
 import { splitUnits } from "../analysis/loudness/units";
 import { t } from "../i18n";
+import { isCleanupActive, type CleanupSpec } from "../analysis/cleanup";
+import { useCleanup } from "../store/cleanup";
 import { useDecisions } from "../store/decisions";
 import { newJobId, useJobs } from "../store/jobs";
 import { useProject, type MediaItem } from "../store/project";
@@ -34,6 +36,8 @@ export interface RenderOptions {
   stem?: "full" | "voice" | "music";
   /** 沿用主混音那一趟的響度量測（分軌一定要帶，各軌才加得回原本的混音）。 */
   loudnormMeasured?: LoudnormStats | null;
+  /** 修聲；不給就用這個媒體目前存的設定。傳 null 表示這一趟不修聲（A/B 比較用）。 */
+  cleanup?: CleanupSpec | null;
   /**
    * 只輸出這一段（**來源**時間）。剪輯、配樂、閃避全部照舊，只是頭尾被夾掉；
    * 專案本身不動。社群短片用。
@@ -139,6 +143,17 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     });
   }
 
+  // 修聲：opts 明講就用它（傳 null = 這一趟不修，A/B 比較用），沒講就用這個媒體存的設定
+  const cleanupSpec: CleanupSpec | null = opts.cleanup !== undefined ? opts.cleanup : useCleanup.getState().get(mediaId);
+  const cleanupPlan = isCleanupActive(cleanupSpec)
+    ? {
+        rumble_hz: cleanupSpec!.rumbleHz,
+        denoise_db: cleanupSpec!.denoiseDb,
+        noise_floor_db: cleanupSpec!.noiseFloorDb,
+        deess_amount: cleanupSpec!.deessAmount,
+      }
+    : null;
+
   return {
     plan: {
       segs,
@@ -157,6 +172,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       ...(clipped.length && opts.stem !== "voice" ? { overlays: clipped } : {}),
       ...(opts.stem === "music" ? { mute_main: true } : {}),
       ...(opts.loudnormMeasured ? { loudnorm_measured: opts.loudnormMeasured } : {}),
+      ...(cleanupPlan ? { cleanup: cleanupPlan } : {}),
     },
     edl,
     units: units.length,

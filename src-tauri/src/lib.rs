@@ -1,4 +1,5 @@
 mod agent;
+mod cleanup;
 mod commands;
 mod error;
 mod ffmpeg;

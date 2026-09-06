@@ -38,6 +38,15 @@ describe("previewKey", () => {
     expect(previewKey(plan({ joins: [{ kind: "crossfade", ms: 24 }] }))).not.toBe(previewKey(plan()));
   });
 
+  it("修聲一動就換鍵 —— 不然調完降噪按預覽會拿到上一份快取檔", () => {
+    const clean = { rumble_hz: 80, denoise_db: 12, noise_floor_db: -48, deess_amount: 0 };
+    expect(previewKey(plan({ cleanup: clean }))).not.toBe(previewKey(plan()));
+    expect(previewKey(plan({ cleanup: { ...clean, denoise_db: 13 } }))).not.toBe(previewKey(plan({ cleanup: clean })));
+    expect(previewKey(plan({ cleanup: { ...clean, deess_amount: 0.3 } }))).not.toBe(previewKey(plan({ cleanup: clean })));
+    // 同一組設定要命中同一把鍵
+    expect(previewKey(plan({ cleanup: { ...clean } }))).toBe(previewKey(plan({ cleanup: clean })));
+  });
+
   it("效果一動就換鍵", () => {
     expect(previewKey(plan({ effects: [{ kind: "mute", start_ms: 100, end_ms: 200, db: 0 }] }))).not.toBe(previewKey(plan()));
   });

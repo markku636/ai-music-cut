@@ -25,6 +25,8 @@ AI Podcast / 音訊粗剪桌面工具（Tauri 2 + React 18），也有 CLI。丟
 
 ![screenshot](docs/screenshot.png)
 
+*上圖：修剪工具作用中、精準修剪器攤開一個切點（留白 500 ms）、右側是時間軸索引（章節 / 標記 / 待辦 / 接縫）、波形下緣是配樂軌（黃色那條是人聲閃避的音量控制點，可以直接拖）與音效軌。*
+
 ## 需求
 
 - Windows 10/11（macOS / Linux 可自行建置，見 `.github/workflows/release.yml`）

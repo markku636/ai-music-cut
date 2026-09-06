@@ -943,8 +943,14 @@ export function toolDefs(): McpToolDef[] {
   return TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
 }
 
+/** 上一個還活著的監聽。多裝一次就把舊的拆掉 —— 同一個事件被聽兩次 = 每個工具跑兩次。 */
+let activeBridge: (() => void) | null = null;
+
 /** 登記工具並開始接工具呼叫事件；回 unlisten。 */
 export async function installToolBridge(): Promise<() => void> {
+  // 就算呼叫端漏了 cleanup（StrictMode 的非同步競態最容易漏），這裡也只會留下一個監聽
+  activeBridge?.();
+  activeBridge = null;
   try {
     await api.mcpSetTools(toolDefs());
   } catch {
@@ -961,5 +967,9 @@ export async function installToolBridge(): Promise<() => void> {
       await api.mcpToolResult(id, null, e instanceof Error ? e.message : String(e)).catch(() => {});
     }
   });
-  return un;
+  activeBridge = () => {
+    activeBridge = null;
+    un();
+  };
+  return activeBridge;
 }

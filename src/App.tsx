@@ -286,14 +286,28 @@ export default function App() {
   }, []);
 
   // MCP 工具橋：登記工具目錄並接工具呼叫。
+  //
+  // `cancelled` 不是可有可無的防禦，是這裡的**正確性條件**：
+  // installToolBridge 是非同步的，而 StrictMode 在 dev 會 mount → unmount → mount。
+  // 第一次的 cleanup 跑在 promise 解決之前，那時 `un` 還是 undefined，於是**什麼都沒拆**；
+  // 兩次註冊都留下來，之後每一個 MCP 工具呼叫都會被執行**兩次**。
+  //
+  // 冪等的工具看不出來（所以這個 bug 藏了很久），但 lift_selection 這種會「消耗」狀態的
+  // 就會炸：第一次成功並清掉選取，第二次找不到選取而丟例外，兩個結果在 Rust 那邊搶同一個
+  // oneshot —— 實測 claude 連續三次收到「目前沒有選取」，但靜音效果其實每次都做出來了。
   useEffect(() => {
     let un: (() => void) | undefined;
+    let cancelled = false;
     installToolBridge()
       .then((f) => {
-        un = f;
+        if (cancelled) f(); // 已經卸載了：立刻拆掉，不要留下沒人管的監聽
+        else un = f;
       })
       .catch(() => {});
-    return () => un?.();
+    return () => {
+      cancelled = true;
+      un?.();
+    };
   }, []);
 
   // 拖放音檔 / 專案檔。

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Edl } from "./edl/build";
 import type { LocalAnalysis } from "./peaks";
-import { auditSplice, ncc } from "./spliceAudit";
+import { auditSplice, ncc, LAG_OK_MS } from "./spliceAudit";
 
 const PPS = 200;
 
@@ -76,5 +76,63 @@ describe("spliceAudit", () => {
     const c = Float32Array.from([5, 4, 3, 2, 1]);
     expect(ncc(a, b)).toBeCloseTo(1, 5);
     expect(ncc(a, c)).toBeCloseTo(-1, 5);
+  });
+});
+
+describe("成品混了配樂時的判定", () => {
+  // 成品多了音樂，能量包絡本來就跟來源不一樣（實測相關係數從 0.9 掉到 0.17），
+  // 但位置仍然正確。硬用原本的門檻會對一個好成品報假警報。
+  const edl = {
+    keeps: [
+      { id: 0, srcStartMs: 0, srcEndMs: 4000, outStartMs: 0, outEndMs: 4000, gainDb: 0 },
+      { id: 1, srcStartMs: 6000, srcEndMs: 10000, outStartMs: 4000, outEndMs: 8000, gainDb: 0 },
+    ],
+    joins: [],
+    stats: { removedMs: 2000, keptMs: 8000, outMs: 8000, cutCount: 1, byKind: {} },
+    downgrades: [],
+    removals: [],
+  } as unknown as Parameters<typeof auditSplice>[2];
+
+  function envelope(fill: (i: number) => number): LocalAnalysis {
+    const n = 2400; // 12 秒 @200pps
+    const rms = new Uint8Array(n);
+    for (let i = 0; i < n; i++) rms[i] = Math.max(0, Math.min(255, Math.round(fill(i))));
+    return {
+      version: 3, pps: 200, hopMs: 100, sampleRate: 48000, nBuckets: n, nWin: 0,
+      totalSamples: 0, durationMs: (n / 200) * 1000,
+      mins: new Int8Array(n), maxs: new Int8Array(n), rmsU8: rms, win: new Float32Array(0), zx: null,
+    };
+  }
+
+  // 人聲：快速起伏。配樂：另一條慢很多的曲線（與人聲無關）。
+  const voice = (i: number) => 120 + 90 * Math.sin(i / 3.1) * Math.sin(i / 11.7);
+  const musicBed = (i: number) => 100 + 60 * Math.sin(i / 137);
+  const src = envelope(voice);
+  // 成品 = 人聲被壓小 + 音樂蓋上去：位置一樣，但包絡的形狀被音樂主導
+  const mixedOut = envelope((i) => voice(i) * 0.3 + musicBed(i));
+
+  it("波形被配樂蓋掉但位置對時，混了配樂就算通過", () => {
+    const strict = auditSplice(src, mixedOut, edl);
+    const mixed = auditSplice(src, mixedOut, edl, { mixedWithOverlays: true });
+    // 嚴格模式會因為相關係數不夠而報錯
+    expect(strict.okCount).toBeLessThan(strict.segments.length);
+    // 但位移其實是對的，所以混音模式應該全過
+    expect(mixed.segments.every((x) => Math.abs(x.lagMs) <= LAG_OK_MS)).toBe(true);
+    expect(mixed.okCount).toBe(mixed.segments.length);
+    expect(mixed.mixedWithOverlays).toBe(true);
+    expect(mixed.summary).toContain("只比對位置");
+  });
+
+  it("就算混了配樂，位置真的錯掉還是要抓出來", () => {
+    // 成品整體晚了 300 ms（遠超過 LAG_OK_MS）
+    const shifted = envelope((i) => voice(i - 60) * 0.3 + musicBed(i));
+    const r = auditSplice(src, shifted, edl, { mixedWithOverlays: true });
+    expect(r.okCount).toBeLessThan(r.segments.length);
+  });
+
+  it("沒有配樂時維持原本的嚴格判定", () => {
+    const r = auditSplice(src, mixedOut, edl);
+    expect(r.mixedWithOverlays).toBe(false);
+    expect(r.okCount).toBeLessThan(r.segments.length);
   });
 });

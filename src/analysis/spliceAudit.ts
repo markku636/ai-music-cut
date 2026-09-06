@@ -22,6 +22,15 @@ export interface SpliceAuditReport {
   /** 成品實際長度 − EDL 預估（ms）。 */
   durationDeltaMs: number;
   summary: string;
+  /**
+   * 成品混了配樂 / 音效 —— 這時**只看位置不看波形相似度**。
+   *
+   * 比對的是「成品的能量包絡」對「來源的能量包絡」。成品多了音樂，包絡本來就不一樣，
+   * 相關係數會掉到 0.2 以下 —— 那不是接錯段，是成品裡真的多了東西。
+   * 實測同一份剪輯：沒有配樂時三段都 0.80–0.92，加上 −18 dB 的配樂之後掉到 0.17，
+   * 但位移仍然是 5 ms（位置完全正確）。硬用原本的門檻就會對一個好成品報三個假警報。
+   */
+  mixedWithOverlays: boolean;
 }
 
 /** 互相關搜尋範圍（±ms）與判定門檻。 */
@@ -70,6 +79,8 @@ export interface AuditOptions {
   /** 每段取多長來比對（ms）。取段落中段，避開接縫模糊區。 */
   probeMs?: number;
   maxLagMs?: number;
+  /** 成品混了配樂 / 音效 —— 只看位置，不看波形相似度（見 SpliceAuditReport.mixedWithOverlays）。 */
+  mixedWithOverlays?: boolean;
 }
 
 /**
@@ -77,6 +88,8 @@ export interface AuditOptions {
  * corr 低 = 這段不是那段（接錯 / 漏段）；lag 大 = 位置偏了（多剪或少剪）。
  */
 export function auditSplice(src: LocalAnalysis, out: LocalAnalysis, edl: Edl, opts: AuditOptions = {}): SpliceAuditReport {
+  // 成品混了配樂時，波形相似度不再是有效的訊號，只有位移還算數
+  const mixed = opts.mixedWithOverlays === true;
   const probeMs = opts.probeMs ?? 1500;
   const maxLagMs = opts.maxLagMs ?? MAX_LAG_MS;
   const perMs = src.pps / 1000;
@@ -103,7 +116,7 @@ export function auditSplice(src: LocalAnalysis, out: LocalAnalysis, edl: Edl, op
         bestLag = lagMs;
       }
     }
-    const ok = bestCorr >= CORR_OK && Math.abs(bestLag) <= LAG_OK_MS;
+    const ok = (mixed || bestCorr >= CORR_OK) && Math.abs(bestLag) <= LAG_OK_MS;
     segments.push({
       index: i,
       srcStartMs: k.srcStartMs,
@@ -124,10 +137,11 @@ export function auditSplice(src: LocalAnalysis, out: LocalAnalysis, edl: Edl, op
   // 用它比對成品每刀會差 20–150 ms，摘要裡的「時長差」就永遠是個假警訊。
   const expected = edl.stats.outMs;
   const durationDeltaMs = Math.round(out.durationMs - expected);
+  const note = mixed ? "；成品含配樂，只比對位置" : "";
   const summary = segments.length
     ? okCount === segments.length
-      ? `${segments.length} 段全部對得上（時長差 ${(durationDeltaMs / 1000).toFixed(2)} 秒）`
-      : `${segments.length} 段中有 ${segments.length - okCount} 段對不上（時長差 ${(durationDeltaMs / 1000).toFixed(2)} 秒）`
+      ? `${segments.length} 段全部對得上（時長差 ${(durationDeltaMs / 1000).toFixed(2)} 秒${note}）`
+      : `${segments.length} 段中有 ${segments.length - okCount} 段對不上（時長差 ${(durationDeltaMs / 1000).toFixed(2)} 秒${note}）`
     : "沒有足夠長的段落可比對";
-  return { segments, okCount, durationDeltaMs, summary };
+  return { segments, okCount, durationDeltaMs, summary, mixedWithOverlays: mixed };
 }

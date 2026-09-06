@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { BrainCircuit, Link2, ChevronDown, Cog, Disc3, FileMusic, FileText, FolderOpen, Info, Keyboard, MessageSquareOff, MicOff, Save, ScrollText, Sparkles, Star, Wand2, WandSparkles, Zap } from "lucide-react";
+import { BrainCircuit, Link2, ChevronDown, Cog, Disc3, FileMusic, FileText, FolderOpen, Info, Keyboard, Layers, MessageSquareOff, MicOff, Save, ScrollText, Sparkles, Star, Wand2, WandSparkles, Zap } from "lucide-react";
 import Icon from "../ui/Icon";
 import { APP_NAME } from "../brand";
 import { useT } from "../i18n";
@@ -32,6 +32,8 @@ export interface ToolbarProps {
   canAutoCut: boolean;
   onPrompts: () => void;
   onFillers: () => void;
+  onBatch: () => void;
+  canBatch: boolean;
   onSave: () => void;
   dirty: boolean;
   onHelp: () => void;
@@ -56,6 +58,7 @@ export default function Toolbar(p: ToolbarProps) {
   ];
   const aiTools: Tool[] = [
     { icon: <Icon icon={BrainCircuit} size={16} />, label: t("AI 判讀（剪輯＋審核）"), onClick: p.onJudge, disabled: !p.canJudge, hint: t("先完成分析") },
+    { icon: <Icon icon={Layers} size={16} />, label: t("批次處理（多集一次跑完）"), onClick: p.onBatch, disabled: !p.canBatch, hint: t("媒體清單裡要有檔案") },
     { icon: <Icon icon={MessageSquareOff} size={16} />, label: t("贅字管理（依詞整群處理）"), onClick: p.onFillers, disabled: false },
     { icon: <Icon icon={Sparkles} size={16} />, label: t("AI 助手"), onClick: () => useAssistant.getState().toggle(), disabled: false, active: assistantOpen },
     { icon: <Icon icon={Disc3} size={16} />, label: t("AI 配樂"), onClick: p.onMusic, disabled: false },

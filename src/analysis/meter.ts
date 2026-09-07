@@ -59,7 +59,10 @@ export function verdict(r: MeterReading, targetLufs: number, tolerance = 3): Met
 export function meanLufs(a: LocalAnalysis | null | undefined, fromMs: number, toMs: number): number {
   if (!a || a.nWin === 0 || toMs <= fromMs) return SILENCE_LUFS;
   const lo = Math.max(0, Math.floor(fromMs / a.hopMs));
-  const hi = Math.min(a.nWin - 1, Math.floor(toMs / a.hopMs));
+  // toMs 是**開區間**的右端：用 floor(toMs/hop) 會把「起點剛好在 toMs」的那個視窗
+  // 也算進來，等於多讀了範圍外的一格。短選取上這一格足以改變結論。
+  // （loudness/gating.ts 的 integratedLufs 本來就是這樣寫的，兩邊要一致。）
+  const hi = Math.min(a.nWin - 1, Math.floor((toMs - 1) / a.hopMs));
   let sum = 0;
   let n = 0;
   for (let i = lo; i <= hi; i++) {
@@ -75,4 +78,39 @@ export function meanLufs(a: LocalAnalysis | null | undefined, fromMs: number, to
 export function meterFraction(lufs: number, floor = -40, ceil = -5): number {
   if (!Number.isFinite(lufs) || lufs <= floor) return 0;
   return Math.min(1, Math.max(0, (lufs - floor) / (ceil - floor)));
+}
+
+export interface RangeLoudness {
+  /** 這段的平均響度（LUFS）；量不到回 SILENCE_LUFS。 */
+  lufs: number;
+  /** 跟整集比差幾 LU（正數＝比整集大聲）。整集量不到時是 null。 */
+  vsEpisodeLu: number | null;
+  /** 跟目標比差幾 LU。 */
+  vsTargetLu: number;
+  silent: boolean;
+}
+
+/**
+ * 選取範圍的響度，以及它跟整集、跟目標的差距。
+ *
+ * **重點是「差多少」不是絕對值。** 剪的時候會問的是「來賓這段是不是比整集小聲」——
+ * 一個 −22 LUFS 的數字本身回答不了那個問題，要跟整集比才知道。
+ *
+ * 整集的基準用同一支 `meanLufs` 算（能量平均、跳過靜音），兩邊定義一致才比得起來。
+ */
+export function rangeLoudness(
+  a: LocalAnalysis | null | undefined,
+  fromMs: number,
+  toMs: number,
+  targetLufs: number,
+): RangeLoudness {
+  const lufs = meanLufs(a, fromMs, toMs);
+  const whole = a ? meanLufs(a, 0, a.durationMs) : SILENCE_LUFS;
+  const silent = lufs <= SILENCE_LUFS;
+  return {
+    lufs,
+    vsEpisodeLu: silent || whole <= SILENCE_LUFS ? null : lufs - whole,
+    vsTargetLu: silent ? 0 : lufs - targetLufs,
+    silent,
+  };
 }

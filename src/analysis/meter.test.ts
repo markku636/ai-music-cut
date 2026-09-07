@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { meanLufs, meterAt, meterFraction, SILENCE_LUFS, verdict } from "./meter";
+import { meanLufs, meterAt, meterFraction, rangeLoudness, SILENCE_LUFS, verdict } from "./meter";
 import type { LocalAnalysis } from "./peaks";
 
 /** 每個視窗 [momentary, shortTerm, rmsDb]。 */
@@ -116,6 +116,15 @@ describe("meanLufs", () => {
     expect(meanLufs(analysis([[-90, -90, -120]]), 0, 100)).toBe(SILENCE_LUFS);
   });
 
+  it("**右端是開區間**：不要多讀範圍外的那一格（短選取上足以改變結論）", () => {
+    // hop 100ms、前 10 格 -20、後 10 格 -14。選 0–1000 只該涵蓋第 0..9 格
+    const ep2 = analysis([
+      ...Array.from({ length: 10 }, () => [-20, -20, -25] as [number, number, number]),
+      ...Array.from({ length: 10 }, () => [-14, -14, -19] as [number, number, number]),
+    ]);
+    expect(meanLufs(ep2, 0, 1000)).toBeCloseTo(-20, 5);
+  });
+
   it("範圍不正或沒有資料時不會炸", () => {
     expect(meanLufs(a, 200, 100)).toBe(SILENCE_LUFS);
     expect(meanLufs(null, 0, 100)).toBe(SILENCE_LUFS);
@@ -137,5 +146,46 @@ describe("meterFraction", () => {
   it("非有限值回 0", () => {
     expect(meterFraction(Number.NEGATIVE_INFINITY)).toBe(0);
     expect(meterFraction(Number.NaN)).toBe(0);
+  });
+});
+
+describe("rangeLoudness", () => {
+  // 整集：前 10 個視窗 -20、後 10 個 -14（整集能量平均會落在兩者之間）
+  const ep = analysis([
+    ...Array.from({ length: 10 }, () => [-20, -20, -25] as [number, number, number]),
+    ...Array.from({ length: 10 }, () => [-14, -14, -19] as [number, number, number]),
+  ]);
+
+  it("回這段的平均，以及**跟整集差多少**（會問的是差距不是絕對值）", () => {
+    const quiet = rangeLoudness(ep, 0, 1000, -16);
+    expect(quiet.lufs).toBeCloseTo(-20, 1);
+    expect(quiet.vsEpisodeLu).not.toBeNull();
+    expect(quiet.vsEpisodeLu!).toBeLessThan(0); // 比整集小聲
+  });
+
+  it("大聲的那一段是正數", () => {
+    const loud = rangeLoudness(ep, 1000, 2000, -16);
+    expect(loud.lufs).toBeCloseTo(-14, 1);
+    expect(loud.vsEpisodeLu!).toBeGreaterThan(0);
+  });
+
+  it("跟目標的差距也算出來", () => {
+    expect(rangeLoudness(ep, 1000, 2000, -16).vsTargetLu).toBeCloseTo(2, 1);
+  });
+
+  it("整段靜音時標成 silent，而且不要謊報一個差距", () => {
+    const silent = analysis([[-90, -90, -120]]);
+    const r = rangeLoudness(silent, 0, 100, -16);
+    expect(r.silent).toBe(true);
+    expect(r.vsEpisodeLu).toBeNull();
+    expect(r.vsTargetLu).toBe(0);
+  });
+
+  it("沒有分析資料時不會炸", () => {
+    expect(rangeLoudness(null, 0, 1000, -16).silent).toBe(true);
+  });
+
+  it("範圍反了也不會炸", () => {
+    expect(rangeLoudness(ep, 1000, 0, -16).silent).toBe(true);
   });
 });

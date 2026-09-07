@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { meterAt, meterFraction, SILENCE_LUFS, verdict, type MeterReading } from "../analysis/meter";
+import { meterAt, meterFraction, rangeLoudness, SILENCE_LUFS, verdict, type MeterReading } from "../analysis/meter";
 import { useT } from "../i18n";
 import { useProject } from "../store/project";
+import { useTimeline } from "../store/timeline";
 import { useTranscript } from "../store/transcript";
 import { getPlayer } from "./playerRef";
 import { subscribeTick, TICK_PRIORITY } from "./ticker";
@@ -24,6 +25,7 @@ export default function LoudnessMeter() {
   const targetLufs = useProject((s) => s.targetLufs);
   const local = useTranscript((s) => (mediaId ? s.local[mediaId] : undefined));
   const [r, setR] = useState<MeterReading | null>(null);
+  const selection = useTimeline((s) => s.selection);
 
   useEffect(() => {
     if (!local) {
@@ -40,6 +42,10 @@ export default function LoudnessMeter() {
   }, [local]);
 
   if (!local || !r) return null;
+
+  // 選了一段就順便回答「這段跟整集比大聲還小聲」——
+  // 剪的時候會問的是差距，不是絕對值
+  const sel = selection ? rangeLoudness(local, selection.startMs, selection.endMs, targetLufs || -16) : null;
 
   const v = verdict(r, targetLufs || -16);
   const tone =
@@ -67,6 +73,15 @@ export default function LoudnessMeter() {
         {fmt(r.shortTerm)}
       </span>
       <span className="mono text-[10px] tabular-nums text-fg/30">{fmt(r.momentary)}</span>
+      {sel && !sel.silent && (
+        <span
+          className="mono ml-1 shrink-0 rounded bg-fg/8 px-1 text-[10px] tabular-nums text-fg/55"
+          title={t("選取範圍的平均響度（能量平均，跳過靜音）。括號裡是跟整集比差幾 LU —— 正數代表這段比整集大聲。", {})}
+        >
+          {t("選取 {lufs}", { lufs: sel.lufs.toFixed(1) })}
+          {sel.vsEpisodeLu != null && ` (${sel.vsEpisodeLu >= 0 ? "+" : ""}${sel.vsEpisodeLu.toFixed(1)})`}
+        </span>
+      )}
     </span>
   );
 }

@@ -21,6 +21,7 @@ import BeatGridOverlay from "./BeatGridOverlay";
 import PlayheadOverlay from "./PlayheadOverlay";
 import MarkerOverlay from "./MarkerOverlay";
 import SpeakerRibbon from "./SpeakerRibbon";
+import SnapIndicator from "./SnapIndicator";
 import OverlayLanes from "./OverlayLanes";
 import TrimHandles from "./TrimHandles";
 import type { SeamInfo } from "./trimActions";
@@ -521,6 +522,7 @@ export default function Timeline(props: TimelineProps) {
         <TrimHandles ws={wsInstance} height={waveH + RULER_H} seams={props.seams} onOpenMenu={props.onSeamMenu} />
         <MarkerOverlay ws={wsInstance} markers={props.markers} onMove={props.onMarkerMove} onMenu={props.onMarkerMenu} />
         <SpeakerRibbon ws={wsInstance} turns={props.speakerTurns} speakers={props.speakers} top={RULER_H + waveH - 4} />
+        <SnapIndicator ws={wsInstance} height={waveH + RULER_H} />
         <OverlayLanes
           ws={wsInstance}
           edl={props.edl}

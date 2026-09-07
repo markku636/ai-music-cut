@@ -12,6 +12,11 @@ import { useShowNotes } from "../store/showNotes";
 import { generateShowNotes } from "../pipeline/shownotes";
 import { stamp, toMarkdown } from "../analysis/shownotes";
 import { normalizeRanges, reelSourceMs } from "../analysis/reel";
+import { assignWords, speakerStats, type Speaker } from "../analysis/speakers";
+import { levelSpread, speakerLevels, spreadVerdict } from "../analysis/speakerLevel";
+import { groupFillers } from "../analysis/fillerStats";
+import { buildCues, CAPTION_EXT, renderCaptions, type CaptionFormat } from "../analysis/captions";
+import { splitByChapters, totalOutMs } from "../analysis/splitExport";
 
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutput } from "../analysis/overlays";
 import { analyzeMicSync, combineMics } from "../pipeline/syncMics";
@@ -849,6 +854,214 @@ export const TOOLS: ToolSpec[] = [
       if (!Object.keys(patch).length) throw new ToolError("沒有任何要改的欄位");
       x.d.updateOverlay(x.media.id, id, patch, "調整配樂");
       return { updated: id, patch };
+    },
+  },
+  {
+    name: "list_speakers",
+    description:
+      "這一集有哪些講者、各講了多久、佔比、以及每個人的**來源**響度與落差。沒有講者標籤時回空陣列（一人一軌的素材用 sync_mics 合併時會自動指派；單軌只能用 assign_speaker 手動標）。佔比算的是「佔有人在講的時間」，不是佔整集長度。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      const m = ctxMedia();
+      const st = m.d.speakers[m.media.id];
+      if (!st?.list.length) return { speakers: [], note: "這一集還沒有講者標籤" };
+      const local = useTranscript.getState().local[m.media.id];
+      const levels = speakerLevels(local, st.turns, st.list);
+      const stats = speakerStats(st.turns, st.list);
+      const spread = levelSpread(levels);
+      return {
+        speakers: stats.map((x) => {
+          const sp = st.list.find((y) => y.id === x.speakerId);
+          const lv = levels.find((y) => y.speakerId === x.speakerId);
+          return {
+            id: x.speakerId,
+            label: sp?.label ?? x.speakerId,
+            ms: Math.round(x.ms),
+            at: formatMs(x.ms, { millis: false }),
+            share: Number(x.share.toFixed(3)),
+            turns: x.turns,
+            longestMs: Math.round(x.longestMs),
+            sourceLufs: lv?.lufs == null ? null : Number(lv.lufs.toFixed(1)),
+          };
+        }),
+        spreadDb: spread == null ? null : Number(spread.toFixed(1)),
+        spreadVerdict: spreadVerdict(spread),
+        note: spreadVerdict(spread) === "bad" ? "落差超過 6 dB，這不是後製能好好補救的：把小聲的那位拉起來，底噪與房間聲會一起拉起來" : undefined,
+      };
+    },
+  },
+  {
+    name: "assign_speaker",
+    description:
+      "把一段時間指派給某個講者（來源時間）。`speaker` 給的是名字，找不到就新增一個。`speaker` 給 null 代表清掉這段的講者。單軌素材唯一能標講者的方式，也是自動指派標錯時的補救。一次 undo 可還原。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        startMs: { type: "integer", minimum: 0 },
+        endMs: { type: "integer", minimum: 0 },
+        speaker: { type: ["string", "null"], description: "講者名字；找不到就新增。null = 清掉這段" },
+      },
+      required: ["startMs", "endMs"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const m = ctxMedia();
+      const startMs = num(a.startMs, 0);
+      const endMs = num(a.endMs, 0);
+      if (endMs <= startMs) throw new ToolError("endMs 必須大於 startMs");
+      const label = typeof a.speaker === "string" ? a.speaker.trim() : null;
+      let id: string | null = null;
+      if (label) {
+        const cur = m.d.speakers[m.media.id]?.list ?? [];
+        const same = cur.filter((x) => x.label === label);
+        if (same.length > 1) throw new ToolError(`有 ${same.length} 位講者都叫「${label}」，分不出要指派給誰 —— 先用 rename_speaker 改掉其中一位。`);
+        id = same[0] ? same[0].id : m.d.addSpeaker(m.media.id, label);
+      }
+      m.d.assignSpeaker(m.media.id, startMs, endMs, id, label ? `AI：${label} ${formatMs(startMs, { millis: false })}` : "AI：清除講者");
+      const st = useDecisions.getState().speakers[m.media.id];
+      return {
+        assigned: label ?? null,
+        speakerId: id,
+        startMs,
+        endMs,
+        speakers: st?.list.map((x) => x.label) ?? [],
+        turns: st?.turns.length ?? 0,
+      };
+    },
+  },
+  {
+    name: "rename_speaker",
+    description: "把講者改名（自動指派時預設用檔名，例如 mark_20260907.wav → mark）。重跑自動指派不會把改好的名字打回去。",
+    inputSchema: {
+      type: "object",
+      properties: { from: { type: "string" }, to: { type: "string" } },
+      required: ["from", "to"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const m = ctxMedia();
+      const from = typeof a.from === "string" ? a.from.trim() : "";
+      const to = typeof a.to === "string" ? a.to.trim() : "";
+      if (!to) throw new ToolError("新名字不能是空的");
+      const cur: Speaker[] = m.d.speakers[m.media.id]?.list ?? [];
+      const sp = cur.find((x) => x.label === from || x.id === from);
+      if (!sp) throw new ToolError(`找不到講者「${from}」（目前有：${cur.map((x) => x.label).join("、") || "無"}）`);
+      // 名字是查表的鍵（assign_speaker / cut_fillers_by_speaker 都用名字找人）——
+      // 兩個人同名的話，之後的每一次查找都會靜靜地選到第一個那位
+      if (cur.some((x) => x.id !== sp.id && x.label === to)) {
+        throw new ToolError(`已經有一位講者叫「${to}」了。名字要能分辨得出來，換一個或先改掉那一位。`);
+      }
+      m.d.renameSpeaker(m.media.id, sp.id, to);
+      return { from: sp.label, to, speakers: (useDecisions.getState().speakers[m.media.id]?.list ?? []).map((x) => x.label) };
+    },
+  },
+  {
+    name: "cut_fillers_by_speaker",
+    description:
+      "只剪某一個講者的贅字，其他人的留著。「來賓的口頭禪剪掉、主持人的留著」用這個 —— 主持人的「對」多半是在給回饋，整群剪掉會讓對話聽起來很冷淡。不給 speaker 就是全部人。可以用 words 限定只剪哪幾個詞。先用 list_speakers 確認名字。判不出是誰講的（兩個人同時講）會被排除，不會誤剪。回傳的 matched 是符合的總筆數、changed 才是這次真正改動的筆數（其餘本來就已經是剪掉的狀態）。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        speaker: { type: "string", description: "講者名字；不給就是全部人" },
+        words: { type: "array", items: { type: "string" }, description: "只剪這幾個詞；不給就是全部贅字" },
+        dryRun: { type: "boolean", description: "true = 只回報會剪掉什麼，不真的剪" },
+      },
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const x = ctx();
+      const st = x.d.speakers[x.media.id];
+      let only: string | null = null;
+      if (typeof a.speaker === "string" && a.speaker.trim()) {
+        const sp = (st?.list ?? []).find((y) => y.label === a.speaker || y.id === a.speaker);
+        if (!sp) throw new ToolError(`找不到講者「${a.speaker}」（目前有：${(st?.list ?? []).map((y) => y.label).join("、") || "無"}）`);
+        only = sp.id;
+      }
+      const groups = groupFillers(x.cands, x.dec, x.tr.words, { turns: st?.turns, only });
+      const want = Array.isArray(a.words) && a.words.length ? new Set((a.words as unknown[]).map((w) => String(w))) : null;
+      const picked = want ? groups.filter((g) => want.has(g.text) || want.has(g.norm)) : groups;
+      const ids = picked.flatMap((g) => g.ids);
+      const view = picked.map((g) => ({ word: g.text, count: g.count, alreadyCut: g.cut, savesMs: Math.round(g.totalMs) }));
+      if (!ids.length) return { speaker: a.speaker ?? null, words: view, matched: 0, changed: 0, note: "沒有符合的贅字候選" };
+      if (a.dryRun === true) {
+        const wouldChange = ids.filter((id) => !isActiveState(x.dec[id]?.state)).length;
+        return { speaker: a.speaker ?? null, words: view, matched: ids.length, wouldChange, dryRun: true };
+      }
+      // 已經是剪掉狀態的不算「這次剪的」—— 回報 ids.length 會讓模型以為省下了整批的時間，
+      // 但其中大部分本來就剪掉了（自動判定），實際多省的只有差額
+      const changed = ids.filter((id) => !isActiveState(x.dec[id]?.state)).length;
+      const savedMs = picked.reduce((s, g) => s + (g.totalMs - g.cutMs), 0);
+      x.d.decide(x.media.id, ids, "accepted", { origin: "user", label: `AI：剪掉${a.speaker ? `「${String(a.speaker)}」的` : ""}贅字 ×${ids.length}` });
+      return {
+        speaker: a.speaker ?? null,
+        words: view,
+        matched: ids.length,
+        changed,
+        savedMs: Math.round(savedMs),
+        note: changed === 0 ? "這些贅字先前就已經是剪掉的狀態，這次沒有變動" : undefined,
+      };
+    },
+  },
+  {
+    name: "export_captions",
+    description:
+      "產字幕 / 逐字稿。時間戳是**成品**時間（被剪掉的字整個不出現，後面的往前挪），所以字幕不會愈到後面愈飄。format: srt / vtt / md / txt。給 path 就寫檔，不給就把內容回傳（太長會截斷）。有講者標籤時 withSpeaker 可以把名字寫進去。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        format: { type: "string", enum: ["srt", "vtt", "md", "txt"] },
+        path: { type: "string", description: "輸出檔路徑；不給就回傳內容" },
+        withSpeaker: { type: "boolean" },
+      },
+      additionalProperties: false,
+    },
+    handler: async (a) => {
+      const x = ctx();
+      const edl = edlFor(x.media.id);
+      if (!edl) throw new ToolError("還沒有 EDL（請先分析）");
+      const st = x.d.speakers[x.media.id];
+      const speakerOf = st?.turns.length ? assignWords(x.tr.words, st.turns) : undefined;
+      const cues = buildCues({ words: x.tr.words, sentences: x.tr.sentences, keeps: edl.keeps, speakerOf });
+      const format = (typeof a.format === "string" ? a.format : "srt") as CaptionFormat;
+      const labelOf = (id: string) => st?.list.find((y) => y.id === id)?.label ?? id;
+      const text = renderCaptions(cues, format, { speakerPrefix: a.withSpeaker === true && !!st?.list.length, labelOf });
+      if (typeof a.path === "string" && a.path.trim()) {
+        await api.writeTextFile(a.path.trim(), text);
+        return { format, path: a.path.trim(), cues: cues.length, bytes: text.length };
+      }
+      const CAP = 12_000;
+      return {
+        format,
+        ext: CAPTION_EXT[format],
+        cues: cues.length,
+        truncated: text.length > CAP,
+        text: text.slice(0, CAP),
+      };
+    },
+  },
+  {
+    name: "list_split_parts",
+    description:
+      "如果依章節分割輸出，會切成哪幾段、每段成品多長、檔名叫什麼（只是預覽，不會真的輸出）。沒有章節標記時回空陣列 —— 可以先用 set_chapters 標好。第一個章節不在 0 秒時會自動補一段開頭。",
+    inputSchema: {
+      type: "object",
+      properties: { format: { type: "string", enum: ["mp3", "m4a", "wav"] } },
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const m = ctxMedia();
+      const ext = typeof a.format === "string" ? a.format : "mp3";
+      const parts = splitByChapters(m.d.markers[m.media.id] ?? [], edlFor(m.media.id), {
+        baseName: (m.media.name ?? "output").replace(/\.[^.]+$/, ""),
+        ext,
+        durationMs: m.media.probe?.duration_ms ?? 0,
+        leadTitle: "開場",
+      });
+      return {
+        parts: parts.map((p) => ({ index: p.index, title: p.title, startMs: Math.round(p.startMs), endMs: Math.round(p.endMs), outMs: Math.round(p.outMs), fileName: p.fileName })),
+        totalOutMs: Math.round(totalOutMs(parts)),
+        note: parts.length ? undefined : "這一集沒有章節標記，無法分割",
+      };
     },
   },
   {

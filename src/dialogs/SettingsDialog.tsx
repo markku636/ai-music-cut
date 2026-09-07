@@ -15,7 +15,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   return (
     <div className="space-y-2">
       <div className="text-[11px] text-fg/45 uppercase tracking-wide">{title}</div>
-      <div className="rounded-md border border-fg/10 p-3 space-y-3">{children}</div>
+      <div className="min-w-0 overflow-x-hidden rounded-md border border-fg/10 p-3 space-y-3">{children}</div>
     </div>
   );
 }

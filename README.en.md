@@ -27,6 +27,10 @@ A desktop tool for rough-cutting podcasts and audio (Tauri 2 + React 18), with a
    The other tab is a **personal word list that carries across episodes**: every host has different tics, the built-in list is the generic one, and yours stacks on top of it (always cut / depends on context / never cut). **Only the words you touched are stored** — store them all and, when the built-in list improves later, you would be frozen on the old version without ever noticing. Whisper splits a phrase like "you know what I mean" into several tokens, so custom multi-word entries are matched by concatenating tokens (a gap over 200 ms means it is not the same phrase).
    > Changing the list does not retroactively change candidates that were already computed (those come from analysis time), so there is an explicit "Apply to this episode (re-run rules)" button, flagged as soon as you edit the list. That is not something a user should have to guess at.
 
+15c. **Domain words (so the recogniser hears them right)**: names, products, companies, technical terms — the ones ASR mishears. Settings → Transcript → Domain words → "Manage": chip-style add/remove, bulk paste, dedupe (case-insensitive but keeping your spelling), character count and a soft-limit warning.
+   What makes it actually useful is **suggestions drawn from this episode's low-confidence words**: nobody can recall from memory which words to add, but seeing "‘Tauri’ came out three different ways, confidence 0.2" tells you immediately. Fillers are excluded from the suggestions — "you know" scoring low means it was mumbled, not that the recogniser does not know it, and adding it would only make the recogniser strain to hear a word you are about to cut.
+   > **Domain words and filler management are opposites**: domain words act *before* recognition (hear these right), the filler list acts *after* it (cut these out).
+
 16. **Skimming**: turn it on with `Shift+S` and moving the mouse over the waveform plays the audio under the cursor (Final Cut's audio skimming). Far faster than dragging the playhead to find "where was that line". Off by default — audio that plays because the mouse passed over something needs consent. It gets out of the way during playback so two sounds never stack.
 
 17. **Highlight reel (stitching scattered good bits into a trailer)**: what you post after finishing an episode is usually not a contiguous 60 seconds but three to five lines scattered across it. Select a range → the star on the action bar adds it to "Highlights" → the toolbar's "Highlight reel" list lets you audition, name and remove each one → export in one click. Segments are crossfaded 120 ms (they are unrelated in the original recording; butt-joining them is jarring), overlapping segments are merged (otherwise you hear the same sentence twice), and the head and tail fade automatically (a trailer always starts and ends mid-sentence, and without a fade that is a hard cut into the middle of a word). You can pick a **music bed** for the whole reel (−22 dB, fades at both ends). The project is untouched; reels do not write chapters.
@@ -52,6 +56,11 @@ Speech recognition, source separation and music generation are served by self-ho
 | --- | --- |
 | [![Filler management](docs/screenshot-fillers.png)](docs/screenshot-fillers.png) | [![Batch](docs/screenshot-batch.png)](docs/screenshot-batch.png) |
 | The whole episode's fillers laid out per word — cut all or keep all in one click; the other tab is a personal word list that carries across episodes. | Tick the episodes and steps, one episode at a time, with a per-episode report of what was saved and where it went. |
+
+| Local ASR install | Domain words |
+| --- | --- |
+| [![Local ASR](docs/screenshot-localasr.png)](docs/screenshot-localasr.png) | [![Domain words](docs/screenshot-hotwords.png)](docs/screenshot-hotwords.png) |
+| Choose the package and model, then press install; you see the exact command first, and the output streams line by line. | Chip-style add/remove and bulk paste; suggestions come from the words this episode's recogniser was least sure about (fillers excluded). |
 
 ## AI backend
 
@@ -98,8 +107,9 @@ Translation keys are the Traditional Chinese source strings, with identity fallb
   - macOS / Linux do not bundle it yet; install [ffmpeg 7+](https://ffmpeg.org/) (the deb / rpm packages declare the dependency).
   - Building from source, the bundled copy comes from `node scripts/fetch-ffmpeg.mjs` (URL and sha256 pinned in `scripts/ffmpeg-manifest.json`); skipping it still works for development, it just falls back to PATH.
 - A ttls API key (Settings → Server; **stored only in the OS keychain, never in any file**) — without a key you can still see the waveform, edit by hand and export
-- Or **no server at all**: Settings → transcript source → "Local (faster-whisper)" runs the same large-v3 on your own machine.
-  The app detects whether Python and the package are ready and gives you a copyable install command if not (`pip install faster-whisper`).
+- Or **no server at all**: Settings → transcript source → "Local faster-whisper" runs the same large-v3 on your own machine.
+  The app detects whether Python and the package are ready, and if not you **pick a model and press one button** (package and model fetched together, output streamed line by line).
+  You see the exact command before pressing it — this step modifies your Python environment.
   The output format matches ttls exactly, so the rule layer receives identical signals (word timestamps, no_speech, avg_logprob, compression_ratio).
 - Optional: a logged-in [Claude Code](https://claude.com/claude-code) CLI (for AI judging / the assistant; default model sonnet, changeable in settings or from the status bar)
 

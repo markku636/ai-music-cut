@@ -86,8 +86,8 @@ export default function LocalAsrSetup() {
   const STEP_LABEL: Record<string, string> = { package: t("安裝套件（含相依）"), model: t("下載模型") };
 
   return (
-    <div className="rounded-md border border-fg/10 px-3 py-2 text-[11px] space-y-2">
-      <div className="flex items-center gap-2">
+    <div className="min-w-0 rounded-md border border-fg/10 px-3 py-2 text-[11px] space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className={ready ? "text-success" : "text-warning"}>{ready ? t("可以使用") : t("尚未就緒")}</span>
         <span className="text-fg/45">
           {st
@@ -125,7 +125,7 @@ export default function LocalAsrSetup() {
           </div>
 
           <div className="flex items-center gap-1">
-            <code className="flex-1 truncate rounded bg-inset px-2 py-1 font-mono text-[11px] select-all" title={cmdLine}>
+            <code className="min-w-0 flex-1 truncate rounded bg-inset px-2 py-1 font-mono text-[11px] select-all" title={cmdLine}>
               {cmdLine}
             </code>
             <Button size="sm" variant="ghost" disabled={!cmdLine} onClick={() => void copyToClipboard(cmdLine, t("已複製"))}>

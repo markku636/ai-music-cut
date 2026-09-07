@@ -113,6 +113,7 @@ export default function HotwordsDialog({ onClose }: { onClose: () => void }) {
         ) : (
           <>
             <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1">
               <Input
                 value={draft}
                 placeholder={t("例如：Tauri、wavesurfer、某某科技")}
@@ -121,7 +122,8 @@ export default function HotwordsDialog({ onClose }: { onClose: () => void }) {
                   if (e.key === "Enter") void add(draft);
                 }}
               />
-              <Button icon={Plus} disabled={!draft.trim()} onClick={() => void add(draft)}>
+              </span>
+              <Button className="shrink-0 whitespace-nowrap" icon={Plus} disabled={!draft.trim()} onClick={() => void add(draft)}>
                 {t("加入")}
               </Button>
             </div>

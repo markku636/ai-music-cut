@@ -68,6 +68,12 @@ export interface RenderOptions {
    * 專案本身不動。社群短片用。
    */
   rangeMs?: { startMs: number; endMs: number } | null;
+  /**
+   * 保留動態：寧可小聲也不要被壓。
+   * 目標拉不到時 ffmpeg 會自己退回動態壓縮（見 v0.74 的驗收），開這個就改成
+   * 把目標降到線性拿得到的位置。
+   */
+  preserveDynamics?: boolean;
 }
 
 function sep(p: string): string {
@@ -254,6 +260,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       ...(opts.stem === "music" ? { mute_main: true } : {}),
       ...(opts.loudnormMeasured ? { loudnorm_measured: opts.loudnormMeasured } : {}),
       ...(cleanupPlan ? { cleanup: cleanupPlan } : {}),
+      ...(opts.preserveDynamics ? { preserve_dynamics: true } : {}),
     },
     edl,
     units: units.length,

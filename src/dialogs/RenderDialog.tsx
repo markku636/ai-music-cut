@@ -64,6 +64,9 @@ export default function RenderDialog({
   const settings = useSettings((s) => s.s);
   const [format, setFormat] = useState<RenderFormat>("mp3");
   const [outPath, setOutPath] = useState("");
+  // 預設關：多數 podcast 要的是「打到目標」，被壓一點無所謂。
+  // 訪談 / 有音樂的節目才會寧可小聲也要保住動態。
+  const [preserveDynamics, setPreserveDynamics] = useState(false);
   const [leveling, setLeveling] = useState(true);
   const [stems, setStems] = useState(false);
   const [stemStep, setStemStep] = useState<StemProgress | null>(null);
@@ -141,7 +144,7 @@ export default function RenderDialog({
     setBusy(true);
     setDone(null);
     try {
-      const base = { format, outPath: outPath.trim(), leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null, reelBedMediaId: reelBed ?? null };
+      const base = { format, outPath: outPath.trim(), leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null, reelBedMediaId: reelBed ?? null, preserveDynamics };
       if (stems && hasOverlays && !range && !reel?.length) {
         const files = await renderStems(mediaId, base, roles, (p) => setStemStep(p));
         setStemStep(null);
@@ -371,6 +374,10 @@ export default function RenderDialog({
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={leveling} onChange={(e) => setLeveling(e.target.checked)} disabled={busy} />
           {t("逐段音量平衡（把忽大忽小的段落拉齊，再整體正規化到目標響度）")}
+        </label>
+        <label className="flex items-center gap-2" title={t("目標拉不到時，ffmpeg 預設會改用動態壓縮把音量起伏壓平。勾這個就改成寧可小聲一點，但完全不壓。")}>
+          <input type="checkbox" checked={preserveDynamics} onChange={(e) => setPreserveDynamics(e.target.checked)} disabled={busy} />
+          {t("保留動態（寧可小聲也不壓）")}
         </label>
         <label className={`flex items-center gap-2 ${hasOverlays && !range && !reel?.length ? "" : "opacity-45"}`} title={hasOverlays ? undefined : t("這一集沒有配樂 / 音效，沒有東西可以分軌")}>
           <input type="checkbox" checked={stems && hasOverlays} onChange={(e) => setStems(e.target.checked)} disabled={busy || !hasOverlays || !!range || !!reel?.length} />

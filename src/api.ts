@@ -192,6 +192,11 @@ export interface RenderPlan {
    * 這條鏈會同時進響度量測與編碼兩趟 —— 只進編碼那趟的話成品響度會偏。
    */
   cleanup?: CleanupPlan | null;
+  /**
+   * 保留動態：寧可小聲也不要被動態壓縮。
+   * 開了就把目標降到「純增益拉得到」的位置，loudnorm 才會留在 linear。
+   */
+  preserve_dynamics?: boolean;
 }
 
 /** 與 `analysis/cleanup.ts` 的 CleanupSpec 同一組數字，欄名用 Rust 的 snake_case。 */

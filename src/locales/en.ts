@@ -1201,6 +1201,9 @@ const en: Catalog = {
   "比目標大聲": "Louder than target",
   "比目標小聲": "Quieter than target",
   "沒量到": "not measured",
+  // ---- 保留動態 ----
+  "目標拉不到時，ffmpeg 預設會改用動態壓縮把音量起伏壓平。勾這個就改成寧可小聲一點，但完全不壓。": "When the target is out of reach, ffmpeg switches to dynamic compression by default and flattens the level swings. Tick this to stay a little quieter instead, with no compression at all.",
+  "保留動態（寧可小聲也不壓）": "Preserve dynamics (quieter rather than compressed)",
 };
 
 

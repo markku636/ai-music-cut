@@ -86,6 +86,18 @@ pub struct RenderPlan {
     /// 修聲（底噪 / 隆隆 / 齒音）。會同時進量測與編碼兩趟。
     #[serde(default)]
     pub cleanup: Option<crate::cleanup::CleanupSpec>,
+    /// 保留動態：寧可小聲，也不要被動態壓縮。
+    ///
+    /// 我們送的是 `linear=true`，但那只是請求 —— 目標高過「線性拉得到的極限」時，
+    /// ffmpeg 會自己退回 dynamic（動態壓縮），音量起伏被壓平。開這個旗標就把目標
+    /// **降到線性拿得到的位置**，loudnorm 因此留在 linear。
+    ///
+    /// 極限是量出來的：`input_i + (TP上限 − input_tp)`。純增益會把整合響度與真實峰值
+    /// 平移同樣的量，所以峰值頂到上限時能拉的就是這麼多。實測（真實語音，
+    /// input_i −17.45 / input_tp −0.49 / 上限 −1.5 → 極限 −18.46）：目標 −18.5 回
+    /// `linear`、−16.0 回 `dynamic`，界線就在這裡。
+    #[serde(default)]
+    pub preserve_dynamics: bool,
     /// 已經量好的響度。有值就跳過量測那一趟，直接用它。
     ///
     /// 分軌輸出必須用**同一組**量測值，各軌才會加得回原本的混音；
@@ -538,8 +550,47 @@ pub fn parse_loudnorm_json(stderr: &str) -> Option<LoudnormStats> {
     })
 }
 
+/// 一般模式請求的 loudness range。
+const DEFAULT_LRA: f64 = 11.0;
+/// 保留動態模式：請求 ffmpeg 允許的最大值，等於「不要約束動態範圍」。
+const PRESERVE_LRA: f64 = 20.0;
+
 fn loudnorm_base(plan: &RenderPlan) -> String {
-    format!("loudnorm=I={:.1}:TP={:.1}:LRA=11", plan.target_lufs, plan.true_peak_dbtp)
+    format!("loudnorm=I={:.1}:TP={:.1}:LRA={:.0}", plan.target_lufs, plan.true_peak_dbtp, requested_lra(plan))
+}
+
+/// 要向 loudnorm 請求多大的 loudness range。
+///
+/// **這是「會不會被壓」的第二個條件，而且比目標更容易踩到。** 實測：量到的 LRA 超過
+/// 請求的 LRA 時，loudnorm 一律退回 dynamic —— 跟目標拉不拉得到無關。
+/// 請求 11 / 量到 8 → linear；請求 11 / 量到 12 → dynamic；請求 2 / 量到 2.8 → dynamic。
+///
+/// 所以「保留動態」不能只把目標壓低，還要停止約束動態範圍。
+pub fn requested_lra(plan: &RenderPlan) -> f64 {
+    if plan.preserve_dynamics { PRESERVE_LRA } else { DEFAULT_LRA }
+}
+
+/// 界線是**硬的**，而且 I= 只送到小數一位：不留餘裕就會踩在線上，四捨五入往哪邊倒
+/// 決定了會不會被壓。實測（真實語音、極限 -18.46）：目標 -18.46 回 linear、-18.4 回
+/// dynamic —— 差 0.06 dB 就換了一種處理。
+const LINEAR_MARGIN_LU: f64 = 0.5;
+
+/// 純增益（linear）拉得到的最高整合響度。
+///
+/// 增益把整合響度與真實峰值平移同樣的量，所以峰值頂到上限那一刻就是極限。
+pub fn linear_ceiling_lufs(true_peak_dbtp: f64, m: &LoudnormStats) -> f64 {
+    m.input_i + (true_peak_dbtp - m.input_tp) - LINEAR_MARGIN_LU
+}
+
+/// pass 2 實際要用的目標。
+///
+/// `preserve_dynamics` 沒開就照使用者設的（拉不到就讓 ffmpeg 自己退回 dynamic，
+/// v0.74 之後那件事會被回報出來）。開了就夾到線性拿得到的位置。
+pub fn effective_target_lufs(plan: &RenderPlan, m: &LoudnormStats) -> f64 {
+    if !plan.preserve_dynamics {
+        return plan.target_lufs;
+    }
+    plan.target_lufs.min(linear_ceiling_lufs(plan.true_peak_dbtp, m))
 }
 
 /// 第二階段：量測（pass 1）。
@@ -576,7 +627,12 @@ pub async fn measure(bins: &FfmpegBins, wav_path: &Path, plan: &RenderPlan, canc
 }
 
 /// 第三階段：套用 + 編碼（pass 2），`-progress pipe:1` 回報進度。回 (output_i, output_tp)。
-pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &RenderPlan, m: &LoudnormStats, out_part: &Path, total_frames: u64, job_id: &str, cancel: &AtomicBool) -> AppResult<(Option<f64>, Option<f64>)> {
+/// 回 (output_i, output_tp, normalization_type)。
+///
+/// **第三個值一定要從這一趟拿。** pass 1 的 JSON 也有 `normalization_type`，但那是
+/// 「照 pass 1 的目標估的」；真正決定成品有沒有被壓的是 pass 2。兩趟目標不一樣時
+/// （保留動態模式會把 pass 2 的目標壓低）拿 pass 1 的值回報，講的就是另一件事。
+pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &RenderPlan, m: &LoudnormStats, out_part: &Path, total_frames: u64, job_id: &str, cancel: &AtomicBool) -> AppResult<(Option<f64>, Option<f64>, Option<String>)> {
     let limit = 10f64.powf(plan.true_peak_dbtp / 20.0);
     // 強制指定聲道佈局。concat.wav 是 hound 寫的，沒有 channel mask，ffmpeg 讀進來是
     // 「1 channels (FL)」這種**未命名**佈局；pcm 與 mp3 不在意，但原生 aac 編碼器會直接
@@ -596,8 +652,10 @@ pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &
         crate::cleanup::prepend_cleanup(
             plan.cleanup.as_ref(),
             &format!(
-                "{}:measured_I={:.2}:measured_TP={:.2}:measured_LRA={:.2}:measured_thresh={:.2}:offset={:.2}:linear=true:print_format=json,alimiter=limit={:.4}:attack=5:release=50:level=false,{}",
-                loudnorm_base(plan),
+                "loudnorm=I={:.1}:TP={:.1}:LRA={:.0}:measured_I={:.2}:measured_TP={:.2}:measured_LRA={:.2}:measured_thresh={:.2}:offset={:.2}:linear=true:print_format=json,alimiter=limit={:.4}:attack=5:release=50:level=false,{}",
+                effective_target_lufs(plan, m),
+                plan.true_peak_dbtp,
+                requested_lra(plan),
                 m.input_i,
                 m.input_tp,
                 m.input_lra,
@@ -673,7 +731,11 @@ pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &
         return Err(AppError::Ffmpeg(format!("編碼失敗：{msg}")));
     }
     let stats = parse_loudnorm_json(&err);
-    Ok((stats.as_ref().and_then(|s| s.output_i), stats.as_ref().and_then(|s| s.output_tp)))
+    Ok((
+        stats.as_ref().and_then(|s| s.output_i),
+        stats.as_ref().and_then(|s| s.output_tp),
+        stats.as_ref().and_then(|s| s.normalization_type.clone()),
+    ))
 }
 
 /// 整條輸出流程（背景任務呼叫）。
@@ -712,8 +774,10 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
             emit_progress(&app, &job_id, "measure", 100.0);
             m
         };
-        let (oi, otp) = encode(&app, &bins, &stage_wav, &plan, &m, &out_part, total, &job_id, &cancel).await?;
+        let (oi, otp, ntype) = encode(&app, &bins, &stage_wav, &plan, &m, &out_part, total, &job_id, &cancel).await?;
         tokio::fs::rename(&out_part, &out_path).await?;
+        // pass 2 才是成品實際走的路 —— 把它的模式蓋回 measured，回報的才是真的那一個
+        let m = LoudnormStats { normalization_type: ntype.or(m.normalization_type.clone()), ..m };
         Ok((oi, otp, m.input_i, m))
     }
     .await;
@@ -749,6 +813,7 @@ mod tests {
             mute_main: false,
             loudnorm_measured: None,
             cleanup: None,
+            preserve_dynamics: false,
         }
     }
 
@@ -894,6 +959,62 @@ mod tests {
         let out = run_cutter(&p, ms_to_frames(200.0));
         let peak = out.iter().fold(0f32, |m, v| m.max(v.abs()));
         assert!((peak - 0.25).abs() < 0.02, "peak={peak}");
+    }
+
+    fn stats(input_i: f64, input_tp: f64) -> LoudnormStats {
+        LoudnormStats { input_i, input_tp, input_lra: 5.0, input_thresh: input_i - 10.0, target_offset: 0.0, output_i: None, output_tp: None, normalization_type: None }
+    }
+
+    #[test]
+    fn linear_ceiling_is_input_plus_available_headroom() {
+        // 實測的那一組：-17.45 LUFS / -0.49 dBTP、上限 -1.5 → 線性極限 -18.46
+        assert!((linear_ceiling_lufs(-1.5, &stats(-17.45, -0.49)) - -18.96).abs() < 0.01, "留 0.5 LU 餘裕");
+    }
+
+    #[test]
+    fn preserve_dynamics_asks_for_the_widest_loudness_range() {
+        // 量到的 LRA 超過請求的就會被壓，跟目標無關 —— 保留動態就是不要約束它
+        let mut p = plan(&[], &[]);
+        assert_eq!(requested_lra(&p), 11.0);
+        p.preserve_dynamics = true;
+        assert_eq!(requested_lra(&p), 20.0);
+        assert!(loudnorm_base(&p).contains("LRA=20"), "{}", loudnorm_base(&p));
+    }
+
+    #[test]
+    fn preserve_dynamics_off_keeps_the_users_target() {
+        let mut p = plan(&[], &[]);
+        p.target_lufs = -16.0;
+        // 拉不到也照送 -16：ffmpeg 會自己退回 dynamic，而那件事會被回報出來
+        assert_eq!(effective_target_lufs(&p, &stats(-17.45, -0.49)), -16.0);
+    }
+
+    #[test]
+    fn preserve_dynamics_clamps_to_what_linear_can_reach() {
+        let mut p = plan(&[], &[]);
+        p.target_lufs = -16.0;
+        p.preserve_dynamics = true;
+        // -16 拉不到（極限 -18.46）→ 夾到 -18.46，loudnorm 才會留在 linear
+        assert!((effective_target_lufs(&p, &stats(-17.45, -0.49)) - -18.96).abs() < 0.01);
+    }
+
+    #[test]
+    fn preserve_dynamics_never_raises_the_target() {
+        let mut p = plan(&[], &[]);
+        p.target_lufs = -23.0;
+        p.preserve_dynamics = true;
+        // 本來就打得到就不要動 —— 這個旗標只會讓成品更小聲，不會更大聲
+        assert_eq!(effective_target_lufs(&p, &stats(-17.45, -0.49)), -23.0);
+    }
+
+    #[test]
+    fn preserve_dynamics_handles_source_already_over_the_ceiling() {
+        let mut p = plan(&[], &[]);
+        p.target_lufs = -16.0;
+        p.preserve_dynamics = true;
+        // 來源峰值已經超過上限（-0.09 > -1.5）→ 線性只能往下拉
+        let t = effective_target_lufs(&p, &stats(-24.38, -0.09));
+        assert!(t < -24.38, "should require attenuation, got {t}");
     }
 
     #[test]

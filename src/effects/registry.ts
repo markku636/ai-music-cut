@@ -96,6 +96,22 @@ function applyNow(spec: EffectSpec, values: ReturnType<typeof resolveValues>): v
 export function commandsForSpec(spec: EffectSpec): Command[] {
   const base = { group: spec.group, section: spec.section, icon: spec.icon, surfaces: ["menu", "palette", "context"] as Command["surfaces"], keywords: spec.keywords };
   const cmds: Command[] = [];
+  // 沒有參數、沒有預設、沒有建議值：開對話框只是多一步，直接給一顆指令
+  if (!spec.params.length && !spec.presets.length && !spec.suggest) {
+    return [
+      {
+        ...base,
+        id: spec.id,
+        title: spec.title,
+        simple: !!spec.simpleLabel,
+        simpleLabel: spec.simpleLabel,
+        simpleHint: spec.simpleHint,
+        simpleOrder: spec.simpleOrder,
+        enabled: enabledFor(spec),
+        run: () => applyNow(spec, resolveValues(spec)),
+      },
+    ];
+  }
   if (spec.suggest) {
     cmds.push({
       ...base,

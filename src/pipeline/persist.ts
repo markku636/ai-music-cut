@@ -1,6 +1,8 @@
 // 專案檔 ↔ 執行期 store 的橋：存檔時把候選 / 決策併進 analysis[mediaId]；載入時還原。
 import type { Paste } from "../analysis/edl/arrange";
 import type { CleanupSpec } from "../analysis/cleanup";
+import type { NoisePrint } from "../analysis/levels";
+import { sanitizeNoisePrint } from "../project/sanitize";
 import type { ReelRange } from "../analysis/reel";
 import type { ShowNotes } from "../analysis/shownotes";
 import type { AudioEffect } from "../analysis/effects";
@@ -39,6 +41,8 @@ export interface StoredAnalysis extends MediaAnalysisV1 {
   speakers?: SpeakerState;
   /** 修聲設定（輸出設定，不進 undo）。 */
   cleanup?: CleanupSpec;
+  /** 噪音樣本（量測值，不進 undo）。 */
+  noisePrint?: NoisePrint;
   /** 精華片段（要串成預告的那幾段；不進 undo）。 */
   highlights?: ReelRange[];
   /** 節目筆記（產出物，不進 undo）。 */
@@ -74,12 +78,14 @@ export function enrichAnalysis(analysis: Record<string, MediaAnalysisV1>): Recor
     else delete rec.speakers;
     if (cl.byMedia[id]) rec.cleanup = cl.byMedia[id];
     else delete rec.cleanup;
+    if (cl.noisePrint[id]) rec.noisePrint = cl.noisePrint[id];
+    else delete rec.noisePrint;
     if (hl.byMedia[id]?.length) rec.highlights = hl.byMedia[id];
     else delete rec.highlights;
     if (sn.byMedia[id]) rec.showNotes = sn.byMedia[id];
     else delete rec.showNotes;
     // 沒逐字稿也可能有人工剪輯 / 效果 / 切點（未分析就手動剪）
-    if (rec.transcript || rec.candidates?.length || rec.effects?.length || rec.splits?.length || rec.pastes?.length || rec.markers?.length || rec.overlays?.length || rec.speakers?.list.length || rec.cleanup || rec.highlights?.length || rec.showNotes) out[id] = rec;
+    if (rec.transcript || rec.candidates?.length || rec.effects?.length || rec.splits?.length || rec.pastes?.length || rec.markers?.length || rec.overlays?.length || rec.speakers?.list.length || rec.cleanup || rec.noisePrint || rec.highlights?.length || rec.showNotes) out[id] = rec;
   }
   return out;
 }
@@ -104,6 +110,7 @@ export function restoreDecisions(mediaId: string, rec: StoredAnalysis | undefine
   const overlays = sanitizeOverlays(rec?.overlays, r);
 
   useCleanup.getState().load(mediaId, sanitizeCleanup(rec?.cleanup, r) ?? null);
+  useCleanup.getState().loadNoisePrint(mediaId, sanitizeNoisePrint(rec?.noisePrint, r) ?? null);
   useHighlights.getState().load(mediaId, Array.isArray(rec?.highlights) ? rec.highlights : []);
   useShowNotes.getState().load(mediaId, rec?.showNotes ?? null);
 

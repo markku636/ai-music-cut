@@ -21,7 +21,8 @@ export function useEffectPreview(effects: AudioEffect[]) {
     }
     const apply = () => {
       const el = getPlayer();
-      if (el) setGainSource("effect", effectGainAt(effects, el.currentTime * 1000));
+      // 反相回負值；<audio>.volume 只吃 0..1，取絕對值（預聽本來就聽不出相位）
+      if (el) setGainSource("effect", Math.abs(effectGainAt(effects, el.currentTime * 1000)));
     };
     apply();
     if (!playing) return;
@@ -32,7 +33,7 @@ export function useEffectPreview(effects: AudioEffect[]) {
   useEffect(() => {
     if (playing || !effects.length) return;
     const el = getPlayer();
-    if (el) setGainSource("effect", effectGainAt(effects, el.currentTime * 1000));
+    if (el) setGainSource("effect", Math.abs(effectGainAt(effects, el.currentTime * 1000)));
   }, [currentMs, playing, effects]);
 
   useEffect(() => () => releaseGainSource("effect"), []);

@@ -43,7 +43,7 @@ export interface CleanupEstimate {
 }
 
 /** 安靜到這個程度就不用降噪了 —— 再減只會傷到語音尾音。 */
-const QUIET_ENOUGH_DB = -58;
+export const QUIET_ENOUGH_DB = -58;
 /** 人聲基頻最低大約 85 Hz（低男聲），高通擺在它下面。 */
 export const RUMBLE_HZ = 80;
 
@@ -68,7 +68,7 @@ export function estimateCleanup(a: LocalAnalysis | null): CleanupEstimate {
 
   // 底噪 −58 dB 以下不動；越吵減越多，但上限 18 dB ——
   // afftdn 減超過這個量，安靜處會開始出現「水聲」（musical noise），比原本的嘶聲更難聽。
-  const denoiseDb = worthDenoise ? Math.round(clamp((floorDb - QUIET_ENOUGH_DB) * 0.9 + 6, 6, 18)) : 0;
+  const denoiseDb = denoiseDbFor(floorDb);
 
   const suggested: CleanupSpec = {
     rumbleHz: RUMBLE_HZ,
@@ -87,6 +87,14 @@ export function estimateCleanup(a: LocalAnalysis | null): CleanupEstimate {
 }
 
 /** 這組設定實際上有沒有要做事。 */
+/**
+ * 底噪 → 降噪量（整檔修聲與範圍降噪共用這一條）：−58 dB 以下不動；越吵減越多，上限 18 dB ——
+ * afftdn 減超過這個量，安靜處會開始出現「水聲」（musical noise），比原本的嘶聲更難聽。
+ */
+export function denoiseDbFor(floorDb: number): number {
+  return floorDb > QUIET_ENOUGH_DB ? Math.round(clamp((floorDb - QUIET_ENOUGH_DB) * 0.9 + 6, 6, 18)) : 0;
+}
+
 export function isCleanupActive(s: CleanupSpec | null | undefined): boolean {
   return !!s && (s.rumbleHz > 0 || s.denoiseDb > 0 || s.deessAmount > 0);
 }

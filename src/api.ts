@@ -164,10 +164,12 @@ export interface RenderJoin {
 }
 /** 區段效果（來源時間；Rust 逐 frame 乘上包絡）。 */
 export interface RenderEffect {
-  kind: "mute" | "gain" | "fade_in" | "fade_out";
+  kind: "mute" | "gain" | "fade_in" | "fade_out" | "invert";
   start_ms: number;
   end_ms: number;
   db: number;
+  /** fade 的曲線；省略 = linear。 */
+  shape?: "linear" | "equal_power" | "exponential";
 }
 export interface RenderPlan {
   segs: RenderSeg[];

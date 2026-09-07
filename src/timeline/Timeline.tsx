@@ -3,7 +3,7 @@ import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin, { type Region } from "wavesurfer.js/dist/plugins/regions.esm.js";
 import TimelinePlugin from "wavesurfer.js/dist/plugins/timeline.esm.js";
 import HoverPlugin from "wavesurfer.js/dist/plugins/hover.esm.js";
-import { effectLabel, type AudioEffect } from "../analysis/effects";
+import { effectLabel, isGainEffect, type AudioEffect } from "../analysis/effects";
 import type { Edl } from "../analysis/edl/build";
 import type { Overlay } from "../analysis/overlays";
 import { wavesurferPeaks, type LocalAnalysis } from "../analysis/peaks";
@@ -107,9 +107,13 @@ function styleEffect(r: Region, e: AudioEffect) {
   el.style.backgroundImage = "";
   el.style.backgroundColor = "transparent";
   el.style.outline = "";
-  el.style.borderTop = `2px solid ${cssRgb(e.kind === "gain" ? "--c-warning" : e.kind === "mute" ? "--c-fg" : "--c-accent", 0.8)}`;
+  const rangeFx = !isGainEffect(e);
+  el.style.borderTop = rangeFx ? `2px dashed ${cssRgb("--c-info", 0.8)}` : `2px solid ${cssRgb(e.kind === "gain" ? "--c-warning" : e.kind === "mute" ? "--c-fg" : "--c-accent", 0.8)}`;
   el.style.zIndex = "3";
   switch (e.kind) {
+    case "invert":
+      el.style.backgroundImage = `repeating-linear-gradient(45deg, ${cssRgb("--c-accent", 0.14)} 0 3px, transparent 3px 8px)`;
+      break;
     case "mute":
       el.style.backgroundImage = `repeating-linear-gradient(135deg, ${cssRgb("--c-fg", 0.16)} 0 4px, transparent 4px 9px)`;
       break;
@@ -121,6 +125,10 @@ function styleEffect(r: Region, e: AudioEffect) {
       break;
     case "fade_out":
       el.style.backgroundImage = `linear-gradient(90deg, rgb(${accent} / 0.35), rgb(${accent} / 0))`;
+      break;
+    default:
+      // 範圍濾波：輸出時才套，即時播放聽不到 —— 用另一種花紋提醒
+      el.style.backgroundImage = `repeating-linear-gradient(-45deg, ${cssRgb("--c-info", 0.12)} 0 6px, transparent 6px 12px)`;
       break;
   }
   const c = r.content;
@@ -134,7 +142,7 @@ function styleEffect(r: Region, e: AudioEffect) {
     c.style.margin = "3px";
     c.style.whiteSpace = "nowrap";
   }
-  el.title = `${effectLabel(e)} · ${formatMs(e.startMs)} – ${formatMs(e.endMs)}\n拖曳移動、拖邊緣調整範圍、右鍵移除`;
+  el.title = `${effectLabel(e)} · ${formatMs(e.startMs)} – ${formatMs(e.endMs)}${rangeFx ? "\n輸出時套用 —— 即時播放聽不到" : ""}\n拖曳移動、拖邊緣調整範圍、右鍵移除`;
 }
 
 export interface TimelineProps {

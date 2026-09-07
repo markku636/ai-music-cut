@@ -48,6 +48,21 @@ pub struct RenderEffect {
     pub end_ms: f64,
     #[serde(default)]
     pub db: f64,
+    /// fade_in / fade_out 的曲線：linear（預設）/ equal_power / exponential。
+    #[serde(default)]
+    pub shape: Option<String>,
+}
+
+/// 增益包絡類的效果種類。範圍濾波（denoise…）不走 Cutter，前端不該送進 effects；送了就是錯，不能安靜地當成增益 1。
+const GAIN_EFFECT_KINDS: [&str; 5] = ["mute", "gain", "fade_in", "fade_out", "invert"];
+
+pub fn validate_effects(plan: &RenderPlan) -> AppResult<()> {
+    for e in &plan.effects {
+        if !GAIN_EFFECT_KINDS.contains(&e.kind.as_str()) {
+            return Err(AppError::Invalid(format!("不認識的效果種類：{}（範圍濾波要走 fx_regions）", e.kind)));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -215,10 +230,40 @@ const EDGE_FRAMES: u64 = SR as u64 / 200;
 /// 已換算成 frame 的效果：(kind, start, end, gain_lin)
 #[derive(Clone)]
 struct Fx {
-    kind: u8, // 0 mute, 1 gain, 2 fade_in, 3 fade_out
+    kind: u8, // 0 mute, 1 gain, 2 fade_in, 3 fade_out, 4 invert
+    /// 0 linear, 1 equal_power, 2 exponential（只有 fade 用）
+    shape: u8,
     s: u64,
     e: u64,
     lin: f32,
+}
+
+/// 淡入淡出曲線；與前端 analysis/effects.ts 的 fadeCurve 共用同一張樣本表（測試釘死）。
+fn fade_curve(shape: u8, p: f32, fade_in: bool) -> f32 {
+    let p = p.clamp(0.0, 1.0);
+    match shape {
+        1 => {
+            if fade_in {
+                (p * std::f32::consts::FRAC_PI_2).sin()
+            } else {
+                (p * std::f32::consts::FRAC_PI_2).cos()
+            }
+        }
+        2 => {
+            if fade_in {
+                10f32.powf(-3.0 * (1.0 - p))
+            } else {
+                10f32.powf(-3.0 * p)
+            }
+        }
+        _ => {
+            if fade_in {
+                p
+            } else {
+                1.0 - p
+            }
+        }
+    }
 }
 
 fn fx_gain(fx: &Fx, t: u64) -> f32 {
@@ -227,8 +272,15 @@ fn fx_gain(fx: &Fx, t: u64) -> f32 {
     }
     let len = (fx.e - fx.s).max(1) as f32;
     match fx.kind {
-        2 => (t - fx.s) as f32 / len,
-        3 => 1.0 - (t - fx.s) as f32 / len,
+        2 => fade_curve(fx.shape, (t - fx.s) as f32 / len, true),
+        3 => fade_curve(fx.shape, (t - fx.s) as f32 / len, false),
+        4 => {
+            // 反相：邊緣用同一條 5 ms 斜坡穿過 0（不會 click）；兩個重疊的反相相乘 = +1
+            let edge = EDGE_FRAMES.min((fx.e - fx.s) / 2).max(1) as f32;
+            let d = (t - fx.s).min(fx.e - t) as f32;
+            let w = (d / edge).clamp(0.0, 1.0);
+            1.0 - 2.0 * w
+        }
         _ => {
             let edge = EDGE_FRAMES.min((fx.e - fx.s) / 2).max(1) as f32;
             let d = (t - fx.s).min(fx.e - t) as f32;
@@ -277,7 +329,14 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
                     "gain" => 1,
                     "fade_in" => 2,
                     "fade_out" => 3,
+                    "invert" => 4,
+                    // validate_effects 已經擋掉未知種類；這裡不會走到
                     _ => 1,
+                },
+                shape: match e.shape.as_deref() {
+                    Some("equal_power") => 1,
+                    Some("exponential") => 2,
+                    _ => 0,
                 },
                 s: ms_to_frames(e.start_ms),
                 e: ms_to_frames(e.end_ms),
@@ -454,6 +513,7 @@ pub async fn cut_to_wav(app: &AppHandle, bins: &FfmpegBins, src: &str, plan: &Re
     let spec = hound::WavSpec { channels: ch as u16, sample_rate: SR, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
     let file = std::fs::File::create(wav_path)?;
     let writer = hound::WavWriter::new(std::io::BufWriter::new(file), spec).map_err(|e| AppError::Io(format!("建立 wav 失敗：{e}")))?;
+    validate_effects(plan)?;
     let mut cutter = Cutter::new(plan, writer);
     let last_end = plan.segs.iter().map(|s| ms_to_frames(s.src_end_ms)).max().unwrap_or(0);
 
@@ -932,7 +992,7 @@ mod tests {
     #[test]
     fn mute_effect_silences_range_with_soft_edges() {
         let mut p = plan(&[(0.0, 300.0, 0.0)], &[]);
-        p.effects.push(RenderEffect { kind: "mute".into(), start_ms: 100.0, end_ms: 200.0, db: 0.0 });
+        p.effects.push(RenderEffect { kind: "mute".into(), start_ms: 100.0, end_ms: 200.0, db: 0.0, shape: None });
         let out = run_cutter(&p, ms_to_frames(300.0));
         // +12 frame = 1 kHz 正弦的四分之一週期 → 取樣在波峰，避開零交越點
         let mid = ms_to_frames(150.0) as usize + 12;
@@ -946,11 +1006,49 @@ mod tests {
     #[test]
     fn fade_in_ramps_linearly() {
         let mut p = plan(&[(0.0, 1000.0, 0.0)], &[]);
-        p.effects.push(RenderEffect { kind: "fade_in".into(), start_ms: 0.0, end_ms: 1000.0, db: 0.0 });
+        p.effects.push(RenderEffect { kind: "fade_in".into(), start_ms: 0.0, end_ms: 1000.0, db: 0.0, shape: None });
         let out = run_cutter(&p, ms_to_frames(1000.0));
         let q1 = ms_to_frames(250.0) as usize + 12;
         let q3 = ms_to_frames(750.0) as usize + 12;
         assert!(out[q3].abs() > out[q1].abs() * 2.0, "後段音量應明顯大於前段");
+    }
+
+    #[test]
+    fn fade_shapes_match_shared_sample_table() {
+        // 與 analysis/effects.ts 的 fadeCurve 共用同一張表：p ∈ {0, .25, .5, .75, 1}
+        let table: [(u8, [f32; 5], [f32; 5]); 3] = [
+            (0, [0.0, 0.25, 0.5, 0.75, 1.0], [1.0, 0.75, 0.5, 0.25, 0.0]),
+            (1, [0.0, 0.382683, 0.707107, 0.923880, 1.0], [1.0, 0.923880, 0.707107, 0.382683, 0.0]),
+            (2, [0.001, 0.005623, 0.031623, 0.177828, 1.0], [1.0, 0.177828, 0.031623, 0.005623, 0.001]),
+        ];
+        for (shape, fin, fout) in table {
+            for (i, p) in [0.0f32, 0.25, 0.5, 0.75, 1.0].iter().enumerate() {
+                assert!((fade_curve(shape, *p, true) - fin[i]).abs() < 1e-4, "shape {shape} in p={p}");
+                assert!((fade_curve(shape, *p, false) - fout[i]).abs() < 1e-4, "shape {shape} out p={p}");
+            }
+        }
+    }
+
+    #[test]
+    fn invert_flips_polarity_with_soft_edges() {
+        let base = plan(&[(0.0, 300.0, 0.0)], &[]);
+        let reference = run_cutter(&base, ms_to_frames(300.0));
+        let mut p = plan(&[(0.0, 300.0, 0.0)], &[]);
+        p.effects.push(RenderEffect { kind: "invert".into(), start_ms: 100.0, end_ms: 200.0, db: 0.0, shape: None });
+        let out = run_cutter(&p, ms_to_frames(300.0));
+        let mid = ms_to_frames(150.0) as usize + 12;
+        assert!((out[mid] + reference[mid]).abs() < 1e-5, "中段應為反相：{} vs {}", out[mid], reference[mid]);
+        let before = ms_to_frames(50.0) as usize + 12;
+        assert!((out[before] - reference[before]).abs() < 1e-5, "範圍外不動");
+    }
+
+    #[test]
+    fn unknown_effect_kind_is_an_error() {
+        let mut p = plan(&[(0.0, 300.0, 0.0)], &[]);
+        p.effects.push(RenderEffect { kind: "denoise".into(), start_ms: 0.0, end_ms: 100.0, db: 0.0, shape: None });
+        assert!(validate_effects(&p).is_err());
+        let ok = plan(&[(0.0, 300.0, 0.0)], &[]);
+        assert!(validate_effects(&ok).is_ok());
     }
 
     #[test]

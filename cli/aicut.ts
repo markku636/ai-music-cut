@@ -13,7 +13,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { buildEdl, DEFAULT_EDL_OPTIONS, type Edl } from "../src/analysis/edl/build";
-import type { AudioEffect } from "../src/analysis/effects";
+import { isGainEffect, isRangeEffect, type AudioEffect } from "../src/analysis/effects";
 import { normalizeTranscript, type ServerTranscript } from "../src/analysis/normalize";
 import { runRulesAt } from "../src/analysis/rules";
 import { thresholdsFor } from "../src/analysis/thresholds";
@@ -195,7 +195,7 @@ interface Analysis {
    * 專案裡有配樂 / 章節時，CLI 產出的東西會跟 App 不一樣 —— 這種「安靜地少東西」
    * 最難發現（檔案有產出、長度也對，只是音樂不見了），所以一定要出聲。
    */
-  unsupported: { overlays: number; chapters: number };
+  unsupported: { overlays: number; chapters: number; rangeFx: number };
 }
 
 async function analyze(file: string, ff: Ffmpeg, flags: Record<string, string | true>): Promise<Analysis> {
@@ -223,7 +223,7 @@ async function analyze(file: string, ff: Ffmpeg, flags: Record<string, string | 
     log(`AI 判讀完成：剪 ${applied}、不剪 ${dropped}、新增建議 ${r.added.length}${r.failed ? `（${r.failed} 個視窗失敗）` : ""}`);
     for (const w of r.warnings.slice(0, 5)) log(`  ! ${w}`);
   }
-  return { transcript, candidates, decisions, effects: [], splits: [], pastes: [], unsupported: { overlays: 0, chapters: 0 } };
+  return { transcript, candidates, decisions, effects: [], splits: [], pastes: [], unsupported: { overlays: 0, chapters: 0, rangeFx: 0 } };
 }
 
 function summarizeKinds(cands: Candidate[]): string {
@@ -259,12 +259,14 @@ async function loadProject(p: string): Promise<Analysis & { mediaPath: string | 
     transcript: rec.transcript ?? { words: [], segments: [], sentences: [], vad: [], durationMs: 0, language: "", model: "" },
     candidates: rec.candidates ?? [],
     decisions: rec.decisions ?? {},
-    effects: rec.effects ?? [],
+    // 範圍濾波（降噪…）只有 App 的渲染器會做；CLI 是 atrim+concat，接不了
+    effects: (rec.effects ?? []).filter(isGainEffect),
     splits: rec.splits ?? [],
     pastes: rec.pastes ?? [],
     unsupported: {
       overlays: rec.overlays?.length ?? 0,
       chapters: (rec.markers ?? []).filter((m) => m.kind === "chapter").length,
+      rangeFx: (rec.effects ?? []).filter(isRangeEffect).length,
     },
     mediaPath: media?.path ?? null,
     aggressiveness: doc.settings?.aggressiveness ?? 50,
@@ -358,6 +360,9 @@ async function cmdCut(args: Args): Promise<void> {
     }
     if (a.unsupported.chapters > 0) {
       warn(`這個專案有 ${a.unsupported.chapters} 個章節，**CLI 不會寫進成品** —— 需要章節請用 App 輸出。`);
+    }
+    if (a.unsupported.rangeFx > 0) {
+      warn(`這個專案有 ${a.unsupported.rangeFx} 段輸出時套用的效果（降噪 / 去爆音…），**CLI 不會處理** —— 要它們請用 App 輸出。`);
     }
   } else {
     if (!file) throw new Error("請給音檔路徑");

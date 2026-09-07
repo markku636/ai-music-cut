@@ -6,13 +6,23 @@ import { CORE_COMMANDS } from "./core";
 import { EFFECT_COMMANDS } from "./effectCommands";
 import { registerEffectSpec } from "../effects/registry";
 import { gainSpec } from "../effects/specs/gain";
+import { fadesSpec, invertSpec } from "../effects/specs/fades";
+import { matchLoudnessSpec, peakNormalizeSpec } from "../effects/specs/normalize";
 
 /**
  * 把所有指令登記進註冊表。App 掛載時呼叫一次；熱更新重跑也沒關係（upsert）。
  */
 export function installCommands(): () => void {
   setCommandHost({ info: toast.info, error: toast.error, errMessage });
-  registerCommands([...CORE_COMMANDS, ...EFFECT_COMMANDS, ...registerEffectSpec(gainSpec)]);
+  registerCommands([
+    ...CORE_COMMANDS,
+    ...EFFECT_COMMANDS,
+    ...registerEffectSpec(gainSpec),
+    ...registerEffectSpec(peakNormalizeSpec),
+    ...registerEffectSpec(matchLoudnessSpec),
+    ...registerEffectSpec(fadesSpec),
+    ...registerEffectSpec(invertSpec),
+  ]);
   return installCommandReactivity();
 }
 

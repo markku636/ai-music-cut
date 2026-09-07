@@ -2,7 +2,9 @@ import { Sparkles, TrendingDown, TrendingUp, VolumeX, Wand2 } from "lucide-react
 import { effectId, type AudioEffect } from "../analysis/effects";
 import { useDecisions } from "../store/decisions";
 import { useTimeline } from "../store/timeline";
-import { describeCleanup, estimateCleanup } from "../analysis/cleanup";
+import { denoiseDbFor, describeCleanup, estimateCleanup } from "../analysis/cleanup";
+import { makeNoisePrint } from "../analysis/levels";
+import { Fingerprint } from "lucide-react";
 import { t } from "../i18n";
 import { useCleanup } from "../store/cleanup";
 import { openDialog } from "../store/dialogs";
@@ -104,12 +106,42 @@ export const EFFECT_COMMANDS: Command[] = [
       if (!id) return;
       const prev = useCleanup.getState().byMedia[id] ?? null;
       const est = estimateCleanup(useTranscript.getState().local[id] ?? null);
-      useCleanup.getState().set(id, est.suggested);
+      // 有噪音樣本就以它為準：使用者親手選的純底噪比整檔 5% 百分位可靠
+      const print = useCleanup.getState().noisePrint[id];
+      const spec = print ? { ...est.suggested, noiseFloorDb: Math.round(Math.max(-80, Math.min(-20, print.floorDb))), denoiseDb: denoiseDbFor(print.floorDb) } : est.suggested;
+      useCleanup.getState().set(id, spec);
       useProject.getState().markDirty();
-      toast.undo(t("修聲已套用：{d}").replace("{d}", describeCleanup(est.suggested)), () => {
+      toast.undo(t("修聲已套用：{d}").replace("{d}", describeCleanup(spec)), () => {
         useCleanup.getState().set(id, prev);
         useProject.getState().markDirty();
       });
+    },
+  },
+  {
+    id: "repair.noisePrint",
+    title: "把這段當噪音樣本",
+    group: "repair",
+    section: "噪音",
+    icon: Fingerprint,
+    surfaces: ["menu", "palette", "context"],
+    keywords: ["noise print", "noise sample", "profile"],
+    enabled: () => {
+      const s = needsSelection();
+      if (!s.ok) return s;
+      const id = activeId();
+      return id && useTranscript.getState().local[id] ? OK : { ok: false, why: "還沒有波形分析，量不到底噪" };
+    },
+    run: () => {
+      const id = activeId();
+      const sel = useTimeline.getState().selection;
+      if (!id || !sel) return;
+      const r = makeNoisePrint(useTranscript.getState().local[id] ?? null, sel.startMs, sel.endMs);
+      if ("error" in r) {
+        toast.info(t(r.error));
+        return;
+      }
+      useCleanup.getState().setNoisePrint(id, r.print);
+      toast.success(t("噪音樣本：{db} dBFS（{len} 秒）。之後的降噪會以它為準。", { db: r.print.floorDb.toFixed(1), len: ((sel.endMs - sel.startMs) / 1000).toFixed(1) }));
     },
   },
   {

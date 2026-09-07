@@ -13,12 +13,13 @@
 
 import { MIN_PASTE_MS, type Paste } from "../analysis/edl/arrange";
 import { CLEANUP_OFF, normalizeCleanup, type CleanupSpec } from "../analysis/cleanup";
-import type { AudioEffect, EffectKind } from "../analysis/effects";
+import { ALL_EFFECT_KINDS, FADE_SHAPES, type AudioEffect, type EffectKind, type FadeShape } from "../analysis/effects";
+import type { NoisePrint } from "../analysis/levels";
 import type { Overlay, OverlayLane } from "../analysis/overlays";
 import { parseSpeakerState, type SpeakerState } from "../analysis/speakers";
 import type { Candidate, Decision, DecisionMap, DecisionState, Marker, MarkerKind, SplitPoint } from "../analysis/types";
 
-const EFFECT_KINDS: readonly EffectKind[] = ["mute", "gain", "fade_in", "fade_out"];
+const EFFECT_KINDS: readonly EffectKind[] = ALL_EFFECT_KINDS;
 const MARKER_KINDS: readonly MarkerKind[] = ["standard", "chapter", "todo"];
 const DECISION_STATES: readonly DecisionState[] = ["auto", "accepted", "rejected", "pending"];
 const LANES: readonly OverlayLane[] = ["music", "sfx"];
@@ -102,7 +103,15 @@ export function sanitizeEffects(v: unknown, r: SanitizeReport): AudioEffect[] {
       continue;
     }
     // gain 的 db 壞掉就當 0（靜靜套一個 NaN 增益會讓整段變成無聲）
-    out.push({ ...(x as AudioEffect), db: fin(o.db) ? (o.db as number) : undefined });
+    const e: AudioEffect = { ...(x as AudioEffect), db: fin(o.db) ? (o.db as number) : undefined };
+    if (o.shape !== undefined) e.shape = FADE_SHAPES.includes(o.shape as FadeShape) ? (o.shape as FadeShape) : undefined;
+    if (o.params !== undefined) {
+      const src = rec(o.params);
+      const clean: Record<string, number> = {};
+      if (src) for (const [k, v] of Object.entries(src)) if (fin(v)) clean[k] = v as number;
+      e.params = Object.keys(clean).length ? clean : undefined;
+    }
+    out.push(e);
   }
   return out;
 }
@@ -203,6 +212,16 @@ export function sanitizeCleanup(v: unknown, r: SanitizeReport): CleanupSpec | un
   }
   // normalizeCleanup 本來就會夾住範圍；這裡只擋掉「根本不是物件」的情況
   return normalizeCleanup({ ...CLEANUP_OFF, ...(o as Partial<CleanupSpec>) });
+}
+
+export function sanitizeNoisePrint(v: unknown, r: SanitizeReport): NoisePrint | undefined {
+  if (v == null) return undefined;
+  const o = rec(v);
+  if (!o || !fin(o.startMs) || !fin(o.endMs) || !fin(o.floorDb)) {
+    drop(r, "noisePrint");
+    return undefined;
+  }
+  return { startMs: o.startMs as number, endMs: o.endMs as number, floorDb: o.floorDb as number, at: fin(o.at) ? (o.at as number) : 0 };
 }
 
 export function sanitizeSpeakers(v: unknown, r: SanitizeReport): SpeakerState | undefined {

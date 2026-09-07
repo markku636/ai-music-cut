@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { CLEANUP_OFF, normalizeCleanup, type CleanupSpec } from "../analysis/cleanup";
+import type { NoisePrint } from "../analysis/levels";
 import { useProject } from "./project";
 
 /**
@@ -11,6 +12,10 @@ import { useProject } from "./project";
  */
 interface CleanupStore {
   byMedia: Record<string, CleanupSpec>;
+  /** 噪音樣本（量測值，不進 undo；存專案檔）。之後範圍降噪與整檔修聲的底噪都預設吃它。 */
+  noisePrint: Record<string, NoisePrint>;
+  setNoisePrint: (mediaId: string, p: NoisePrint | null) => void;
+  loadNoisePrint: (mediaId: string, p: NoisePrint | null) => void;
   /** 有設定才回，沒有回 null（呼叫端自己決定要不要用建議值）。 */
   get: (mediaId: string) => CleanupSpec | null;
   set: (mediaId: string, spec: Partial<CleanupSpec> | null) => void;
@@ -20,6 +25,23 @@ interface CleanupStore {
 
 export const useCleanup = create<CleanupStore>((set, get) => ({
   byMedia: {},
+  noisePrint: {},
+  setNoisePrint: (mediaId, p) => {
+    set((s) => {
+      const noisePrint = { ...s.noisePrint };
+      if (p) noisePrint[mediaId] = p;
+      else delete noisePrint[mediaId];
+      return { noisePrint };
+    });
+    useProject.getState().markDirty();
+  },
+  loadNoisePrint: (mediaId, p) =>
+    set((s) => {
+      const noisePrint = { ...s.noisePrint };
+      if (p) noisePrint[mediaId] = p;
+      else delete noisePrint[mediaId];
+      return { noisePrint };
+    }),
   get: (mediaId) => get().byMedia[mediaId] ?? null,
   set: (mediaId, spec) => {
     set((s) => {

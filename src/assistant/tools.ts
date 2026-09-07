@@ -1,6 +1,8 @@
 // AI 助手的工具目錄（MCP tools）：名稱 / JSON schema / handler。
 // Rust 端只當 JSON-RPC 轉發器：claude 呼叫 → `mcp-tool-call` 事件 → 這裡執行 → `mcp_tool_result` 回寫。
 import { listen } from "@tauri-apps/api/event";
+import { effectId as fxEffectId } from "../analysis/effects";
+import { makeNoisePrint, matchLoudnessGainDb, peakNormalizeGainDb } from "../analysis/levels";
 import { api, type McpToolCall, type McpToolDef } from "../api";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState, type MarkerKind } from "../analysis/types";
 import { buildChapters } from "../analysis/chapters";
@@ -1310,12 +1312,13 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     name: "add_effect",
-    description: "對目前選取加效果：靜音 / 增益（dB）/ 淡入 / 淡出。先用 set_selection 選好範圍。",
+    description: "對目前選取加效果：靜音 / 增益（dB）/ 淡入 / 淡出（可選曲線）/ 反相。先用 set_selection 選好範圍。峰值正規化與響度對齊請用 normalize_selection。",
     inputSchema: {
       type: "object",
       properties: {
-        kind: { type: "string", enum: ["mute", "gain", "fade_in", "fade_out"] },
+        kind: { type: "string", enum: ["mute", "gain", "fade_in", "fade_out", "invert"] },
         db: { type: "number", minimum: -24, maximum: 12, description: "kind=gain 時的增益" },
+        shape: { type: "string", enum: ["linear", "equal_power", "exponential"], description: "kind=fade_in / fade_out 的曲線（預設 linear）" },
       },
       required: ["kind"],
       additionalProperties: false,
@@ -1323,9 +1326,46 @@ export const TOOLS: ToolSpec[] = [
     handler: (a) => {
       ctxMedia();
       const kind = String(a.kind) as EffectKind;
-      const id = addEffectOnSelection(kind, kind === "gain" ? num(a.db, 0) : undefined);
+      const shape = a.shape === "equal_power" || a.shape === "exponential" ? a.shape : undefined;
+      const id = addEffectOnSelection(kind, kind === "gain" ? num(a.db, 0) : undefined, shape);
       if (!id) throw new ToolError("目前沒有選取（先用 set_selection）");
       return { effectId: id, kind };
+    },
+  },
+  {
+    name: "normalize_selection",
+    description: "把目前選取的音量拉齊：mode=peak 把最大聲拉到 −1 dBFS（峰值正規化）；mode=episode 把這段的響度對齊到整集平均。結果是一個增益效果，可 undo。回傳 confidence：measured / heuristic（太小聲、分析解析度不夠）。",
+    inputSchema: {
+      type: "object",
+      properties: { mode: { type: "string", enum: ["peak", "episode"] } },
+      required: ["mode"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const { media, d } = ctxMedia();
+      const sel = useTimeline.getState().selection;
+      if (!sel) throw new ToolError("目前沒有選取（先用 set_selection）");
+      const local = useTranscript.getState().local[media.id] ?? null;
+      const s = a.mode === "peak" ? peakNormalizeGainDb(local, sel.startMs, sel.endMs, -1) : matchLoudnessGainDb(local, sel.startMs, sel.endMs, "episode");
+      if (!s) throw new ToolError("還沒有波形分析，量不到音量");
+      const db = Math.round(s.db * 10) / 10;
+      const id = fxEffectId("gain", sel.startMs, sel.endMs, db);
+      d.addEffects(media.id, [{ id, kind: "gain", startMs: sel.startMs, endMs: sel.endMs, db, origin: a.mode === "peak" ? "peak_normalize" : "match_loudness" }], a.mode === "peak" ? "峰值正規化" : "響度對齊");
+      return { effectId: id, gainDb: db, summary: s.summary, confidence: s.confidence };
+    },
+  },
+  {
+    name: "set_noise_print",
+    description: "把目前選取當噪音樣本（選一段沒人講話的純底噪，0.3–5 秒）。之後降噪的底噪值都以它為準。太短 / 太長 / 有講話會拒絕並說原因。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      const { media } = ctxMedia();
+      const sel = useTimeline.getState().selection;
+      if (!sel) throw new ToolError("目前沒有選取（先用 set_selection）");
+      const r = makeNoisePrint(useTranscript.getState().local[media.id] ?? null, sel.startMs, sel.endMs);
+      if ("error" in r) throw new ToolError(r.error);
+      useCleanup.getState().setNoisePrint(media.id, r.print);
+      return r.print;
     },
   },
 ];

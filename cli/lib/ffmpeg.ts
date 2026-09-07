@@ -150,7 +150,7 @@ export class Ffmpeg {
 }
 
 /** 效果 → ffmpeg volume 表達式（t 為來源秒數）。 */
-export function effectExpr(effects: { kind: string; startMs: number; endMs: number; db?: number }[]): string {
+export function effectExpr(effects: { kind: string; startMs: number; endMs: number; db?: number; shape?: string }[]): string {
   const EDGE = 0.005;
   const terms = effects.map((e) => {
     const s = (e.startMs / 1000).toFixed(4);
@@ -159,9 +159,21 @@ export function effectExpr(effects: { kind: string; startMs: number; endMs: numb
     const inside = `between(t,${s},${en})`;
     switch (e.kind) {
       case "fade_in":
-        return `if(${inside},(t-${s})/${len},1)`;
-      case "fade_out":
-        return `if(${inside},1-(t-${s})/${len},1)`;
+      case "fade_out": {
+        // 曲線與 analysis/effects.ts 的 fadeCurve 一致：等功率 sin/cos、指數 10^(−3·…)
+        const p = `((t-${s})/${len})`;
+        const fin = e.kind === "fade_in";
+        let curve: string;
+        if (e.shape === "equal_power") curve = fin ? `sin(${p}*PI/2)` : `cos(${p}*PI/2)`;
+        else if (e.shape === "exponential") curve = fin ? `pow(10,-3*(1-${p}))` : `pow(10,-3*${p})`;
+        else curve = fin ? p : `(1-${p})`;
+        return `if(${inside},${curve},1)`;
+      }
+      case "invert": {
+        const edge = Math.min(EDGE, Number(len) / 2).toFixed(4);
+        const w = `clip(min(t-${s},${en}-t)/${edge},0,1)`;
+        return `if(${inside},1-2*${w},1)`;
+      }
       case "mute":
       case "gain": {
         const target = e.kind === "mute" ? "0" : Math.pow(10, (e.db ?? 0) / 20).toFixed(4);

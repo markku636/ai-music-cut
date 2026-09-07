@@ -1,6 +1,6 @@
 // 時間選取（拖選波形 / 逐字稿 Shift+點）的動作：剪掉、只保留、預聽、清除。
 // 不經 React 樹直接操作 store，讓快捷鍵、浮動動作列、MCP 工具都能共用同一套語意。
-import { effectId, type EffectKind } from "../analysis/effects";
+import { effectId, type EffectKind, type FadeShape } from "../analysis/effects";
 import type { Transcript } from "../analysis/types";
 import { playRange } from "../preview/playerRef";
 import { useDecisions } from "../store/decisions";
@@ -75,12 +75,13 @@ export function clearSelection(): void {
   useTimeline.getState().setSelection(null);
 }
 
-/** 對目前選取加效果（靜音 / 淡入 / 淡出 / 增益 dB）。 */
-export function addEffectOnSelection(kind: EffectKind, db?: number): string | null {
+/** 對目前選取加效果（靜音 / 淡入 / 淡出 / 增益 dB / 反相；淡入淡出可帶曲線）。 */
+export function addEffectOnSelection(kind: EffectKind, db?: number, shape?: FadeShape): string | null {
   const c = ctx();
   if (!c) return null;
-  const id = effectId(kind, c.sel.startMs, c.sel.endMs, db);
-  useDecisions.getState().addEffect(c.mediaId, { id, kind, startMs: c.sel.startMs, endMs: c.sel.endMs, ...(db != null ? { db } : {}) });
+  const shapeParams = shape && shape !== "linear" ? { shape: shape === "equal_power" ? 1 : 2 } : undefined;
+  const id = effectId(kind, c.sel.startMs, c.sel.endMs, db, shapeParams);
+  useDecisions.getState().addEffect(c.mediaId, { id, kind, startMs: c.sel.startMs, endMs: c.sel.endMs, ...(db != null ? { db } : {}), ...(shape ? { shape } : {}) });
   return id;
 }
 

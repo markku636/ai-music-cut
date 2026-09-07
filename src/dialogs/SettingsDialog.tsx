@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useDialogs } from "../store/dialogs";
 import { BookMarked, Cog, ScrollText } from "lucide-react";
 import { api, errMessage, type AppSettings, type AsrModelSpec } from "../api";
 import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
@@ -24,16 +25,18 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export type SettingsFocus = "key" | "ffmpeg" | null;
 
 export default function SettingsDialog({
-  open,
   focus = null,
   onClose,
-  onOpenPrompts,
 }: {
-  open: boolean;
   focus?: SettingsFocus;
   onClose: () => void;
-  onOpenPrompts: () => void;
 }) {
+  // 由 DialogHost 掛載：掛著就是開著
+  const open = true;
+  const onOpenPrompts = () => {
+    useDialogs.getState().close("settings");
+    useDialogs.getState().open("prompts");
+  };
   const t = useT();
   const keyInputRef = useRef<HTMLInputElement>(null);
   const ffmpegInputRef = useRef<HTMLInputElement>(null);

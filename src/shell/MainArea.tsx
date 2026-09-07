@@ -44,7 +44,9 @@ import TranscriptPlaceholder from "../transcript/TranscriptPlaceholder";
 import TranscriptSearch from "../transcript/TranscriptSearch";
 import type { TextHit } from "../analysis/textSearch";
 import ReviewMode from "../decisions/ReviewMode";
-import StyleDialog from "../dialogs/StyleDialog";
+import { runCommand } from "../commands/registry";
+import { analyzeWithPreflight, openSettings } from "../commands/appActions";
+import { openDialog } from "../store/dialogs";
 import Splitter from "./Splitter";
 import { useResizable } from "./useResizable";
 
@@ -59,16 +61,11 @@ const EMPTY_OV: Overlay[] = [];
 const OVERLAY_GAINS = [0, -6, -12, -18, -24];
 const GAIN_STEPS = [6, 3, -3, -6, -12];
 
-export interface MainAreaProps {
-  onOpen: () => void;
-  onAnalyze: () => void;
-  onOpenSettings: (focus?: "key" | "ffmpeg") => void;
-  /** 只輸出選取的那一段（社群短片）。 */
-  onExportRange?: (startMs: number, endMs: number) => void;
-}
-
-export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRange }: MainAreaProps) {
+export default function MainArea() {
   const t = useT();
+  const onOpen = () => void runCommand("file.open", "menu");
+  const onAnalyze = () => analyzeWithPreflight();
+  const onOpenSettings = (focus?: "key" | "ffmpeg") => openSettings(focus ?? null);
   const active = useProject(selectActiveMedia);
   const mediaId = active?.id ?? null;
   const transcript = useTranscript((s) => (mediaId ? s.byMedia[mediaId] ?? null : null));
@@ -89,7 +86,6 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   mediaIdRef.current = mediaId;
   const [onlySpeaker, setOnlySpeaker] = useState<string | null>(null);
   const [menu, setMenu] = useState<WaveMenuInfo | null>(null);
-  const [styleFor, setStyleFor] = useState<{ startMs: number; endMs: number } | null>(null);
   const reviewing = useDecisions((s) => s.reviewing);
   const setReviewing = useDecisions((s) => s.setReviewing);
   const loopSel = useTimeline((s) => s.loopSelection);
@@ -277,7 +273,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
         { label: t("提起（留白靜音，不關洞）"), icon: VolumeX, shortcut: "Shift+Delete", onClick: () => void liftSelection() },
         { label: t("只保留（頭尾剪掉）"), icon: Crop, onClick: () => void keepOnlySelection() },
         { separator: true },
-        { label: t("改成另一種曲風…"), icon: Palette, onClick: () => setStyleFor({ startMs: selection.startMs, endMs: selection.endMs }) },
+        { label: t("改成另一種曲風…"), icon: Palette, onClick: () => openDialog("style", { startMs: selection.startMs, endMs: selection.endMs }) },
         { separator: true },
         { label: t("靜音"), icon: VolumeX, onClick: () => addEffectOnSelection("mute") },
         { label: t("淡入"), icon: TrendingUp, onClick: () => addEffectOnSelection("fade_in") },
@@ -527,13 +523,12 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
               onRetry={() => void ensureLocalAnalysis(active.id).catch(() => {})}
               onOpenSettings={onOpenSettings}
             />
-            <SelectionBar onStyle={(s, e) => setStyleFor({ startMs: s, endMs: e })} onExportRange={(s, e) => onExportRange?.(s, e)} />
+            <SelectionBar />
             {menu && <WaveContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
             {seamMenu && <WaveContextMenu x={seamMenu.x} y={seamMenu.y} items={seamMenuItems(seamMenu.seam)} onClose={() => setSeamMenu(null)} />}
             {markerMenu && <WaveContextMenu x={markerMenu.x} y={markerMenu.y} items={markerMenuItems(markerMenu.marker)} onClose={() => setMarkerMenu(null)} />}
             {wordMenu && <WaveContextMenu x={wordMenu.x} y={wordMenu.y} items={wordMenuItems(wordMenu.id)} onClose={() => setWordMenu(null)} />}
             {overlayMenu && <WaveContextMenu x={overlayMenu.x} y={overlayMenu.y} items={overlayMenuItems(overlayMenu.o)} onClose={() => setOverlayMenu(null)} />}
-            {styleFor && mediaId && <StyleDialog mediaId={mediaId} startMs={styleFor.startMs} endMs={styleFor.endMs} onClose={() => setStyleFor(null)} />}
           </div>
           <OverviewStrip mediaId={mediaId} durationMs={active.probe?.duration_ms ?? 0} />
           <Splitter axis="y" onPointerDown={timeline.onPointerDown} />

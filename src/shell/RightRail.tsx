@@ -13,6 +13,7 @@ import type { AudioEffect } from "../analysis/effects";
 import type { Marker } from "../analysis/types";
 import type { SeamInfo } from "../timeline/trimActions";
 import { Badge, IconButton } from "../ui/index";
+import * as A from "../commands/appActions";
 
 /**
  * 右側單一側欄 + 分頁。
@@ -24,19 +25,17 @@ import { Badge, IconButton } from "../ui/index";
 export default function RightRail({
   mediaId,
   analysisState,
-  onRerunRules,
-  onVerify,
   seams,
   effects,
 }: {
   mediaId: string | null;
   analysisState: AnalysisState | null;
-  onRerunRules: () => void;
-  onVerify: () => void;
   seams: SeamInfo[];
   effects: AudioEffect[];
 }) {
   const t = useT();
+  const onRerunRules = A.rerunRules;
+  const onVerify = A.openVerify;
   const tab = useUi((s) => s.tab);
   const open = useUi((s) => s.railOpen);
   const width = useUi((s) => s.railWidth);

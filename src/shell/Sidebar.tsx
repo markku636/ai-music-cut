@@ -9,6 +9,7 @@ import { useProject, type MediaItem } from "../store/project";
 import { useSettings } from "../store/settings";
 import { useTranscript } from "../store/transcript";
 import { formatDuration } from "../time";
+import * as A from "../commands/appActions";
 
 /**
  * 雙擊音檔：切過去並從頭播。換來源時 <audio> 的 src 才剛換掉，要等 canplay 才能 play()，
@@ -63,15 +64,11 @@ const KIND_LABEL: Record<JobKind, string> = {
   music: "AI 配樂",
 };
 
-export interface SidebarProps {
-  width: number;
-  onOpen: () => void;
-  onAnalyze: (mediaId: string) => void;
-  onOpenSettings: (focus?: "key" | "ffmpeg") => void;
-}
-
-export default function Sidebar({ width, onOpen, onAnalyze, onOpenSettings }: SidebarProps) {
+export default function Sidebar({ width }: { width: number }) {
   const t = useT();
+  const onOpen = () => void A.openMedia();
+  const onAnalyze = (mediaId: string) => A.analyzeWithPreflight(mediaId);
+  const onOpenSettings = (focus?: "key" | "ffmpeg") => A.openSettings(focus ?? null);
   const media = useProject((s) => s.media);
   const activeId = useProject((s) => s.activeMediaId);
   const setActive = useProject((s) => s.setActive);

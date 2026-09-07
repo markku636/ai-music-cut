@@ -6,10 +6,7 @@ import Icon from "../ui/Icon";
 import { useT } from "../i18n";
 import { selectActiveMedia, useProject } from "../store/project";
 import { useSettings } from "../store/settings";
-
-export interface SetupBannerProps {
-  onOpenSettings: (focus?: "key" | "ffmpeg") => void;
-}
+import { openSettings } from "../commands/appActions";
 
 type Tone = "danger" | "warning" | "info";
 
@@ -38,8 +35,9 @@ function writeFlag(storage: Storage | null, key: string) {
  * 設定問題「在咬到人的地方」說清楚：同時只顯示一條，優先序 ffmpeg → ttls 離線 → 無金鑰 → 無 claude。
  * 無金鑰那條在有媒體且尚未分析時自動收起（WorkflowStrip 的第 ② 步已顯示同一個 CTA，不疊兩條）。
  */
-export default function SetupBanner({ onOpenSettings }: SetupBannerProps) {
+export default function SetupBanner() {
   const t = useT();
+  const onOpenSettings = (focus?: "key" | "ffmpeg") => openSettings(focus ?? null);
   const loaded = useSettings((s) => s.loaded);
   const ffmpeg = useSettings((s) => s.ffmpeg);
   const ttls = useSettings((s) => s.ttls);

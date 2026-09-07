@@ -1,121 +1,31 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { BrainCircuit, Captions, Package, Scissors, Link2, ChevronDown, Cog, Disc3, FileMusic, FileText, FolderOpen, Info, Keyboard, Layers, LayoutTemplate, MessageSquareOff, MicOff, Save, ScrollText, Sparkles, Star, Users, Wand2, WandSparkles, Zap } from "lucide-react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, MoreHorizontal, Sparkles } from "lucide-react";
+import { aiMenuItems, commandLabel, moreMenuItems } from "../commands/menuModel";
+import { command, runCommand, useCommandTick } from "../commands/registry";
+import { formatShortcut } from "../commands/shortcut";
+import type { Command } from "../commands/types";
 import Icon from "../ui/Icon";
+import MenuPanel from "../ui/MenuPanel";
 import { APP_NAME } from "../brand";
 import { useT } from "../i18n";
 import { useAssistant } from "../store/assistant";
-import LanguageMenu from "./LanguageMenu";
-import ThemeMenu from "./ThemeMenu";
 
-export interface ToolbarProps {
-  onOpen: () => void;
-  onAnalyze: () => void;
-  canAnalyze: boolean;
-  onJudge: () => void;
-  canJudge: boolean;
-  onRender: () => void;
-  canRender: boolean;
-  onSeparate: () => void;
-  canSeparate: boolean;
-  onSyncMics: () => void;
-  canSyncMics: boolean;
-  onHighlight: () => void;
-  canHighlight: boolean;
-  onMusic: () => void;
-  onCleanup: () => void;
-  canCleanup: boolean;
-  onHighlights: () => void;
-  canHighlights: boolean;
-  onShowNotes: () => void;
-  canShowNotes: boolean;
-  onAutoCut: () => void;
-  canAutoCut: boolean;
-  onPrompts: () => void;
-  onFillers: () => void;
-  onTakes: () => void;
-  canTakes: boolean;
-  onTemplates: () => void;
-  onSpeakers: () => void;
-  onCaptions: () => void;
-  canCaptions: boolean;
-  onSplitExport: () => void;
-  canSplitExport: boolean;
-  onBundle: () => void;
-  canBundle: boolean;
-  onBatch: () => void;
-  canBatch: boolean;
-  onSave: () => void;
-  dirty: boolean;
-  onHelp: () => void;
-  onAbout: () => void;
-  onSettings: () => void;
-}
+/** 五顆主要動作：開檔 / 分析 / 輸出 / 一鍵智慧剪輯 / 儲存 —— 流程列講的就是這五個動詞。 */
+const PRIMARY = ["file.open", "ai.analyze", "file.export", "ai.autoCut", "file.save"];
 
-// ---- 上方大圖示工具列（承襲 db-kit：放不下時收成純圖示，遲滯量測避免震盪）----
-export default function Toolbar(p: ToolbarProps) {
+/**
+ * 上方大圖示工具列。沒有 props：五顆主要按鈕與兩個下拉都從指令註冊表長出來。
+ * 放不下時收成純圖示（承襲 db-kit：遲滯量測避免震盪）。
+ */
+export default function Toolbar() {
   const t = useT();
+  useCommandTick();
   const assistantOpen = useAssistant((s) => s.open);
-  // 12 顆同權重的按鈕沒有主次可言，每次都要重新掃一遍才找得到「輸出」在哪。
-  // 分成三層：主要動作 4 顆（開啟 / 分析 / 輸出 / 儲存）、AI 工具收成下拉、
-  // 快捷鍵 / 設定 / 關於 移到最右邊（那是「偶爾才用一次」的東西）。
-  type Tool = { icon: ReactNode; label: string; onClick: () => void; disabled: boolean; active?: boolean; hint?: string; badge?: boolean };
-  // 分組標題列。十六個工具排成一條平的清單、順序又是「誰先做出來誰在上面」，
-  // 每次都得整份掃過去才找得到要按的那一個。依「一集的實際流程」分組：
-  // 先問 AI → 修內容 → 修聲音 → 挑精華 → 交付 → 跨集。
-  const isGroup = (x: Tool | { group: string }): x is { group: string } => "group" in x;
-  const tools: Tool[] = [
-    { icon: <Icon icon={FolderOpen} size={20} />, label: t("開啟音檔"), onClick: p.onOpen, disabled: false, hint: t("Ctrl+O") },
-    { icon: <Icon icon={WandSparkles} size={20} />, label: t("分析"), onClick: p.onAnalyze, disabled: !p.canAnalyze, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={FileMusic} size={20} />, label: t("輸出"), onClick: p.onRender, disabled: !p.canRender, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={Zap} size={20} />, label: t("一鍵智慧剪輯"), onClick: p.onAutoCut, disabled: !p.canAutoCut, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={Save} size={20} />, label: t("儲存專案"), onClick: p.onSave, disabled: false, badge: p.dirty, hint: t("Ctrl+S") },
-  ];
-  const aiTools: (Tool | { group: string })[] = [
-    { icon: <Icon icon={Sparkles} size={16} />, label: t("AI 助手"), onClick: () => useAssistant.getState().toggle(), disabled: false, active: assistantOpen },
-    { group: t("這一集") },
-    { icon: <Icon icon={BrainCircuit} size={16} />, label: t("AI 判讀（剪輯＋審核）"), onClick: p.onJudge, disabled: !p.canJudge, hint: t("先完成分析") },
-    { icon: <Icon icon={MessageSquareOff} size={16} />, label: t("贅字管理（依詞整群處理）"), onClick: p.onFillers, disabled: false },
-    { icon: <Icon icon={Layers} size={16} />, label: t("替代 take（同一句講了好幾次）"), onClick: p.onTakes, disabled: !p.canTakes, hint: t("先完成分析") },
-    { icon: <Icon icon={Users} size={16} />, label: t("講者（誰講了多久 / 改名 / 手動指派）"), onClick: p.onSpeakers, disabled: false },
-    { icon: <Icon icon={Link2} size={16} />, label: t("同步麥克風"), onClick: p.onSyncMics, disabled: !p.canSyncMics, hint: t("媒體清單裡要有兩個以上的檔案") },
-    { group: t("聲音") },
-    { icon: <Icon icon={Wand2} size={16} />, label: t("修聲（降噪 / 去隆隆 / 齒音）"), onClick: p.onCleanup, disabled: !p.canCleanup, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={MicOff} size={16} />, label: t("去人聲"), onClick: p.onSeparate, disabled: !p.canSeparate, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={Disc3} size={16} />, label: t("AI 配樂"), onClick: p.onMusic, disabled: false },
-    { group: t("精華") },
-    { icon: <Icon icon={Zap} size={16} />, label: t("精華片段"), onClick: p.onHighlight, disabled: !p.canHighlight, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={Star} size={16} />, label: t("精華合輯（串成一支預告）"), onClick: p.onHighlights, disabled: !p.canHighlights, hint: t("先開啟一個音檔") },
-    { group: t("交付") },
-    { icon: <Icon icon={FileText} size={16} />, label: t("節目筆記（摘要 / 章節 / 節錄）"), onClick: p.onShowNotes, disabled: !p.canShowNotes, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={Captions} size={16} />, label: t("字幕與逐字稿（SRT / VTT / Markdown）"), onClick: p.onCaptions, disabled: !p.canCaptions, hint: t("先完成分析") },
-    { icon: <Icon icon={Scissors} size={16} />, label: t("依章節分割輸出（一次錄多集）"), onClick: p.onSplitExport, disabled: !p.canSplitExport, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={Package} size={16} />, label: t("發布包（音檔＋字幕＋筆記＋章節）"), onClick: p.onBundle, disabled: !p.canBundle, hint: t("先開啟一個音檔") },
-    { group: t("跨集") },
-    { icon: <Icon icon={Layers} size={16} />, label: t("批次處理（多集一次跑完）"), onClick: p.onBatch, disabled: !p.canBatch, hint: t("媒體清單裡要有檔案") },
-    { icon: <Icon icon={LayoutTemplate} size={16} />, label: t("專案範本（開場 / 片尾 / 目標響度）"), onClick: p.onTemplates, disabled: false },
-  ];
-  const utilTools: Tool[] = [
-    { icon: <Icon icon={Keyboard} size={18} />, label: t("快捷鍵 (F1)"), onClick: p.onHelp, disabled: false },
-    { icon: <Icon icon={ScrollText} size={18} />, label: t("提示詞"), onClick: p.onPrompts, disabled: false },
-    { icon: <Icon icon={Cog} size={18} />, label: t("設定"), onClick: p.onSettings, disabled: false },
-    { icon: <Icon icon={Info} size={18} />, label: t("關於"), onClick: p.onAbout, disabled: false },
-  ];
+  const primary = PRIMARY.map(command).filter((c): c is Command => !!c);
 
-  const [aiOpen, setAiOpen] = useState(false);
-  const aiRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!aiOpen) return;
-    const close = (e: MouseEvent) => {
-      if (!aiRef.current?.contains(e.target as Node)) setAiOpen(false);
-    };
-    const esc = (e: KeyboardEvent) => e.key === "Escape" && setAiOpen(false);
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", esc);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", esc);
-    };
-  }, [aiOpen]);
+  const [open, setOpen] = useState<null | "more" | "ai">(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
+  const aiRef = useRef<HTMLButtonElement>(null);
 
   const barRef = useRef<HTMLDivElement>(null);
   const [compact, setCompact] = useState(false);
@@ -143,6 +53,26 @@ export default function Toolbar(p: ToolbarProps) {
     return () => ro.disconnect();
   }, [compact, t]);
 
+  const bigButton = (key: string, icon: ReactNode, label: string, opts: { onClick: () => void; disabled?: boolean; title?: string; active?: boolean; badge?: boolean; dataCmd?: string; expanded?: boolean; ref?: React.Ref<HTMLButtonElement> }) => (
+    <button
+      type="button"
+      key={key}
+      ref={opts.ref}
+      onClick={opts.onClick}
+      disabled={opts.disabled}
+      title={opts.title}
+      data-cmd={opts.dataCmd}
+      {...(opts.expanded !== undefined ? { "aria-expanded": opts.expanded } : {})}
+      className={`${compact ? "w-11" : "min-w-16 px-2"} relative shrink-0 h-12 flex flex-col items-center justify-center rounded hover:bg-fg/5 disabled:opacity-40 disabled:hover:bg-transparent focus-visible:outline-2 focus-visible:outline-accent/60 ${
+        opts.active ? "bg-accent/12 text-accent" : ""
+      }`}
+    >
+      <span className="text-lg leading-none inline-flex items-center gap-0.5">{icon}</span>
+      {!compact && <span className="text-[11px] text-fg/60 mt-1 whitespace-nowrap">{label}</span>}
+      {opts.badge && <span className="absolute top-1.5 right-2 w-1.5 h-1.5 rounded-full bg-warning" aria-hidden />}
+    </button>
+  );
+
   return (
     <div ref={barRef} className="h-16 bg-bar border-b border-fg/10 flex items-center px-3 gap-1 shadow-e1">
       <div className="mr-4 pl-1 flex flex-col justify-center shrink-0 leading-tight">
@@ -150,7 +80,7 @@ export default function Toolbar(p: ToolbarProps) {
           <span>{APP_NAME}</span>
           <button
             type="button"
-            onClick={p.onAbout}
+            onClick={() => void runCommand("help.about", "toolbar")}
             title={t("版本 {version}", { version: __APP_VERSION__ })}
             className="text-[11px] font-normal text-fg/40 tabular-nums hover:text-fg/70 hover:underline focus-visible:outline-2 focus-visible:outline-accent/60 rounded"
           >
@@ -158,85 +88,49 @@ export default function Toolbar(p: ToolbarProps) {
           </button>
         </div>
       </div>
-      {tools.map((tool) => (
-        <button
-          type="button"
-          key={tool.label}
-          onClick={tool.onClick}
-          disabled={tool.disabled}
-          title={tool.disabled && tool.hint ? tool.hint : tool.hint ? `${tool.label}（${tool.hint}）` : tool.label}
-          {...(tool.active !== undefined ? { "aria-pressed": tool.active } : {})}
-          className={`${compact ? "w-11" : "min-w-16 px-2"} relative shrink-0 h-12 flex flex-col items-center justify-center rounded hover:bg-fg/5 disabled:opacity-40 disabled:hover:bg-transparent focus-visible:outline-2 focus-visible:outline-accent/60 ${
-            tool.active ? "bg-accent/12 text-accent" : ""
-          }`}
-        >
-          <span className="text-lg leading-none">{tool.icon}</span>
-          {!compact && <span className="text-[11px] text-fg/60 mt-1 whitespace-nowrap">{tool.label}</span>}
-          {tool.badge && <span className="absolute top-1.5 right-2 w-1.5 h-1.5 rounded-full bg-warning" aria-hidden />}
-        </button>
-      ))}
+      {primary.map((c) => {
+        const en = c.enabled();
+        const label = commandLabel(c);
+        const sc = c.shortcuts?.length ? formatShortcut(c.shortcuts[0]) : null;
+        return bigButton(c.id, c.icon ? <Icon icon={c.icon} size={20} /> : null, label, {
+          // 不灰掉要解釋：停用時 tooltip 就是原因；能用時附快捷鍵
+          onClick: () => void runCommand(c.id, "toolbar"),
+          disabled: !en.ok,
+          title: en.ok ? (sc ? `${label}（${sc}）` : label) : t(en.why),
+          badge: c.badge?.(),
+          dataCmd: c.id,
+        });
+      })}
 
       <span className="w-px h-8 bg-fg/10 mx-1 shrink-0" aria-hidden />
-      <div className="relative shrink-0" ref={aiRef}>
-        <button
-          type="button"
-          onClick={() => setAiOpen((v) => !v)}
-          aria-expanded={aiOpen}
-          title={t("AI 工具")}
-          className={`${compact ? "w-11" : "min-w-16 px-2"} h-12 flex flex-col items-center justify-center rounded hover:bg-fg/5 focus-visible:outline-2 focus-visible:outline-accent/60 ${
-            aiOpen || assistantOpen ? "bg-accent/12 text-accent" : ""
-          }`}
-        >
-          <span className="text-lg leading-none inline-flex items-center gap-0.5">
-            <Icon icon={Sparkles} size={20} />
-            <ChevronDown size={12} className="opacity-60" />
-          </span>
-          {!compact && <span className="text-[11px] text-fg/60 mt-1 whitespace-nowrap">{t("AI 工具")}</span>}
-        </button>
-        {aiOpen && (
-          <div className="absolute left-0 top-full mt-1 z-50 min-w-56 rounded-md border border-fg/10 bg-elevated shadow-e2 py-1">
-            {aiTools.map((tool) =>
-              isGroup(tool) ? (
-                <div key={`g-${tool.group}`} className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide text-fg/30 select-none">
-                  {tool.group}
-                </div>
-              ) : (
-              <button
-                type="button"
-                key={tool.label}
-                disabled={tool.disabled}
-                title={tool.disabled && tool.hint ? tool.hint : undefined}
-                onClick={() => {
-                  setAiOpen(false);
-                  tool.onClick();
-                }}
-                className={`w-full px-3 py-1.5 flex items-center gap-2 text-sm text-left hover:bg-fg/5 disabled:opacity-40 disabled:hover:bg-transparent ${tool.active ? "text-accent" : "text-fg/85"}`}
-              >
-                {tool.icon}
-                {tool.label}
-              </button>
-              ),
-            )}
-          </div>
-        )}
-      </div>
+      {bigButton(
+        "ai",
+        <>
+          <Icon icon={Sparkles} size={20} />
+          <ChevronDown size={12} className="opacity-60" />
+        </>,
+        t("AI 與交付"),
+        { onClick: () => setOpen((v) => (v === "ai" ? null : "ai")), active: open === "ai" || assistantOpen, expanded: open === "ai", ref: aiRef, dataCmd: "toolbar.ai" },
+      )}
 
       <div className="ml-auto shrink-0 flex items-center gap-1 pl-3">
-        {utilTools.map((tool) => (
-          <button
-            type="button"
-            key={tool.label}
-            onClick={tool.onClick}
-            title={tool.label}
-            className="w-8 h-8 grid place-items-center rounded text-fg/55 hover:bg-fg/5 hover:text-fg/85 focus-visible:outline-2 focus-visible:outline-accent/60"
-          >
-            {tool.icon}
-          </button>
-        ))}
-        <span className="w-px h-5 bg-fg/10 mx-1" aria-hidden />
-        <LanguageMenu compact={compact} />
-        <ThemeMenu compact={compact} />
+        <button
+          ref={moreRef}
+          type="button"
+          onClick={() => setOpen((v) => (v === "more" ? null : "more"))}
+          aria-expanded={open === "more"}
+          title={t("更多（檢視 / 工具 / 說明）")}
+          data-cmd="toolbar.more"
+          className={`h-8 px-2 flex items-center gap-1 rounded text-xs text-fg/60 hover:bg-fg/5 hover:text-fg/85 focus-visible:outline-2 focus-visible:outline-accent/60 ${open === "more" ? "bg-accent/12 text-accent" : ""}`}
+        >
+          <Icon icon={MoreHorizontal} size={18} />
+          {!compact && <span>{t("更多")}</span>}
+          <ChevronDown size={12} className="opacity-60" />
+        </button>
       </div>
+
+      {open === "ai" && aiRef.current && <MenuPanel anchor={{ rect: aiRef.current.getBoundingClientRect(), side: "bottom" }} items={aiMenuItems()} onClose={() => setOpen(null)} minWidthClass="min-w-64" />}
+      {open === "more" && moreRef.current && <MenuPanel anchor={{ rect: moreRef.current.getBoundingClientRect(), side: "bottom" }} items={moreMenuItems()} onClose={() => setOpen(null)} minWidthClass="min-w-56" />}
     </div>
   );
 }

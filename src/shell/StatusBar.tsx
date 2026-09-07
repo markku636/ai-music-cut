@@ -7,13 +7,15 @@ import { useProject } from "../store/project";
 import { ffmpegSourceLabel, shortFfmpegVersion } from "../ffmpegSource";
 import { useSettings } from "../store/settings";
 import { formatMs } from "../time";
+import { openSettings } from "../commands/appActions";
 
 function Dot({ ok, warn }: { ok: boolean; warn?: boolean }) {
   return <span className={`inline-block w-1.5 h-1.5 rounded-full ${ok ? (warn ? "bg-warning" : "bg-success") : "bg-danger"}`} aria-hidden />;
 }
 
-export default function StatusBar({ onOpenSettings }: { onOpenSettings: (focus?: "key" | "ffmpeg") => void }) {
+export default function StatusBar() {
   const t = useT();
+  const onOpenSettings = (focus?: "key" | "ffmpeg") => openSettings(focus ?? null);
   const ffmpeg = useSettings((s) => s.ffmpeg);
   const ttls = useSettings((s) => s.ttls);
   const key = useSettings((s) => s.key);

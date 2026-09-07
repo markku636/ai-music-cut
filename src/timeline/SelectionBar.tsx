@@ -2,6 +2,7 @@ import { Crop, Palette, Play, Repeat, Scissors, Share2, Square, Star, TrendingDo
 import { useT } from "../i18n";
 import { playRange, stopRange } from "../preview/playerRef";
 import { useHighlights } from "../store/highlights";
+import { openDialog } from "../store/dialogs";
 import { usePlayback } from "../store/playback";
 import { useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
@@ -14,8 +15,10 @@ import { addEffectOnSelection, clearSelection, cutSelection, keepOnlySelection }
  * 浮在時間軸右下的選取動作列：範圍 / 長度、播放（可循環）、剪掉、只保留、靜音、淡入 / 淡出、縮放到選取、清除。
  * 沒有選取時不渲染。所有動作也在右鍵選單與快捷鍵（Space / Delete / Z / Esc）。
  */
-export default function SelectionBar({ onStyle, onExportRange }: { onStyle?: (startMs: number, endMs: number) => void; onExportRange?: (startMs: number, endMs: number) => void }) {
+export default function SelectionBar() {
   const t = useT();
+  const onStyle = (startMs: number, endMs: number) => openDialog("style", { startMs, endMs });
+  const onExportRange = (startMs: number, endMs: number) => openDialog("render", { range: { startMs, endMs }, reel: null, reelBed: null });
   const selection = useTimeline((s) => s.selection);
   const loop = useTimeline((s) => s.loopSelection);
   const toggleLoop = useTimeline((s) => s.toggleLoop);
@@ -51,12 +54,12 @@ export default function SelectionBar({ onStyle, onExportRange }: { onStyle?: (st
           toast.success(t("已加進精華片段（共 {n} 段）").replace("{n}", String(useHighlights.getState().list(id).length)));
         }}
       />
-      {onExportRange && (
+      {(
         <IconButton icon={Share2} label={t("只輸出這一段（社群短片；剪輯與配樂照舊，專案不動）")} onClick={() => onExportRange(selection.startMs, selection.endMs)} />
       )}
       <IconButton icon={Crop} label={t("只保留這段（頭尾剪掉）")} onClick={() => void keepOnlySelection()} />
       <span className="w-px h-4 bg-fg/10 mx-0.5" aria-hidden />
-      {onStyle && (
+      {(
         <IconButton icon={Palette} label={t("把這段改成另一種曲風（AI）")} onClick={() => onStyle(selection.startMs, selection.endMs)} />
       )}
       <IconButton icon={VolumeX} label={t("靜音這段")} onClick={() => addEffectOnSelection("mute")} />

@@ -37,6 +37,8 @@ import { useTimeline } from "./store/timeline";
 import { useUi } from "./store/ui";
 import { bladeAt, seamsOfEdl, setSeamPause, trimSeam, type SeamInfo } from "./timeline/trimActions";
 import { liftSelection } from "./timeline/trimActions";
+import { runCommand, useCommands } from "./commands/registry";
+import { useDialogs } from "./store/dialogs";
 
 export interface DevBridge {
   playRange: typeof playRange;
@@ -94,6 +96,10 @@ export interface DevBridge {
   settings: typeof useSettings;
   transcript: typeof useTranscript;
   seams: () => SeamInfo[];
+  /** 指令註冊表與對話框堆疊（R1 殼層）。 */
+  commands: typeof useCommands;
+  runCommand: typeof runCommand;
+  dialogs: typeof useDialogs;
 }
 
 export function installDevBridge() {
@@ -180,5 +186,8 @@ export function installDevBridge() {
       const id = useProject.getState().activeMediaId;
       return id ? seamsOfEdl(edlFor(id)) : [];
     },
+    commands: useCommands,
+    runCommand,
+    dialogs: useDialogs,
   };
 }

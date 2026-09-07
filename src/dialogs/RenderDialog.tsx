@@ -7,6 +7,7 @@ import { pickSaveFile, toast } from "../ui";
 import { useT } from "../i18n";
 import { clipPath } from "../analysis/clip";
 import { normalizeRanges, reelSourceMs, type ReelRange } from "../analysis/reel";
+import { startVerify } from "../commands/appActions";
 import { buildRenderPlan, defaultOutPath, runRender, type RenderFormat } from "../pipeline/render";
 import { renderStems, type StemProgress } from "../pipeline/stems";
 import { useDecisions } from "../store/decisions";
@@ -45,14 +46,12 @@ function toStored(p: ExportPreset) {
 export default function RenderDialog({
   mediaId,
   onClose,
-  onVerify,
   range,
   reel,
   reelBed,
 }: {
   mediaId: string;
   onClose: () => void;
-  onVerify?: (outPath: string, durationMs: number | null) => void;
   /** 只輸出這一段（來源時間）。有值時預設檔名帶 _clip，而且不寫章節、不做分軌。 */
   range?: { startMs: number; endMs: number } | null;
   /** 精華合輯：把好幾段不相鄰的範圍串成一支預告（與 range 互斥）。 */
@@ -212,18 +211,16 @@ export default function RenderDialog({
               <Button icon={FolderOpen} onClick={() => void api.openPath(done.out_path!)}>
                 {t("開啟資料夾")}
               </Button>
-              {onVerify && (
-                <Button
-                  icon={BadgeCheck}
-                  onClick={() => {
-                    onVerify(done.out_path!, built?.edl.stats.keptMs ?? null);
-                    onClose();
-                  }}
-                  title={t("把成品送回 ttls 重新轉寫，檢查有沒有剪掉不該剪的字")}
-                >
-                  {t("用 ASR 驗收")}
-                </Button>
-              )}
+              <Button
+                icon={BadgeCheck}
+                onClick={() => {
+                  startVerify(done.out_path!, built?.edl.stats.keptMs ?? null);
+                  onClose();
+                }}
+                title={t("把成品送回 ttls 重新轉寫，檢查有沒有剪掉不該剪的字")}
+              >
+                {t("用 ASR 驗收")}
+              </Button>
             </>
           )}
           <Button variant="primary" onClick={() => void start()} loading={busy} disabled={!built || !outPath.trim()}>

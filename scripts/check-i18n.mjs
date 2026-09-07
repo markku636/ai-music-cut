@@ -19,8 +19,12 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(ROOT, "src");
 const CJK = /[一-鿿]/;
 
-/** 標籤表所在的檔案：這些檔的中文字串多半是靠 t(變數) 翻的。 */
+/**
+ * 標籤表所在的檔案：這些檔的中文字串多半是靠 t(變數) 翻的。
+ * 以 "/" 結尾的是整個目錄（指令註冊表：每一條的 title / why 都是 zh key）。
+ */
 const TABLE_SOURCES = [
+  "commands/",
   "dialogs/ShortcutsHelp.tsx",
   "analysis/types.ts",
   "analysis/effects.ts",
@@ -59,7 +63,7 @@ for (const file of walk(SRC)) {
     if (CJK.test(m[1]) && !have.has(m[1]) && !NOT_UI.has(m[1])) missing.push({ rel, s: m[1], via: "t()" });
   }
 
-  if (TABLE_SOURCES.includes(rel)) {
+  if (TABLE_SOURCES.some((s) => (s.endsWith("/") ? rel.startsWith(s) : rel === s))) {
     for (const line of text.split("\n")) {
       const st = line.trim();
       if (st.startsWith("//") || st.startsWith("*") || st.startsWith("/*")) continue;
@@ -76,8 +80,10 @@ const uniq = missing.filter((x) => !seen.has(x.s) && seen.add(x.s));
 
 if (uniq.length) {
   console.error(`[check-i18n] ${uniq.length} 個字串沒有進 en 目錄：`);
-  for (const x of uniq.slice(0, 40)) console.error(`  ${x.rel} (${x.via}): ${x.s}`);
-  if (uniq.length > 40) console.error(`  …還有 ${uniq.length - 40} 個`);
+  // --all：全部列出（補翻譯時用）
+  const limit = process.argv.includes("--all") ? Infinity : 40;
+  for (const x of uniq.slice(0, limit)) console.error(`  ${x.rel} (${x.via}): ${x.s}`);
+  if (uniq.length > limit) console.error(`  …還有 ${uniq.length - limit} 個`);
   process.exit(1);
 }
 

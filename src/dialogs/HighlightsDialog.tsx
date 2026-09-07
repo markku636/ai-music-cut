@@ -5,6 +5,7 @@ import { Button, EmptyState, Field, IconButton, Input, Modal, Select } from "../
 import { useT } from "../i18n";
 import { isRangePlaying, playRange, stopRange } from "../preview/playerRef";
 import { useHighlights } from "../store/highlights";
+import { useDialogs } from "../store/dialogs";
 import { useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
 import { formatMs } from "../time";
@@ -15,15 +16,12 @@ import { formatMs } from "../time";
  * 一集剪完之後要丟社群的，通常不是一整段連續的 60 秒，而是散在各處的三五句。
  * 「只輸出這一段」處理不了那個 —— 這裡把挑好的幾段串成一支預告，專案完全不動。
  */
-export default function HighlightsDialog({
-  mediaId,
-  onExport,
-  onClose,
-}: {
-  mediaId: string;
-  onExport: (bedMediaId: string | null) => void;
-  onClose: () => void;
-}) {
+export default function HighlightsDialog({ mediaId, onClose }: { mediaId: string; onClose: () => void }) {
+  const onExport = (bedMediaId: string | null) => {
+    const reel = useHighlights.getState().list(mediaId);
+    useDialogs.getState().close("highlights");
+    useDialogs.getState().open("render", { reel, reelBed: bedMediaId, range: null });
+  };
   const t = useT();
   const list = useHighlights((s) => s.byMedia[mediaId] ?? []);
   const update = useHighlights((s) => s.update);

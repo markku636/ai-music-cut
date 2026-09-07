@@ -8,15 +8,7 @@ import { useJobs } from "../store/jobs";
 import { selectActiveMedia, useProject } from "../store/project";
 import { useSettings } from "../store/settings";
 import { useVerify } from "../store/verify";
-
-export interface WorkflowStripProps {
-  onOpen: () => void;
-  onAnalyze: () => void;
-  onJudge: () => void;
-  onRender: () => void;
-  onVerify: () => void;
-  onOpenSettings: (focus?: "key" | "ffmpeg") => void;
-}
+import * as A from "../commands/appActions";
 
 const EMPTY: never[] = [];
 
@@ -32,8 +24,16 @@ interface Caption {
  * 四步流程列：① 開啟音檔 → ② 分析 → ③ 檢視決策 → ④ 輸出。
  * 由 store 推導「目前在哪一步」，只有目前步顯示說明與唯一主按鈕，讓畫面任何時候都只有一個「下一步」。
  */
-export default function WorkflowStrip(p: WorkflowStripProps) {
+export default function WorkflowStrip() {
   const t = useT();
+  const p = {
+    onOpen: () => void A.openMedia(),
+    onAnalyze: () => A.analyzeWithPreflight(),
+    onJudge: () => A.judgeActive(),
+    onRender: () => A.openRender(null),
+    onVerify: () => A.openVerify(),
+    onOpenSettings: (focus?: "key" | "ffmpeg") => A.openSettings(focus ?? null),
+  };
   const active = useProject(selectActiveMedia);
   const key = useSettings((s) => s.key);
   const claude = useSettings((s) => s.claude);

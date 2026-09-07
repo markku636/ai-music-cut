@@ -1,56 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, errMessage } from "./api";
-import { AUDIO_EXTENSIONS } from "./brand";
 import { installToolBridge } from "./assistant/tools";
-import CleanupDialog from "./dialogs/CleanupDialog";
-import HighlightsDialog from "./dialogs/HighlightsDialog";
-import ShowNotesDialog from "./dialogs/ShowNotesDialog";
-import AutoCutDialog from "./dialogs/AutoCutDialog";
-import BatchDialog from "./dialogs/BatchDialog";
-import { clipboard, copySelection, cutSelectionToClipboard, moveSelectionToPlayhead, pasteAtPlayhead } from "./timeline/clipboard";
-import FillersDialog from "./dialogs/FillersDialog";
-import TakesDialog from "./dialogs/TakesDialog";
-import TemplateDialog from "./dialogs/TemplateDialog";
-import SpeakersDialog from "./dialogs/SpeakersDialog";
-import { nextSpeakerChange, speakerAtMs } from "./analysis/speakers";
+import { installCommands } from "./commands";
+import * as A from "./commands/appActions";
 import { defaultAggressiveness } from "./store/project";
-import CaptionsDialog from "./dialogs/CaptionsDialog";
-import SplitExportDialog from "./dialogs/SplitExportDialog";
-import BundleDialog from "./dialogs/BundleDialog";
-import PromptsDialog from "./dialogs/PromptsDialog";
-import type { ReelRange } from "./analysis/reel";
-import { useHighlights } from "./store/highlights";
-import HighlightDialog from "./dialogs/HighlightDialog";
-import MusicDialog from "./dialogs/MusicDialog";
-import AboutDialog from "./dialogs/AboutDialog";
-import RenderDialog from "./dialogs/RenderDialog";
-import SeparateDialog from "./dialogs/SeparateDialog";
-import SyncDialog from "./dialogs/SyncDialog";
-import SettingsDialog, { type SettingsFocus } from "./dialogs/SettingsDialog";
-import VerifyDialog from "./dialogs/VerifyDialog";
-import ShortcutsHelp from "./dialogs/ShortcutsHelp";
 import type { AudioEffect } from "./analysis/effects";
 import { installHotkeys } from "./hotkeys";
-import { useUi } from "./store/ui";
-import { formatMs } from "./time";
-import { bladeAtPlayhead, currentEdl, liftSelection, seamsOfEdl } from "./timeline/trimActions";
-import { isSilentDirection, nextShuttle, shuttleLabel } from "./preview/shuttle";
+import { currentEdl, seamsOfEdl } from "./timeline/trimActions";
 import { runAnalyze } from "./pipeline/analyze";
 import { runJudge } from "./pipeline/judge";
-import { runVerify } from "./pipeline/verify";
 import { enrichAnalysis } from "./pipeline/persist";
-import { runRulesFor } from "./pipeline/rules";
-import { playRange, seekTo, togglePlaySelectionAware } from "./preview/playerRef";
 import { useDecisions } from "./store/decisions";
 import { useAssistant } from "./store/assistant";
 import { useAssistantChat } from "./store/assistantChat";
-import { usePlayback } from "./store/playback";
-import { useTimeline } from "./store/timeline";
-import { useVerify } from "./store/verify";
-import { isActiveState } from "./analysis/types";
-import { t } from "./i18n";
-import { defaultProjectFileName } from "./project/format";
+import DialogHost from "./shell/DialogHost";
 import MainArea from "./shell/MainArea";
 import RightRail from "./shell/RightRail";
 import SetupBanner from "./shell/SetupBanner";
@@ -60,105 +24,14 @@ import StatusBar from "./shell/StatusBar";
 import Toolbar from "./shell/Toolbar";
 import WorkflowStrip from "./shell/WorkflowStrip";
 import { useResizable } from "./shell/useResizable";
-import { clearSelection, cutSelection } from "./timeline/selectionActions";
 import { selectActiveMedia, useProject } from "./store/project";
 import { useSettings } from "./store/settings";
 import { applyAppTheme, useTheme } from "./theme";
-import { pickOpenFile, pickSaveFile, toast, UiHost } from "./ui";
-
-/** 依時間順序選上一個 / 下一個候選並 seek。 */
-/** 精準修剪器開著時在接縫之間跳；沒開就回 false 讓 [ ] 回到候選導覽。 */
-function stepSeam(dir: 1 | -1): boolean {
-  const focus = useTimeline.getState().focusSeamMs;
-  if (focus == null) return false;
-  const seams = seamsOfEdl(currentEdl());
-  if (!seams.length) return false;
-  let idx = 0;
-  let best = Infinity;
-  seams.forEach((s, i) => {
-    const d = Math.abs(s.srcBeforeMs - focus);
-    if (d < best) {
-      best = d;
-      idx = i;
-    }
-  });
-  const next = seams[Math.max(0, Math.min(seams.length - 1, idx + dir))];
-  if (next) {
-    useTimeline.getState().setFocusSeam(next.srcBeforeMs);
-    seekTo(Math.max(0, next.srcBeforeMs - 300));
-  }
-  return true;
-}
-
-function stepCandidate(dir: 1 | -1) {
-  const id = useProject.getState().activeMediaId;
-  if (!id) return;
-  const d = useDecisions.getState();
-  const list = d.candidates[id] ?? [];
-  if (!list.length) return;
-  const cur = list.findIndex((c) => d.selectedIds.includes(c.id));
-  let next: number;
-  if (cur < 0) {
-    const now = usePlayback.getState().currentMs;
-    next = dir > 0 ? list.findIndex((c) => c.startMs > now) : list.length - 1;
-    if (next < 0) next = 0;
-  } else next = Math.max(0, Math.min(list.length - 1, cur + dir));
-  const c = list[next];
-  d.select([c.id]);
-  usePlayback.getState().seek(Math.max(0, c.startMs - 300));
-  // 捲進視野交給 DecisionPanel：清單虛擬化之後，那一列可能不在 DOM 裡，querySelector 會落空。
-}
-
-function decideSelected(state: "accepted" | "rejected") {
-  const id = useProject.getState().activeMediaId;
-  const d = useDecisions.getState();
-  if (!id || !d.selectedIds.length) return;
-  d.decide(id, d.selectedIds, state);
-}
-
-function previewSelected() {
-  const id = useProject.getState().activeMediaId;
-  const d = useDecisions.getState();
-  if (!id || !d.selectedIds.length) return;
-  const c = (d.candidates[id] ?? []).find((x) => x.id === d.selectedIds[0]);
-  if (!c) return;
-  playRange(c.startMs - 1000, c.endMs + 1000, { skip: isActiveState(d.decisions[id]?.[c.id]?.state) });
-}
-
-/**
- * Space：有時間選取 → 從選取起點播這段（可循環）；已經在播這段就停。
- * 舊版還要求「而且目前是暫停」，所以播到一半想重播選取只會變成暫停，很難用。
- *
- * 實作已移到 playerRef.togglePlaySelectionAware()，好讓工具列的播放鈕共用同一個行為
- * —— 兩份各自實作時，按鈕會從播放線位置開始播、Space 會從選取起點開始播。
- */
-const spaceKey = togglePlaySelectionAware;
-
-/** Delete：有時間選取 → 剪掉選取；否則拒絕選取的候選。 */
-function deleteKey() {
-  if (useTimeline.getState().selection) {
-    cutSelection();
-    return;
-  }
-  decideSelected("rejected");
-}
+import { UiHost } from "./ui";
 
 let devAutoOpened = false;
 
-/** 最近專案（設定檔，最多 10 筆）。 */
-function rememberRecent(path: string) {
-  const st = useSettings.getState();
-  const next = [path, ...st.s.recent_projects.filter((p) => p !== path)].slice(0, 10);
-  void st.save({ recent_projects: next });
-}
-
-function isAudioPath(p: string): boolean {
-  const ext = p.split(".").pop()?.toLowerCase() ?? "";
-  return AUDIO_EXTENSIONS.includes(ext);
-}
-
 const EMPTY_FX: AudioEffect[] = [];
-
 
 /** 開場畫面至少待這麼久（毫秒），動畫才看得完；淡出另外算。 */
 const SPLASH_MIN_MS = 780;
@@ -175,6 +48,10 @@ function hideBootSplash(): void {
   }, wait);
 }
 
+/**
+ * App 殼：版面 + 啟動效果。所有「動作」在 commands/（指令註冊表），所有對話框在 DialogHost。
+ * 這裡不再有 22 個 useState boolean。
+ */
 export default function App() {
   const active = useProject(selectActiveMedia);
   // 索引分頁要的接縫 / 效果。edlFor 直接讀 store，所以用這幾個當「該重算」的訊號。
@@ -184,59 +61,10 @@ export default function App() {
   const railEffects = useDecisions((s) => (active ? s.effects[active.id] ?? EMPTY_FX : EMPTY_FX));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const railSeams = useMemo(() => seamsOfEdl(currentEdl()), [active?.id, railCands, railDecs, railSplits]);
-  const dirty = useProject((s) => s.dirty);
-  const mediaCount = useProject((s) => s.media.length);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsFocus, setSettingsFocus] = useState<SettingsFocus>(null);
-  const [aboutOpen, setAboutOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
-  const [renderOpen, setRenderOpen] = useState(false);
-  /** 只輸出選取的那一段（社群短片）；null = 輸出整集。 */
-  const [renderRange, setRenderRange] = useState<{ startMs: number; endMs: number } | null>(null);
-  const [separateOpen, setSeparateOpen] = useState(false);
-  const [syncOpen, setSyncOpen] = useState(false);
-  const [highlightOpen, setHighlightOpen] = useState(false);
-  const [musicOpen, setMusicOpen] = useState(false);
-  const [cleanupOpen, setCleanupOpen] = useState(false);
-  const [reelOpen, setReelOpen] = useState(false);
-  const [renderReel, setRenderReel] = useState<ReelRange[] | null>(null);
-  const [reelBed, setReelBed] = useState<string | null>(null);
-  const [notesOpen, setNotesOpen] = useState(false);
-  const [autoCutOpen, setAutoCutOpen] = useState(false);
-  const [promptsOpen, setPromptsOpen] = useState(false);
-  const [fillersOpen, setFillersOpen] = useState(false);
-  const [takesOpen, setTakesOpen] = useState(false);
-  const [templatesOpen, setTemplatesOpen] = useState(false);
-  const [speakersOpen, setSpeakersOpen] = useState(false);
-  const [captionsOpen, setCaptionsOpen] = useState(false);
-  const [splitOpen, setSplitOpen] = useState(false);
-  const [bundleOpen, setBundleOpen] = useState(false);
-  const [batchOpen, setBatchOpen] = useState(false);
-  const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
-  const openSettings = (focus: SettingsFocus = null) => {
-    setSettingsFocus(focus);
-    setSettingsOpen(true);
-  };
-
-  /** 所有「分析」入口共用的前置檢查：缺 ffmpeg / 金鑰時不轉檔不上傳，直接帶到該設定欄位。 */
-  const analyzeWithPreflight = (mediaId?: string) => {
-    const id = mediaId ?? useProject.getState().activeMediaId;
-    if (!id) return;
-    const st = useSettings.getState();
-    if (st.ffmpeg && !st.ffmpeg.found) {
-      toast.error(t("找不到 ffmpeg，先到設定指定路徑"));
-      openSettings("ffmpeg");
-      return;
-    }
-    if (st.key && !st.key.present) {
-      toast.info(t("分析需要 ttls 金鑰，先貼上金鑰再開始"));
-      openSettings("key");
-      return;
-    }
-    void runAnalyze(id).catch(() => {});
-  };
+  // 指令註冊表 + 反應性訂閱（冪等，StrictMode 跑兩次沒關係）
+  useEffect(() => installCommands(), []);
 
   // 啟動：套主題、載設定並探測工具狀態。
   useEffect(() => {
@@ -257,7 +85,7 @@ export default function App() {
       devAutoOpened = true;
       const p = await api.devEnv("AICUT_DEV_OPEN").catch(() => null);
       if (!p) return;
-      await openMedia(p);
+      await A.openMedia(p);
       if (await api.devEnv("AICUT_DEV_ANALYZE").catch(() => null)) {
         const id = useProject.getState().activeMediaId;
         if (!id) return;
@@ -280,39 +108,6 @@ export default function App() {
       }
     })();
   }, []);
-
-  const openMedia = async (path?: string) => {
-    try {
-      const p = path ?? (await pickOpenFile([{ name: t("音訊"), extensions: AUDIO_EXTENSIONS }]));
-      if (!p) return;
-      if (p.endsWith(".aicut.json")) {
-        await useProject.getState().loadFrom(p);
-        rememberRecent(p);
-        toast.success(t("已載入專案"));
-        return;
-      }
-      await useProject.getState().openMedia(p);
-    } catch (e) {
-      toast.error(errMessage(e));
-    }
-  };
-
-  const saveProject = async () => {
-    const st = useProject.getState();
-    try {
-      let target = st.path;
-      if (!target) {
-        const name = defaultProjectFileName(selectActiveMedia(st)?.name ?? null);
-        target = await pickSaveFile(name, [{ name: "AI Music Cut 專案", extensions: ["json"] }]);
-        if (!target) return;
-      }
-      await st.saveTo(target, enrichAnalysis);
-      rememberRecent(target);
-      toast.success(t("已儲存"));
-    } catch (e) {
-      toast.error(errMessage(e));
-    }
-  };
 
   // 自動儲存：專案已有路徑且 dirty → 2 秒後靜默存檔（含逐字稿 / 決策）。
   useEffect(() => {
@@ -363,7 +158,7 @@ export default function App() {
       .onDragDropEvent((ev) => {
         if (ev.payload.type !== "drop") return;
         for (const p of ev.payload.paths) {
-          if (isAudioPath(p) || p.endsWith(".aicut.json")) void openMedia(p);
+          if (A.isAudioPath(p) || p.endsWith(".aicut.json")) void A.openMedia(p);
         }
       })
       .then((f) => {
@@ -373,294 +168,22 @@ export default function App() {
     return () => un?.();
   }, []);
 
-  useEffect(
-    () =>
-      installHotkeys({
-        openMedia: () => void openMedia(),
-        save: () => void saveProject(),
-        help: () => setHelpOpen((v) => !v),
-        space: spaceKey,
-        // 精準修剪器開著的時候，[ ] 是在接縫之間跳；否則是上下一個候選
-        prevCandidate: () => (stepSeam(-1) ? undefined : stepCandidate(-1)),
-        nextCandidate: () => (stepSeam(1) ? undefined : stepCandidate(1)),
-        accept: () => decideSelected("accepted"),
-        reject: () => decideSelected("rejected"),
-        deleteSelection: deleteKey,
-        previewCandidate: () => previewSelected(),
-        undo: () => useDecisions.getState().undo(),
-        redo: () => useDecisions.getState().redo(),
-        zoomIn: () => useTimeline.getState().zoomBy(1.25),
-        zoomOut: () => useTimeline.getState().zoomBy(0.8),
-        zoomFit: () => useTimeline.getState().fit(),
-        zoomSelection: () => useTimeline.getState().zoomToSelection(),
-        home: () => seekTo(0),
-        end: () => seekTo(Number.MAX_SAFE_INTEGER),
-        toolSeek: () => useTimeline.getState().setTool("seek"),
-        toolSelect: () => useTimeline.getState().setTool("select"),
-        toolTrim: () => useTimeline.getState().setTool("trim"),
-        shuttle: (key, opts) => {
-          const pb = usePlayback.getState();
-          const next = nextShuttle(pb.shuttle, key, { slow: opts.slow });
-          pb.setShuttle(next);
-          // 只在「剛進入倒退」時說一次，不然每點一下都跳一個 toast
-          if (isSilentDirection(next) && !isSilentDirection(pb.shuttle)) toast.info(t("{label}　倒退只移動播放線，沒有聲音", { label: shuttleLabel(next) }));
-        },
-        markIn: () => {
-          const ms = usePlayback.getState().currentMs;
-          // 只標了一端要說一聲，否則按了 I 畫面上什麼都沒有，看起來像壞掉
-          if (!useTimeline.getState().markIn(ms)) toast.info(t("入點 {at}　再按 O 標出點", { at: formatMs(ms, { millis: true }) }));
-        },
-        markOut: () => {
-          const ms = usePlayback.getState().currentMs;
-          if (!useTimeline.getState().markOut(ms)) toast.info(t("出點 {at}　再按 I 標入點", { at: formatMs(ms, { millis: true }) }));
-        },
-        gotoIn: () => {
-          const sel = useTimeline.getState().selection;
-          if (sel) seekTo(sel.startMs);
-        },
-        gotoOut: () => {
-          const sel = useTimeline.getState().selection;
-          if (sel) seekTo(sel.endMs);
-        },
-        nudge: (ms) => seekTo(Math.max(0, usePlayback.getState().currentMs + ms)),
-        addMarker: (kind) => {
-          const id = useProject.getState().activeMediaId;
-          if (!id) return;
-          const ms = usePlayback.getState().currentMs;
-          useDecisions.getState().addMarker(id, ms, kind);
-          // 章節與待辦都要取名字才有用，直接把索引分頁叫出來
-          if (kind !== "standard") useUi.getState().setTab("index");
-          const at = formatMs(ms, { millis: false });
-          toast.info(
-            kind === "chapter"
-              ? t("下了章節 {at}　到「索引」分頁取名字", { at })
-              : kind === "todo"
-                ? t("下了待辦 {at}　到「索引」分頁寫要做什麼", { at })
-                : t("下了標記 {at}", { at }),
-          );
-        },
-        stepMarker: (dir) => {
-          const id = useProject.getState().activeMediaId;
-          if (!id) return;
-          const list = (useDecisions.getState().markers[id] ?? []).slice().sort((a, b) => a.ms - b.ms);
-          if (!list.length) return;
-          const cur = usePlayback.getState().currentMs;
-          const next = dir > 0 ? list.find((m) => m.ms > cur + 5) : [...list].reverse().find((m) => m.ms < cur - 5);
-          if (next) seekTo(next.ms);
-        },
-        stepSpeaker: (dir) => {
-          const id = useProject.getState().activeMediaId;
-          if (!id) return;
-          const st = useDecisions.getState().speakers[id];
-          if (!st?.turns.length) {
-            toast.info(t("這一集還沒有講者標籤"));
-            return;
-          }
-          const next = nextSpeakerChange(st.turns, usePlayback.getState().currentMs, dir);
-          if (next == null) {
-            toast.info(dir > 0 ? t("後面沒有換人了") : t("前面沒有換人了"));
-            return;
-          }
-          seekTo(next);
-          const who = st.list.find((x) => x.id === speakerAtMs(st.turns, next))?.label;
-          if (who) toast.info(t("換到 {who}", { who }));
-        },
-        blade: () => {
-          const r = bladeAtPlayhead({ toggle: true });
-          if (r === null) toast.info(t("這裡切不了：太靠近既有的接縫，或落在已剪掉的區段裡"));
-          else toast.info(r ? t("切了一刀") : t("移除切點"));
-        },
-        toggleSnap: () => {
-          useTimeline.getState().toggleSnap();
-          toast.info(useTimeline.getState().snap.enabled ? t("吸附：開") : t("吸附：關"));
-        },
-        liftSelection: () => {
-          if (!liftSelection()) toast.info(t("先選一段再提起"));
-        },
-        escape: () => clearSelection(),
-        selectAll: () => {
-          const m = selectActiveMedia(useProject.getState());
-          if (m?.probe) useTimeline.getState().setSelection({ startMs: 0, endMs: m.probe.duration_ms });
-        },
-        findText: () => useUi.getState().setTranscriptSearch(true),
-        cutToClipboard: () => {
-          if (!cutSelectionToClipboard()) toast.info(t("先在波形上拖一段"));
-          else toast.success(t("已剪下（Ctrl+V 貼到播放線）"));
-        },
-        copyToClipboard: () => {
-          if (!copySelection()) toast.info(t("先在波形上拖一段"));
-          else toast.success(t("已複製（Ctrl+V 貼到播放線）"));
-        },
-        pasteAtPlayhead: () => {
-          if (!clipboard()) return toast.info(t("剪貼簿是空的"));
-          if (!pasteAtPlayhead()) toast.error(t("貼不上去（剪貼簿是別的音檔，或那一段太短）"));
-          else toast.success(t("已貼上"));
-        },
-        moveToPlayhead: () => {
-          if (!moveSelectionToPlayhead()) toast.info(t("搬不過去（沒有選取，或播放線就在選取範圍裡）"));
-          else toast.success(t("已搬移"));
-        },
-        toggleSkim: () => useTimeline.getState().toggleSkim(),
-      }),
-    [],
-  );
-
-  const rerunRules = () => {
-    const id = useProject.getState().activeMediaId;
-    if (id) runRulesFor(id, { label: t("調整激進度"), record: true });
-  };
-
-  const onJudge = () => active && void runJudge(active.id).catch((e) => toast.error(errMessage(e)));
-
-  /** 開驗收報告：已有報告就直接看，否則對最近一次輸出跑一次。 */
-  const openVerify = () => {
-    const id = useProject.getState().activeMediaId;
-    if (!id) return;
-    const v = useVerify.getState();
-    const last = v.lastOutput[id] ?? null;
-    // durationMs 交給 runVerify 自己去 probe 成品；這裡不再塞「期望長度」進去（那會讓時長檢查失效）
-    setVerifyFor({ outPath: last?.path ?? v.byMedia[id]?.outPath ?? null, durationMs: null });
-    if (!v.byMedia[id] && last) void runVerify(id, { outPath: last.path }).catch(() => {});
-  };
-
-  /** 輸出完成 → 直接跑 ASR 驗收並開報告（人只要聽機器標出來的可疑處）。 */
-  const startVerify = (outPath: string, durationMs: number | null) => {
-    const id = useProject.getState().activeMediaId;
-    if (!id) return;
-    setVerifyFor({ outPath, durationMs });
-    void runVerify(id, { outPath, outDurationMs: durationMs }).catch(() => {});
-  };
+  // 快捷鍵：絕大多數由指令註冊表派發；只有 JKL 與方向鍵手寫
+  useEffect(() => installHotkeys({ shuttle: A.shuttle, nudge: A.nudge }), []);
 
   return (
     <div className="h-full flex flex-col">
-      <Toolbar
-        onOpen={() => void openMedia()}
-        onAnalyze={() => analyzeWithPreflight()}
-        canAnalyze={!!active && active.analysis !== "analyzing"}
-        onJudge={onJudge}
-        canJudge={!!active && active.analysis === "ready"}
-        onRender={() => {
-          setRenderRange(null);
-          setRenderOpen(true);
-        }}
-        canRender={!!active}
-        onSeparate={() => setSeparateOpen(true)}
-        onSyncMics={() => setSyncOpen(true)}
-        canSyncMics={mediaCount >= 2}
-        canSeparate={!!active}
-        onHighlight={() => setHighlightOpen(true)}
-        canHighlight={!!active}
-        onMusic={() => setMusicOpen(true)}
-        onCleanup={() => setCleanupOpen(true)}
-        onHighlights={() => setReelOpen(true)}
-        canHighlights={!!active}
-        onShowNotes={() => setNotesOpen(true)}
-        canShowNotes={!!active}
-        onAutoCut={() => setAutoCutOpen(true)}
-        canAutoCut={!!active}
-        onPrompts={() => setPromptsOpen(true)}
-        onFillers={() => setFillersOpen(true)}
-        onTakes={() => setTakesOpen(true)}
-        canTakes={!!active}
-        onTemplates={() => setTemplatesOpen(true)}
-        onSpeakers={() => setSpeakersOpen(true)}
-        onCaptions={() => setCaptionsOpen(true)}
-        canCaptions={!!active}
-        onSplitExport={() => setSplitOpen(true)}
-        canSplitExport={!!active}
-        onBundle={() => setBundleOpen(true)}
-        canBundle={!!active}
-        onBatch={() => setBatchOpen(true)}
-        canBatch={mediaCount > 0}
-        canCleanup={!!active}
-        onSave={() => void saveProject()}
-        dirty={dirty}
-        onHelp={() => setHelpOpen(true)}
-        onAbout={() => setAboutOpen(true)}
-        onSettings={() => openSettings()}
-      />
-      <WorkflowStrip
-        onOpen={() => void openMedia()}
-        onAnalyze={() => analyzeWithPreflight()}
-        onJudge={onJudge}
-        onRender={() => {
-          setRenderRange(null);
-          setRenderOpen(true);
-        }}
-        onVerify={openVerify}
-        onOpenSettings={openSettings}
-      />
-      <SetupBanner onOpenSettings={openSettings} />
+      <Toolbar />
+      <WorkflowStrip />
+      <SetupBanner />
       <div className="flex-1 flex min-h-0">
-        <Sidebar width={sidebar.size} onOpen={() => void openMedia()} onAnalyze={(id) => analyzeWithPreflight(id)} onOpenSettings={openSettings} />
+        <Sidebar width={sidebar.size} />
         <Splitter axis="x" onPointerDown={sidebar.onPointerDown} />
-        <MainArea
-          onOpen={() => void openMedia()}
-          onAnalyze={() => analyzeWithPreflight()}
-          onOpenSettings={openSettings}
-          onExportRange={(startMs, endMs) => {
-            setRenderRange({ startMs, endMs });
-            setRenderOpen(true);
-          }}
-        />
-        <RightRail mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} onRerunRules={rerunRules} onVerify={openVerify} seams={railSeams} effects={railEffects} />
+        <MainArea />
+        <RightRail mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} seams={railSeams} effects={railEffects} />
       </div>
-      <StatusBar onOpenSettings={openSettings} />
-      <SettingsDialog
-        open={settingsOpen}
-        focus={settingsFocus}
-        onClose={() => setSettingsOpen(false)}
-        onOpenPrompts={() => {
-          setSettingsOpen(false);
-          setPromptsOpen(true);
-        }}
-      />
-      {aboutOpen && <AboutDialog onClose={() => setAboutOpen(false)} />}
-      {helpOpen && <ShortcutsHelp onClose={() => setHelpOpen(false)} />}
-      {renderOpen && active && (
-        <RenderDialog
-          mediaId={active.id}
-          range={renderRange}
-          reel={renderReel}
-          reelBed={reelBed}
-          onClose={() => {
-            setRenderOpen(false);
-            setRenderRange(null);
-            setRenderReel(null);
-            setReelBed(null);
-          }}
-          onVerify={startVerify}
-        />
-      )}
-      {verifyFor && active && <VerifyDialog mediaId={active.id} outPath={verifyFor.outPath} outDurationMs={verifyFor.durationMs} onClose={() => setVerifyFor(null)} />}
-      {separateOpen && active && <SeparateDialog mediaId={active.id} onClose={() => setSeparateOpen(false)} />}
-      {syncOpen && <SyncDialog onClose={() => setSyncOpen(false)} />}
-      {highlightOpen && active && <HighlightDialog mediaId={active.id} onClose={() => setHighlightOpen(false)} />}
-      {musicOpen && <MusicDialog onClose={() => setMusicOpen(false)} />}
-      {promptsOpen && <PromptsDialog onClose={() => setPromptsOpen(false)} />}
-      {fillersOpen && <FillersDialog mediaId={active?.id ?? null} onClose={() => setFillersOpen(false)} />}
-      {takesOpen && <TakesDialog mediaId={active?.id ?? null} onClose={() => setTakesOpen(false)} />}
-      {templatesOpen && <TemplateDialog mediaId={active?.id ?? null} onClose={() => setTemplatesOpen(false)} />}
-      {speakersOpen && <SpeakersDialog mediaId={active?.id ?? null} onClose={() => setSpeakersOpen(false)} />}
-      {captionsOpen && <CaptionsDialog mediaId={active?.id ?? null} onClose={() => setCaptionsOpen(false)} />}
-      {splitOpen && <SplitExportDialog mediaId={active?.id ?? null} onClose={() => setSplitOpen(false)} />}
-      {bundleOpen && <BundleDialog mediaId={active?.id ?? null} onClose={() => setBundleOpen(false)} />}
-      {batchOpen && <BatchDialog onClose={() => setBatchOpen(false)} />}
-      {autoCutOpen && active && <AutoCutDialog mediaId={active.id} onClose={() => setAutoCutOpen(false)} />}
-      {notesOpen && active && <ShowNotesDialog mediaId={active.id} onClose={() => setNotesOpen(false)} />}
-      {cleanupOpen && active && <CleanupDialog mediaId={active.id} onClose={() => setCleanupOpen(false)} />}
-      {reelOpen && active && (
-        <HighlightsDialog
-          mediaId={active.id}
-          onClose={() => setReelOpen(false)}
-          onExport={(bedMediaId) => {
-            setRenderReel(useHighlights.getState().list(active.id));
-            setReelBed(bedMediaId);
-            setReelOpen(false);
-            setRenderOpen(true);
-          }}
-        />
-      )}
+      <StatusBar />
+      <DialogHost />
       <UiHost />
     </div>
   );

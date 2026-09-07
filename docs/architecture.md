@@ -257,6 +257,34 @@
 8. **ASR 驗收**（`pipeline/verify.ts` + `analysis/verify.ts`）：成品 → `media_prepare` → ttls 轉寫 → `expectedWords(EDL)` × 成品逐字稿做帶狀 Levenshtein 對齊 → 漏字 / 該剪沒剪 / 接縫 ±600 ms 標記；報告存在 `store/verify.ts`（不進專案檔），UI 可逐筆試聽或跳去修。
 9. **輸出**（`render.rs`）：保留段再依 VAD 切成 ≤15 s 單元 → BS.1770 閘門量測 → 增益規劃（clamp ±12 dB、峰值守門、平滑、階差 ≤3 dB）→ Rust 串流剪接（等功率 crossfade / seam / gap）→ `concat.wav` → ffmpeg loudnorm 兩趟 + alimiter → mp3 / m4a / wav。
 
+## 殼層：指令註冊表 / 對話框 store / 選單（v0.98）
+
+以前 `App.tsx` 有 22 個對話框 boolean、`Toolbar` 有 41 個 props、快捷鍵表是手抄的。
+每加一個功能要改五個地方，而且五個地方會慢慢對不上（快捷鍵說明就漏了 Alt+X、Shift+I/O）。
+
+現在「使用者做得到的動作」只寫一次：
+
+| 檔案 | 職責 |
+|---|---|
+| `src/commands/types.ts` | `Command { id, title(zh key), group, shortcuts, enabled(): {ok} \| {ok:false, why}, run() }`；`simple*` 欄位給簡易模式 |
+| `src/commands/registry.ts` | zustand store（id 為鍵 → 熱更新冪等）；`runCommand` 是**唯一入口**：不能做就 toast 原因（同一句 1.5 秒內不重複）、能做就跑並接住例外。**不 import 任何 store / Tauri**，測試可直接載 |
+| `src/commands/guards.ts` | `needsMedia / needsSelection / needsAnalysis…` 守門；`installCommandReactivity` 訂閱幾個 store 的關鍵欄位、有變就 bump 版本計數（播放線不算） |
+| `src/commands/core.ts`、`effectCommands.ts` | 指令本體。在 `scripts/check-i18n.mjs` 的 `TABLE_SOURCES`（`commands/`）裡：每一條 title / why 都得進 locales |
+| `src/commands/shortcut.ts` | chord 解析 / 比對 / 顯示。**修飾鍵精確相等**；`effectiveKey` 處理中文輸入法（key 是 "Process" 時從 code 推回） |
+| `src/commands/menuModel.ts` | 指令 → `MenuItem`：section 之間畫線、停用的 `muted + title`、quick 先於 dialog；`selectionMenuItems` 是選取右鍵（專業 = 效果 ▸ / 修復 ▸；簡易 = 固定七格白話） |
+| `src/commands/appActions.ts` | 從 App.tsx closure 搬出來的動作（openMedia / saveProject / analyzeWithPreflight…），不需要 React |
+| `src/hotkeys.ts` | 只剩 JKL 與方向鍵手寫；其餘由註冊表派發。`global` 指令（F1、Ctrl+K）排在「對話框開著就讓路」之前 |
+| `src/store/dialogs.ts` + `src/shell/DialogHost.tsx` | 對話框改成 id 堆疊；每個對話框各自 code-split（`ui/lazyOverlay`）；`needs:"media"` 的在 active media 消失時自動關 |
+| `src/ui/MenuPanel.tsx` | 右鍵 / 下拉 / 子選單共用：hover 120 ms 開子選單、↑↓ Home End 首字導覽、`muted`；子選單的 DOM 也算「在選單裡面」（不然滑進 flyout 會被當成點外面） |
+| `src/shell/CommandPalette.tsx` | Ctrl+K。同時比翻譯後標題、繁中原文、關鍵字、快捷鍵；停用的也列出來、右邊寫原因 |
+| `src/effects/spec.ts` + `registry.ts` | 有參數的效果寫成 `EffectSpec`（params ≤3、presets、suggest、build）；`registerEffectSpec` 產生 `<id>.dialog / .preset.<p> / .quick` 指令。`dialogs/EffectDialog.tsx` 只是把 spec 畫出來 |
+
+規矩：
+- 新功能 = 一條 `Command`（或一支 `EffectSpec`），不要再往 Toolbar / App.tsx 加 props 與 boolean。
+- 快捷鍵只寫在 `shortcuts`；`registry.test.ts` 的 `duplicateChords` 抓雙綁。
+- 停用要給 `why`（zh key）。畫面上不會灰掉不解釋：tooltip、toast、命令面板右側都是同一句。
+- 兩個 store（`useCommands`、`useDialogs`）要從 `window.__aicut` 拿（見 dev 鉤子），不要手動 `import()`：HMR 之後那是另一個實例。
+
 ## 祕密與隱私
 
 - ttls API key：Settings → `ttls_key_set` → OS keychain（service `ai-music-cut`）。唯一讀取點 `ttls::api_key()`；沒有任何 command 回傳它；專案檔 / 設定檔 / log 不含金鑰（`format.test.ts` 與 `store.rs` 測試斷言）。

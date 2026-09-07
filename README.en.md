@@ -50,6 +50,10 @@ A desktop tool for smart editing of podcasts and audio (Tauri 2 + React 18), wit
 
 Speech recognition, source separation and music generation are served by self-hosted [ttls](https://ttls.markkulab.net/) (Seal-TTS REST; `/v1/transcribe` = faster-whisper large-v3 word timestamps, `/v1/separate` = demucs htdemucs, `/v1/music` = ACE-Step).
 
+37. **Finding things: command palette, right-click submenus, and no silent greying-out**: once there are this many features, the usual problem is not "how" but "where". `Ctrl+K` searches everything (translated names, the Chinese originals, English keywords and shortcuts all match); select a range on the waveform and right-click, and the "Effects ▸ / Repair ▸" submenus list what can be done to that range; the toolbar keeps five primary actions (open / analyze / export / one-click smart edit / save) and everything else lives under "AI & delivery ▾" and "More ▾".
+   **Disabled features say why**: the toolbar tooltip, the context menu and the palette's right-hand column all show the same reason ("select a range on the waveform first", "analyze first"), and clicking anyway toasts that sentence instead of doing nothing.
+   > Underneath is one command table (`src/commands/`): a feature is declared once and the shortcut list, toolbar, context menu and palette are all generated from it. Before, it was 22 booleans, 41 props and a hand-copied shortcut table — nobody noticed it was missing Alt+X and Shift+I/O. Also fixed along the way: under a Chinese IME, `Shift+S` (skimming) could never fire.
+
 ![screenshot](docs/screenshot.png)
 
 *Above: after analysis — media list on the left, waveform in the middle (purple blocks are candidates, the transcript sits below with cut words struck through), decision panel on the right listing each candidate with its reason and type, and the status bar showing live ffmpeg / ttls / claude state plus the current model.*

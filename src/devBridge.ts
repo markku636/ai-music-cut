@@ -17,6 +17,8 @@ import * as lexicon from "./analysis/lexicon";
 import * as roles from "./analysis/roles";
 import * as exportPresets from "./analysis/exportPresets";
 import * as preflight from "./analysis/preflight";
+import * as keepOnly from "./analysis/keepOnly";
+import * as textSearch from "./analysis/textSearch";
 import * as roleMixLib from "./preview/roleMix";
 import { useRoleMix } from "./store/roleMix";
 import * as fillerStats from "./analysis/fillerStats";
@@ -28,6 +30,7 @@ import { useShowNotes } from "./store/showNotes";
 import { useTranscript } from "./store/transcript";
 import { useProject } from "./store/project";
 import { useTimeline } from "./store/timeline";
+import { useUi } from "./store/ui";
 import { bladeAt, seamsOfEdl, setSeamPause, trimSeam, type SeamInfo } from "./timeline/trimActions";
 import { liftSelection } from "./timeline/trimActions";
 
@@ -40,6 +43,7 @@ export interface DevBridge {
   getPlayer: typeof getPlayer;
   playback: typeof usePlayback;
   timeline: typeof useTimeline;
+  ui: typeof useUi;
   project: typeof useProject;
   decisions: typeof useDecisions;
   /** 播 startMs–endMs，回報實際停在哪裡（量「選取播放準時收尾」用）。 */
@@ -72,6 +76,8 @@ export interface DevBridge {
   roles: typeof roles;
   exportPresets: typeof exportPresets;
   preflight: typeof preflight;
+  keepOnly: typeof keepOnly;
+  textSearch: typeof textSearch;
   roleMix: typeof useRoleMix;
   roleMixLib: typeof roleMixLib;
   previewGain: () => number;
@@ -119,6 +125,7 @@ export function installDevBridge() {
     getPlayer,
     playback: usePlayback,
     timeline: useTimeline,
+    ui: useUi,
     project: useProject,
     decisions: useDecisions,
     measureRange,
@@ -148,6 +155,8 @@ export function installDevBridge() {
     roles,
     exportPresets,
     preflight,
+    keepOnly,
+    textSearch,
     roleMix: useRoleMix,
     roleMixLib,
     previewGain: currentGain,

@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Scissors, Search, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Filter, Scissors, Search, X } from "lucide-react";
 import { fillerCandidates, findText, totalMs, type TextHit } from "../analysis/textSearch";
+import { planKeepOnly, wordIdsIn } from "../analysis/keepOnly";
+import { toast } from "../ui";
+import { formatMs as fmt } from "../time";
 import { useT } from "../i18n";
 import { usePlayback } from "../store/playback";
 import { useDecisions } from "../store/decisions";
@@ -10,10 +13,14 @@ import type { Transcript } from "../analysis/types";
 import { formatMs } from "../time";
 
 /**
- * 逐字稿搜尋列：找一個詞，然後把整集的它一次剪掉。
+ * 逐字稿搜尋列：找一個詞，然後把整集的它一次剪掉 —— 或者反過來，只留下它。
  *
  * 「剪掉某一句話」逐字稿本來就做得到（shift 點字選一段 → Delete）。
  * 這裡要解的是**重複**的那種 —— 整集 23 個「呃」，一個一個剪是這套工具最累的操作。
+ *
+ * 反向的「只保留符合的」是做精華版 / 主題摘要用的：找出所有提到某個主題的地方，
+ * 其他全部拿掉。**保留的是整個句子不是命中的那幾個字** —— 只留字會剪出一串
+ * 沒頭沒尾的碎片，放出來根本聽不懂。
  */
 export default function TranscriptSearch({
   mediaId,
@@ -62,6 +69,24 @@ export default function TranscriptSearch({
     );
   };
 
+  // 反向：只留下含有命中的句子，其他全部剪掉
+  const keepOnly = () => {
+    const plan = planKeepOnly(transcript, hits, transcript.durationMs);
+    if (plan.noop) {
+      toast.info(t("沒有東西可以剪：命中已經涵蓋整集"));
+      return;
+    }
+    addManualCuts(
+      mediaId,
+      plan.cuts.map((c) => ({ startMs: c.startMs, endMs: c.endMs, wordIds: wordIdsIn(transcript, c) })),
+      t("只保留「{q}」").replace("{q}", query),
+      t("只保留「{q}」（{n} 句）").replace("{q}", query).replace("{n}", String(plan.sentences)),
+    );
+    toast.success(
+      t("留下 {n} 句、{len}").replace("{n}", String(plan.sentences)).replace("{len}", fmt(plan.keptMs, { millis: false })),
+    );
+  };
+
   return (
     <div className="shrink-0 border-b border-line/60 bg-bg2/40 px-3 py-2">
       <div className="flex items-center gap-2">
@@ -87,6 +112,16 @@ export default function TranscriptSearch({
         <IconButton icon={ChevronDown} label={t("下一個（Enter）")} disabled={!hits.length} onClick={() => go(at + 1)} />
         <Button size="sm" variant="danger" icon={Scissors} disabled={!hits.length} onClick={cutAll} title={t("把命中的全部剪掉，一次 undo 就能還原")}>
           {t("全部剪掉（{n}）").replace("{n}", String(hits.length))}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={Filter}
+          disabled={!hits.length}
+          onClick={keepOnly}
+          title={t("只留下含有命中的整個句子，其他全部剪掉（做精華版用）。一次 undo 就能還原。")}
+        >
+          {t("只保留（{n} 句）").replace("{n}", String(new Set(hits.map((h) => h.sentenceId)).size))}
         </Button>
         <IconButton icon={X} label={t("關閉搜尋（Esc）")} onClick={onClose} />
       </div>

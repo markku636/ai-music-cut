@@ -1070,6 +1070,12 @@ const en: Catalog = {
   "沒有章節": "No chapters",
   "章節會寫進 mp3 / m4a，Apple Podcasts 與 Spotify 讀得到。節目筆記可以一鍵產。": "Chapters are written into mp3 / m4a and read by Apple Podcasts and Spotify. Show notes can generate them in one click.",
   "只是告訴你數字。粗剪剪掉三成很正常，但如果你沒預期到就值得先聽一遍。": "Just the number. Cutting 30% in a rough cut is normal — but worth a listen if you did not expect it.",
+  "沒有東西可以剪：命中已經涵蓋整集": "Nothing to cut — the matches already cover the whole episode",
+  "只保留「{q}」": "Keep only “{q}”",
+  "只保留「{q}」（{n} 句）": "Keep only “{q}” ({n} sentences)",
+  "留下 {n} 句、{len}": "Kept {n} sentences, {len}",
+  "只留下含有命中的整個句子，其他全部剪掉（做精華版用）。一次 undo 就能還原。": "Keeps whole sentences that contain a match and cuts everything else (for making a highlight version). One undo restores it.",
+  "只保留（{n} 句）": "Keep only ({n})",
 };
 
 

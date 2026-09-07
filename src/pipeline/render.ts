@@ -26,6 +26,7 @@ import { unitSpeakerMap } from "../analysis/speakerLevel";
 import { t } from "../i18n";
 import { isCleanupActive, type CleanupSpec } from "../analysis/cleanup";
 import { isGainEffect, type AudioEffect, type GainEffectKind } from "../analysis/effects";
+import { fxRegionsToOut, type FxRegion } from "../analysis/fx/regions";
 import { useCleanup } from "../store/cleanup";
 import { useDecisions } from "../store/decisions";
 import { newJobId, useJobs } from "../store/jobs";
@@ -103,6 +104,10 @@ export interface BuiltPlan {
   expectedOutMs: number;
   /** 會寫進成品的章節（成品時間軸）。 */
   chapters: Chapter[];
+  /** 範圍濾波的區域（成品時間）：驗收要知道哪裡的波形被動過。 */
+  fxRegions: FxRegion[];
+  /** 引擎還不支援、這一趟不會處理的範圍效果 —— 要列出來，不能默默少掉。 */
+  unsupportedFx: AudioEffect[];
 }
 
 export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan | null {
@@ -170,6 +175,13 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   const effects = [...(useDecisions.getState().effects[mediaId] ?? []), ...(opts.extraEffects ?? [])]
     .filter(isGainEffect)
     .map((e) => ({ kind: e.kind as GainEffectKind, start_ms: e.startMs, end_ms: e.endMs, db: e.db ?? 0, ...(e.shape ? { shape: e.shape } : {}) }));
+  // 範圍濾波（降噪 / 去爆音…）：換算到成品時間的區域，Rust 在剪好之後 punch-in。
+  // 建在 segs / joins 上（不是 edl.keeps）：只輸出一段 / 合輯的 units 已經裁過，逐 seg 走天然正確。
+  const fx = fxRegionsToOut(
+    [...(useDecisions.getState().effects[mediaId] ?? []), ...(opts.extraEffects ?? [])],
+    segs.map((sg) => ({ startMs: sg.src_start_ms, endMs: sg.src_end_ms })),
+    joins,
+  );
   if (reel && units.length) {
     // 預告一定是從句子中間開始、句子中間結束，不淡就是硬切進一個字的中段。
     // **只加進這一趟的 plan，不寫進 store** —— 這是輸出這支預告的處理，
@@ -268,6 +280,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       ...(opts.loudnormMeasured ? { loudnorm_measured: opts.loudnormMeasured } : {}),
       ...(cleanupPlan ? { cleanup: cleanupPlan } : {}),
       ...(opts.preserveDynamics ? { preserve_dynamics: true } : {}),
+      ...(fx.regions.length ? { fx_regions: fx.regions.map(({ out_start_ms, out_end_ms, chain }) => ({ out_start_ms, out_end_ms, chain })) } : {}),
     },
     edl,
     units: units.length,
@@ -275,6 +288,8 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     // 片尾曲可能比最後一句話還晚結束 —— 驗收要對的是成品實際長度
     expectedOutMs: outputDurationWithOverlays(mainOutMs, kept),
     chapters,
+    fxRegions: fx.regions,
+    unsupportedFx: fx.unsupported,
   };
 }
 
@@ -300,8 +315,8 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
   const jobs = useJobs.getState();
   const jobId = newJobId();
   jobs.upsert({ id: jobId, kind: "render", mediaId, step: t("剪接"), pct: 0, status: "running", message: opts.outPath, cancel: () => void api.renderCancel(jobId) });
-  const STAGE: Record<RenderProgress["stage"], string> = { cut: t("剪接"), measure: t("量測響度"), encode: t("響度正規化 + 編碼") };
-  const WEIGHT: Record<RenderProgress["stage"], [number, number]> = { cut: [0, 45], measure: [45, 55], encode: [55, 100] };
+  const STAGE: Record<RenderProgress["stage"], string> = { cut: t("剪接"), fx: t("範圍濾波"), measure: t("量測響度"), encode: t("響度正規化 + 編碼") };
+  const WEIGHT: Record<RenderProgress["stage"], [number, number]> = { cut: [0, 40], fx: [40, 50], measure: [50, 58], encode: [58, 100] };
   // 監聽器必須先掛好再啟動（失敗很快時 render-done 會早於監聽器註冊）
   let resolveDone: (r: RenderDone) => void = () => {};
   const done = new Promise<RenderDone>((resolve) => (resolveDone = resolve));
@@ -336,6 +351,7 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
         outputLufs: r.output_lufs,
         outputTp: r.output_tp,
         targetLufs: opts.targetLufs,
+        fxSpans: built.fxRegions.map((x) => ({ startMs: x.out_start_ms, endMs: x.out_end_ms, correlated: x.correlated })),
       });
     jobs.upsert({ id: jobId, status: "done", step: t("完成"), pct: 100, message: `${r.out_path ?? ""} · ${r.output_lufs?.toFixed(1) ?? "?"} LUFS`, endedAt: Date.now() });
   } else if (r.error === "已取消") {

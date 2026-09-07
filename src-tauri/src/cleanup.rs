@@ -50,17 +50,18 @@ pub fn cleanup_filter(spec: &CleanupSpec) -> Option<String> {
         parts.push(format!("highpass=f={:.0}:poles=2", clamp(spec.rumble_hz, 20.0, 200.0)));
     }
     if spec.denoise_db > 0.0 {
-        parts.push(format!(
-            "afftdn=nr={:.1}:nf={:.0}:tn=1",
-            clamp(spec.denoise_db, 1.0, 30.0),
-            clamp(spec.noise_floor_db, -80.0, -20.0)
-        ));
+        parts.push(afftdn(spec.denoise_db, spec.noise_floor_db, true));
     }
     if spec.deess_amount > 0.0 {
         // ffmpeg 的 deesser：i=強度、m=最大衰減、f=處理頻寬、s=o 表示輸出處理後的訊號
         parts.push(format!("deesser=i={:.2}:m=0.5:f=0.5:s=o", clamp(spec.deess_amount, 0.05, 1.0)));
     }
     Some(parts.join(","))
+}
+
+/// afftdn 的字串只組一次：整檔修聲與範圍降噪（fx.rs）共用。nr 1–30 dB、nf −80…−20 dBFS。
+pub(crate) fn afftdn(nr_db: f64, nf_db: f64, track_noise: bool) -> String {
+    format!("afftdn=nr={:.1}:nf={:.0}:tn={}", clamp(nr_db, 1.0, 30.0), clamp(nf_db, -80.0, -20.0), if track_noise { 1 } else { 0 })
 }
 
 /// 把修聲鏈接在既有濾鏡串前面（修聲要先發生，響度才量得準）。

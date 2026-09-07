@@ -163,6 +163,11 @@ AI Podcast / 音訊智慧剪輯桌面工具（Tauri 2 + React 18），也有 CLI
    > 噪音樣本會檢查「像不像純底噪」：p95 − p5 超過 12 dB 就拒絕並說「這段裡好像有講話」。太短 / 太長也會說原因，不是灰掉。
    > 反相與淡入曲線是 Rust 端 `render.rs` 逐 frame 相乘的同一套包絡，TS 與 Rust 用同一張樣本表釘死（`{p: 0, .25, .5, .75, 1}`），未知的 shape / kind 在輸出前就報錯，不再默默當 1。降噪 / 去爆音 / 去嗡聲 / EQ 這類要真的濾波的效果，資料模型這一輪先進去（`RangeEffectKind`），引擎下一輪。地端 claude 多了 `normalize_selection` / `set_noise_print` 兩支工具；CLI 遇到範圍濾波效果會印「⚠ 這個專案有 N 段輸出時套用的效果，CLI 不會處理」而不是默默少掉。
 
+40. **範圍濾波：選一段 → 降噪 / 去爆音 / 去削波 / 去嗡聲 / DC，真的只處理那一段**：修聲以前是整集一起（輸出時整條套 afftdn），現在「修復 ▸」裡的五種都是**範圍**效果 —— 在波形上拖一段、右鍵、套用，色塊留在時間軸上，輸出時才處理。簡易模式右鍵的「去雜音」有選取就走這條（沒選就退回整集）。對話框有 A/B 試聽：對來源檔直接切那一段做 dry / wet，15 秒的段不到 1 秒就能聽，不用等剪接器從頭剪到那裡。
+   > 引擎是 Rust 的串流 punch-in（`src-tauri/src/fx.rs`）：剪好的成品逐 frame 往前讀，遇到效果區域就開一個小 ffmpeg 子程序只處理那一段（多帶 250 ms–1 s 的 pre-roll 讓濾鏡暖機），丟掉暖機與濾鏡延遲的 frame，再用 10 ms 交叉混回去；兩段相接時是 wet→wet 交叉，dry 不會漏進縫裡。寫出的 frame 數永遠等於讀進來的 —— 效果不動時鐘，字幕 / 章節 / 驗收全部不受影響。
+   > 為什麼不用一條 `enable='between(t,a,b)'` 的大 filter_complex：`acompressor / aecho / areverse / atempo` 沒有 timeline 旗標；每個 AVFrame（~21 ms）硬切開關會 click；afftdn 內容延遲 25 ms 但 pts 不延遲，邊界會出現重複與空洞。濾鏡延遲用 1 kHz tone burst 互相關校準（`cargo test -- --ignored fx_`），ffmpeg 一換版就重量；wet 回來的長度不對一律報錯，**絕不默默退回未處理**。
+   > 效果釘在來源時間、引擎跑在成品時間，換算建在輸出計畫的段落上（`analysis/fx/regions.ts`）：只輸出一段、精華合輯、之後再剪掉前面一個贅字，區域都跟著對；兩種效果疊在同一段會拆成三塊，鏈內順序固定（先 DC、再爆音、再削波、再嗡聲、最後降噪），不管你先加哪一個。地端 claude 有 `list_effects` / `apply_effect`（任何效果都能套、參數省略就用建議值）。
+
 ![screenshot](docs/screenshot.png)
 
 *上圖：分析完成後的樣子 —— 左邊媒體清單、中間波形（紫色是候選、下方是逐字稿，被剪掉的字畫上刪除線）、右邊決策面板逐筆列出理由與類型，底下狀態列顯示 ffmpeg / ttls / claude 的即時狀態與目前模型。*

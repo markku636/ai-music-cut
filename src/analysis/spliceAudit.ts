@@ -104,6 +104,8 @@ export interface AuditOptions {
   maxLagMs?: number;
   /** 成品混了配樂 / 音效 —— 只看位置，不看波形相似度（見 SpliceAuditReport.mixedWithOverlays）。 */
   mixedWithOverlays?: boolean;
+  /** 成品時間的區段：落在這裡面的段落只比位置、不比波形（反轉 / 變調之後波形本來就對不上）。 */
+  skipCorrOutSpans?: { startMs: number; endMs: number }[];
 }
 
 /**
@@ -125,6 +127,7 @@ export function auditSplice(src: LocalAnalysis, out: LocalAnalysis, edl: Edl, op
   const maxLagMs = opts.maxLagMs ?? MAX_LAG_MS;
   const perMs = src.pps / 1000;
   const segments: SegmentAudit[] = [];
+  const skipCorr = new Set<number>();
 
   for (const [i, k] of edl.keeps.entries()) {
     const segLen = k.srcEndMs - k.srcStartMs;
@@ -135,6 +138,7 @@ export function auditSplice(src: LocalAnalysis, out: LocalAnalysis, edl: Edl, op
     const outAt = k.outStartMs + mid;
     const lenB = Math.max(8, Math.round(useMs * perMs));
     const ref = window(src, srcAt, lenB);
+    if ((opts.skipCorrOutSpans ?? []).some((s) => outAt < s.endMs && outAt + useMs > s.startMs)) skipCorr.add(i);
 
     let bestCorr = -2;
     let bestLag = 0;
@@ -189,10 +193,13 @@ export function auditSplice(src: LocalAnalysis, out: LocalAnalysis, edl: Edl, op
   const systematicLagMs = isSystematic ? rawSystematic : 0;
   for (const seg of segments) {
     const rel = seg.lagMs - systematicLagMs;
-    seg.ok = (mixed || seg.corr >= CORR_OK) && Math.abs(rel) <= LAG_OK_MS;
+    const skip = mixed || skipCorr.has(seg.index);
+    seg.ok = (skip || seg.corr >= CORR_OK) && Math.abs(rel) <= LAG_OK_MS;
     seg.note = seg.ok
-      ? "對得上"
-      : seg.corr < CORR_OK
+      ? skipCorr.has(seg.index)
+        ? "對得上（效果段，只比位置）"
+        : "對得上"
+      : seg.corr < CORR_OK && !skip
         ? `波形對不上（相似度 ${(seg.corr * 100).toFixed(0)}%）：這段可能剪錯或接錯`
         : `位置比其他段偏了 ${Math.round(rel)} ms`;
   }

@@ -2,6 +2,8 @@
 // Rust 端只當 JSON-RPC 轉發器：claude 呼叫 → `mcp-tool-call` 事件 → 這裡執行 → `mcp_tool_result` 回寫。
 import { listen } from "@tauri-apps/api/event";
 import { effectId as fxEffectId } from "../analysis/effects";
+import { allEffectSpecs, applyEffect, effectContext, effectSpec, rangeFor } from "../effects/registry";
+import { resolveValues, type ParamValue } from "../effects/spec";
 import { makeNoisePrint, matchLoudnessGainDb, peakNormalizeGainDb } from "../analysis/levels";
 import { api, type McpToolCall, type McpToolDef } from "../api";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState, type MarkerKind } from "../analysis/types";
@@ -1352,6 +1354,58 @@ export const TOOLS: ToolSpec[] = [
       const id = fxEffectId("gain", sel.startMs, sel.endMs, db);
       d.addEffects(media.id, [{ id, kind: "gain", startMs: sel.startMs, endMs: sel.endMs, db, origin: a.mode === "peak" ? "peak_normalize" : "match_loudness" }], a.mode === "peak" ? "峰值正規化" : "響度對齊");
       return { effectId: id, gainDb: db, summary: s.summary, confidence: s.confidence };
+    },
+  },
+  {
+    name: "list_effects",
+    description: "列出所有效果 / 修復（EffectSpec）：id、名稱、參數（範圍 / 預設）、預設組合、作用範圍、有沒有建議值。要套用請用 apply_effect。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () =>
+      allEffectSpecs().map((s) => ({
+        id: s.id,
+        title: s.title,
+        group: s.group,
+        scope: s.scope,
+        params: s.params.map((p) => ({ id: p.id, kind: p.kind, min: p.min, max: p.max, step: p.step, default: p.default, options: p.options?.map((o) => o.value), advanced: !!p.advanced })),
+        presets: s.presets.map((p) => ({ id: p.id, values: p.values })),
+        hasSuggest: !!s.suggest,
+      })),
+  },
+  {
+    name: "apply_effect",
+    description:
+      "套用一個效果 / 修復（specId 見 list_effects，例如 repair.denoise、effect.normalize、repair.declick）到目前選取（scope=selection 要先 set_selection）。values 省略的參數用建議值 / 預設；範圍濾波（repair.*）是輸出時才套，即時播放聽不到。可 undo。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        specId: { type: "string" },
+        values: { type: "object", additionalProperties: { type: ["number", "string", "boolean"] } },
+      },
+      required: ["specId"],
+      additionalProperties: false,
+    },
+    handler: async (a) => {
+      const { media } = ctxMedia();
+      const spec = effectSpec(String(a.specId));
+      if (!spec) throw new ToolError(`沒有這個效果：${String(a.specId)}（用 list_effects 看有哪些）`);
+      const ctx = effectContext(media.id);
+      const range = rangeFor(spec, ctx);
+      if (!range) throw new ToolError("這個效果要先選一段（set_selection）");
+      const sug = spec.suggest?.(ctx, range) ?? null;
+      const overrides = (a.values && typeof a.values === "object" ? (a.values as Record<string, ParamValue>) : {}) as Partial<Record<string, ParamValue>>;
+      const values = resolveValues(spec, null, { ...(sug?.values ?? {}), ...overrides });
+      const err = spec.validate?.(values, ctx);
+      if (err) throw new ToolError(err);
+      const app = spec.build(values, range, ctx);
+      await applyEffect(app, media.id);
+      return {
+        label: app.label,
+        values,
+        range,
+        suggestion: sug ? { summary: sug.summary, confidence: sug.confidence } : null,
+        effects: app.kind === "effects" ? app.effects.map((e) => ({ id: e.id, kind: e.kind, startMs: e.startMs, endMs: e.endMs, params: e.params ?? null })) : [],
+        appliedAt: app.kind === "effects" ? "輸出時（範圍濾波）或即時（增益類）" : app.kind,
+      };
     },
   },
   {

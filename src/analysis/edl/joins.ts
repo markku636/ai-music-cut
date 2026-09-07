@@ -78,6 +78,27 @@ export function planOutFrames(segs: SegSpan[], joins: JoinSpec[]): number {
   return Math.max(0, total);
 }
 
+/**
+ * 每一段在成品時間軸上的起點（frame）。與 planOutFrames 同一套帳：
+ * 段 i 的起點 = 前面所有段長 + gap − crossfade 重疊。範圍濾波（fx_regions）要把來源時間的效果
+ * 換算到成品時間，靠的就是這個 —— 建在 plan 的 segs 上而不是 edl.keeps，重排 / 只輸出一段都天然正確。
+ */
+export function segOutStartFrames(segs: SegSpan[], joins: JoinSpec[]): number[] {
+  const lens = segFrames(segs);
+  const overlaps = joinOverlapFrames(segs, joins);
+  const out: number[] = [];
+  let cur = 0;
+  for (let i = 0; i < segs.length; i++) {
+    out.push(cur);
+    cur += lens[i];
+    if (i < joins.length) {
+      if (joins[i].kind === "gap") cur += msToFrames(joins[i].ms);
+      else cur -= overlaps[i];
+    }
+  }
+  return out;
+}
+
 /** 輸出總長（毫秒）。 */
 export function planOutDurationMs(segs: SegSpan[], joins: JoinSpec[]): number {
   return framesToMs(planOutFrames(segs, joins));

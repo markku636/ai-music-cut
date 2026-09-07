@@ -5,6 +5,7 @@ mod local_asr;
 mod commands;
 mod error;
 mod ffmpeg;
+mod fx;
 mod mcp;
 mod mix;
 mod media;
@@ -101,6 +102,7 @@ pub fn run() {
             commands::ttls_transcribe_cancel,
             commands::render_start,
             commands::render_cancel,
+            commands::fx_preview,
             commands::project_save,
             commands::write_text_file,
             commands::project_load,

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { RenderFxRegion, RenderRangeFx } from "./analysis/fx/regions";
 
 // 單一 Rust 邊界：所有 invoke 集中在此，型別對齊 src-tauri（snake_case 欄位照 Rust struct）。
 
@@ -181,6 +182,11 @@ export interface RenderPlan {
   format: "mp3" | "m4a" | "wav";
   out_path: string;
   channels: number;
+  /**
+   * 範圍濾波（降噪 / 去爆音…）：**成品時間**的區域，剪好之後 Rust 另跑一趟 punch-in（fx.rs）。
+   * 由 analysis/fx/regions.ts 從來源時間的效果換算；型別化 enum，數字在 Rust clamp。
+   */
+  fx_regions?: RenderFxRegion[];
   /** 預覽模式：跳過 loudnorm 兩趟，只做 limiter + mp3 q5。 */
   preview?: boolean;
   /** 章節（ffmetadata 全文；mp3 → ID3 CHAP、m4a → QuickTime 章節）。wav / 預覽會忽略。 */
@@ -295,7 +301,7 @@ export interface RenderOverlay {
 }
 export interface RenderProgress {
   job_id: string;
-  stage: "cut" | "measure" | "encode";
+  stage: "cut" | "fx" | "measure" | "encode";
   pct: number;
 }
 export interface RenderDone {
@@ -444,6 +450,9 @@ export const api = {
     invoke<string>("ttls_music_fetch", { jobId, index, outDir, fileStem, ext }),
   ttlsMusicCancel: (jobId: string) => invoke<void>("ttls_music_cancel", { jobId }),
   renderStart: (jobId: string, src: string, plan: RenderPlan) => invoke<void>("render_start", { jobId, src, plan }),
+  /** 範圍濾波的 A/B 試聽：對來源檔切一段，dry / wet 各一份 mp3（快取在媒體目錄的 fx/）。 */
+  fxPreview: (path: string, fingerprint: string, startMs: number, endMs: number, chain: RenderRangeFx[], key: string) =>
+    invoke<{ dry: string; wet: string }>("fx_preview", { path, fingerprint, startMs, endMs, chain, key }),
   renderCancel: (jobId: string) => invoke<void>("render_cancel", { jobId }),
   projectSave: (path: string, doc: unknown) => invoke<void>("project_save", { path, doc }),
   /** 寫純文字檔（節目筆記的 .md）。不加 BOM。 */

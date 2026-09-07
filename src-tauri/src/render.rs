@@ -119,12 +119,16 @@ pub struct RenderPlan {
     /// 每一軌各自 loudnorm 的話，配樂 stem 會被拉到跟人聲一樣大聲。
     #[serde(default)]
     pub loudnorm_measured: Option<LoudnormStats>,
+    /// 範圍濾波（降噪 / 去爆音…）：**成品時間**的區域，剪好之後另跑一趟 punch-in（fx.rs）。
+    /// 前端 analysis/fx/regions.ts 從來源時間的效果換算過來；型別化、數字在 Rust clamp。
+    #[serde(default)]
+    pub fx_regions: Vec<crate::fx::FxRegion>,
 }
 
 #[derive(Serialize, Clone)]
 struct Progress<'a> {
     job_id: &'a str,
-    /// cut | measure | encode
+    /// cut | fx | measure | encode
     stage: &'a str,
     pct: f32,
 }
@@ -812,14 +816,27 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
             tokio::fs::create_dir_all(dir).await?;
         }
         let total = total_out_frames(&plan);
+        // 範圍濾波的區域先驗（排序 / 不重疊 / 長度）—— 錯的 plan 不要等剪完 20 秒才發現
+        crate::fx::validate_regions(&plan.fx_regions, plan_out_frames(&plan))?;
         cut_to_wav(&app, &bins, &src, &plan, &wav_path, &job_id, &cancel).await?;
+        // 範圍濾波（降噪 / 去爆音…）：在成品時間軸上 punch-in。在 mix 之前 —— 修的是人聲，
+        // 不是配樂；在整檔 cleanup 之前 —— 那一條在量測 / 編碼兩趟裡，會疊在這上面。
+        let fx_path = work_dir.join(format!("fx-{job_id}.wav"));
+        let cut_wav = if plan.fx_regions.is_empty() {
+            wav_path.clone()
+        } else {
+            emit_progress(&app, &job_id, "fx", 0.0);
+            crate::fx::punch_in(&app, &bins, &plan, &wav_path, &fx_path, &job_id, &cancel).await?;
+            emit_progress(&app, &job_id, "fx", 100.0);
+            fx_path.clone()
+        };
         // 墊樂 / 音效疊在主聲軌上。**一定要在量測之前**：loudnorm 要對的是使用者聽到的
         // 那一份（含配樂），先量主聲軌再加音樂的話成品會比目標響度大。
         let mixed_path = work_dir.join(format!("mixed-{job_id}.wav"));
         let stage_wav = if plan.overlays.is_empty() && !plan.mute_main {
-            wav_path.clone()
+            cut_wav.clone()
         } else {
-            crate::mix::mix_overlays(&app, &bins, &plan, &wav_path, &mixed_path, &job_id, &cancel).await?;
+            crate::mix::mix_overlays(&app, &bins, &plan, &cut_wav, &mixed_path, &job_id, &cancel).await?;
             mixed_path.clone()
         };
         // 預覽跳過量測那一趟（30 分鐘素材要幾十秒），直接進編碼
@@ -842,6 +859,7 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
     }
     .await;
     let _ = tokio::fs::remove_file(&wav_path).await;
+    let _ = tokio::fs::remove_file(work_dir.join(format!("fx-{job_id}.wav"))).await;
     let _ = tokio::fs::remove_file(work_dir.join(format!("mixed-{job_id}.wav"))).await;
     if result.is_err() {
         let _ = tokio::fs::remove_file(&out_part).await;
@@ -874,6 +892,7 @@ mod tests {
             loudnorm_measured: None,
             cleanup: None,
             preserve_dynamics: false,
+            fx_regions: vec![],
         }
     }
 

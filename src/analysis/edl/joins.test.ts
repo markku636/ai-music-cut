@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { edlOutDurationMs, effectiveXfFrames, effectiveXfMs, joinOverlapFrames, msToFrames, planOutFrames } from "./joins";
+import { edlOutDurationMs, effectiveXfFrames, effectiveXfMs, joinOverlapFrames, msToFrames, planOutFrames, segOutStartFrames } from "./joins";
 
 const F = msToFrames;
 
@@ -120,5 +120,42 @@ describe("edlOutDurationMs", () => {
 
   it("沒有保留段就是 0", () => {
     expect(edlOutDurationMs({ keeps: [], joins: [] })).toBe(0);
+  });
+});
+
+describe("segOutStartFrames", () => {
+  const segs = [
+    { startMs: 0, endMs: 1000 },
+    { startMs: 2000, endMs: 3000 },
+    { startMs: 5000, endMs: 5500 },
+  ];
+  it("crossfade 往前疊、gap 往後推、seam 不動", () => {
+    const joins = [
+      { kind: "crossfade", ms: 20 },
+      { kind: "gap", ms: 300 },
+    ];
+    expect(segOutStartFrames(segs, joins)).toEqual([0, F(1000) - F(20), F(1000) - F(20) + F(1000) + F(300)]);
+    expect(segOutStartFrames(segs, [{ kind: "seam", ms: 0 }, { kind: "seam", ms: 0 }])).toEqual([0, F(1000), F(2000)]);
+  });
+  it("最後一段的終點 == planOutFrames（同一套帳）", () => {
+    const joins = [
+      { kind: "crossfade", ms: 20 },
+      { kind: "gap", ms: 300 },
+    ];
+    const starts = segOutStartFrames(segs, joins);
+    expect(starts[2] + F(500)).toBe(planOutFrames(segs, joins));
+  });
+  it("crossfade 被短段夾住時用實際重疊量", () => {
+    const short = [
+      { startMs: 0, endMs: 1000 },
+      { startMs: 2000, endMs: 2002 },
+      { startMs: 3000, endMs: 4000 },
+    ];
+    const joins = [
+      { kind: "crossfade", ms: 20 },
+      { kind: "crossfade", ms: 20 },
+    ];
+    const ov = joinOverlapFrames(short, joins);
+    expect(segOutStartFrames(short, joins)).toEqual([0, F(1000) - ov[0], F(1000) - ov[0] + F(2) - ov[1]]);
   });
 });

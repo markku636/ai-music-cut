@@ -195,7 +195,7 @@ export default function RenderDialog({
     [done, target],
   );
 
-  const STAGE: Record<RenderProgress["stage"], string> = { cut: t("剪接"), measure: t("量測響度"), encode: t("響度正規化 + 編碼") };
+  const STAGE: Record<RenderProgress["stage"], string> = { cut: t("剪接"), fx: t("範圍濾波"), measure: t("量測響度"), encode: t("響度正規化 + 編碼") };
 
   return (
     <Modal

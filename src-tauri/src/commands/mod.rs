@@ -459,6 +459,27 @@ pub async fn render_start(app: AppHandle, state: State<'_, AppState>, job_id: St
     Ok(())
 }
 
+/// 範圍濾波的 A/B 試聽：對來源檔直接切一段，dry / wet 各一份 mp3 放在媒體快取的 fx/ 下。
+#[tauri::command]
+pub async fn fx_preview(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    fingerprint: String,
+    start_ms: f64,
+    end_ms: f64,
+    chain: Vec<crate::fx::RangeFx>,
+    key: String,
+) -> AppResult<crate::fx::PreviewPair> {
+    let bins = state.ffmpeg_bins().await?;
+    let dir = media::media_dir(&app, &fingerprint)?.join("fx");
+    let safe_key: String = key.chars().filter(|c| c.is_ascii_alphanumeric()).take(32).collect();
+    if safe_key.is_empty() {
+        return Err(AppError::Invalid("key 無效".into()));
+    }
+    crate::fx::preview(&bins, &path, start_ms, end_ms, &chain, &dir, &safe_key).await
+}
+
 #[tauri::command]
 pub fn render_cancel(state: State<'_, AppState>, job_id: String) {
     if let Some(f) = state.cancel_flags.lock().get(&job_id) {

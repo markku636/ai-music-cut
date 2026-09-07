@@ -39,6 +39,8 @@ export default function EffectDialog({
 
   const ab = useAbPreview(() => {
     if (!spec || !range) throw new Error(t("沒有可以試聽的內容"));
+    // 範圍濾波（降噪…）有自己的試聽路徑：對來源檔直接切一段，不用等 Cutter 從 0 剪到這裡
+    if (spec.preview) return spec.preview(values, range, ctx);
     return renderAbPair(mediaId, range, spec.build(values, range, ctx));
   });
 

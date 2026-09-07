@@ -25,6 +25,8 @@ export interface LastOutput {
   outputLufs?: number | null;
   outputTp?: number | null;
   targetLufs?: number;
+  /** 範圍濾波動過的成品區段；correlated=false（反轉 / 變調）的段落驗收不比波形相似度。 */
+  fxSpans?: { startMs: number; endMs: number; correlated: boolean }[];
 }
 
 interface VerifyStore {

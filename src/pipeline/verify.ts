@@ -79,7 +79,9 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
         const buf = await api.mediaAnalyzeLocal(newJobId(), opts.outPath, fp, outProbe.duration_ms);
         // 成品混了配樂時，波形相似度本來就不會像來源 —— 只看位置，不然會對好成品報假警報
         const hasOverlays = (useDecisions.getState().overlays[mediaId] ?? []).length > 0;
-        splice = auditSplice(srcLocal, parseAnalysis(buf), edl, { mixedWithOverlays: hasOverlays });
+        // 反轉 / 變調過的區段波形本來就對不上來源，只比位置
+        const skipCorrOutSpans = (useVerify.getState().lastOutput[mediaId]?.fxSpans ?? []).filter((s) => !s.correlated);
+        splice = auditSplice(srcLocal, parseAnalysis(buf), edl, { mixedWithOverlays: hasOverlays, skipCorrOutSpans });
         useVerify.getState().setSplice(mediaId, { ...splice, outPath: opts.outPath, at: new Date().toISOString() });
       } catch {
         /* 比對失敗不影響 ASR 驗收 */

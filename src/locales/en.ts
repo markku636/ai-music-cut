@@ -1215,6 +1215,9 @@ const en: Catalog = {
   // ---- AI 判讀開關 ----
   "允許 AI 判讀（關掉就完全不呼叫 claude，工具列 / 一鍵粗剪 / 批次都不會）": "Allow AI review (off means claude is never called: not from the toolbar, one-click rough cut or batch)",
   "AI 判讀在設定裡被關掉了（規則層結果仍可用）": "AI review is switched off in Settings (the rule-layer results are still there)",
+  // ---- 既有章節標記 ----
+  "你已經標了 {n} 個章節": "You already marked {n} chapters",
+  "這些已經會寫進成品檔案與發布包的章節清單，不用再產一次。下面產節目筆記是為了摘要與節錄 —— 它會另外提一份章節建議。": "These already go into the exported file and the bundle's chapter list, so there is no need to regenerate them. Generating show notes below is for the summary and quotes; it will propose its own chapters separately.",
 };
 
 

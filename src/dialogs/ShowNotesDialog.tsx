@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { BookMarked, Copy, FileText, RefreshCw, Save, Sparkles } from "lucide-react";
 import { api, errMessage } from "../api";
-import { stamp, toMarkdown } from "../analysis/shownotes";
+import { markersToChapters, stamp, toMarkdown } from "../analysis/shownotes";
 import { Button, EmptyState, Modal, Select, Spinner } from "../ui/index";
 import { copyToClipboard, toast } from "../ui";
 import { useLang, useT } from "../i18n";
@@ -39,6 +39,13 @@ export default function ShowNotesDialog({ mediaId, onClose }: { mediaId: string;
   const [busy, setBusy] = useState(false);
 
   const md = useMemo(() => (notes ? toMarkdown(notes, { title: media?.name }) : ""), [notes, media]);
+  // 使用者自己下的章節標記（成品時間）。markersToChapters 早就寫好也測過，只是沒人用。
+  // 用選擇器訂閱而不是 getState()：標記變了這一份要跟著更新
+  const chapterMarkers = useDecisions((s) => (mediaId ? s.markers[mediaId] : undefined));
+  const existingChapters = useMemo(
+    () => (mediaId ? markersToChapters(chapterMarkers ?? [], edlFor(mediaId)) : []),
+    [mediaId, chapterMarkers],
+  );
 
   const run = async () => {
     setBusy(true);
@@ -126,6 +133,29 @@ export default function ShowNotesDialog({ mediaId, onClose }: { mediaId: string;
               <span className="text-warning">{t("這一集的語言沒見過，會用代碼要求 claude 照著寫")}</span>
             )}
           </label>
+        )}
+        {/*
+          自己下的章節標記也要看得到。原本這裡只認 AI 產的筆記 —— 使用者按 Ctrl+M 標了
+          十個章節，開這個對話框卻是一片空白，看起來像什麼都沒有，只好再叫 claude 產
+          一次它已經有的東西。
+        */}
+        {!notes && !busy && existingChapters.length > 0 && (
+          <div className="rounded-md border border-fg/10 p-3">
+            <div className="mb-1 text-[11px] uppercase tracking-wide text-fg/35">
+              {t("你已經標了 {n} 個章節", { n: existingChapters.length })}
+            </div>
+            <div className="space-y-0.5">
+              {existingChapters.map((c) => (
+                <div key={`${c.outMs}-${c.title}`} className="flex items-baseline gap-2">
+                  <span className="mono shrink-0 text-[11px] tabular-nums text-accent">{stamp(c.outMs)}</span>
+                  <span className="text-fg/80">{c.title}</span>
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-fg/45">
+              {t("這些已經會寫進成品檔案與發布包的章節清單，不用再產一次。下面產節目筆記是為了摘要與節錄 —— 它會另外提一份章節建議。")}
+            </p>
+          </div>
         )}
         {!notes && !busy && (
           <EmptyState

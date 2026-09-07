@@ -18,6 +18,7 @@ import { groupFillers } from "../analysis/fillerStats";
 import { buildCues, CAPTION_EXT, renderCaptions, type CaptionFormat } from "../analysis/captions";
 import { splitByChapters, totalOutMs } from "../analysis/splitExport";
 import { loudnessProfile, vsEpisode } from "../analysis/profile";
+import { hasBlocker, preflight, summarize } from "../analysis/preflight";
 
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutput } from "../analysis/overlays";
 import { analyzeMicSync, combineMics } from "../pipeline/syncMics";
@@ -855,6 +856,38 @@ export const TOOLS: ToolSpec[] = [
       if (!Object.keys(patch).length) throw new ToolError("沒有任何要改的欄位");
       x.d.updateOverlay(x.media.id, id, patch, "調整配樂");
       return { updated: id, patch };
+    },
+  },
+  {
+    name: "get_preflight",
+    description:
+      "交付前檢查：這一集現在輸出的話，有什麼會出問題、有什麼只是提醒。回答「可以輸出了嗎 / 還缺什麼」用這支，不要自己憑候選數量推測。blocker 是會產出壞檔案的（例如整集被剪光），warning 是多半該處理的，note 只是提醒。有 blocker 時**不要**直接叫使用者輸出。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      const m = ctxMedia();
+      const edl = edlFor(m.media.id);
+      const decisions = m.d.decisions[m.media.id] ?? {};
+      const candidates = m.d.candidates[m.media.id] ?? [];
+      const markers = m.d.markers[m.media.id] ?? [];
+      const overlays = m.d.overlays[m.media.id] ?? [];
+      const hasTranscript = !!useTranscript.getState().byMedia[m.media.id];
+      const findings = preflight({
+        pending: candidates.reduce((n, c) => n + ((decisions[c.id]?.state ?? "pending") === "pending" ? 1 : 0), 0),
+        conflicts: candidates.reduce((n, c) => n + (decisions[c.id]?.conflict ? 1 : 0), 0),
+        openTodos: markers.reduce((n, x) => n + (x.kind === "todo" && !x.done ? 1 : 0), 0),
+        chapters: markers.reduce((n, x) => n + (x.kind === "chapter" ? 1 : 0), 0),
+        srcMs: edl ? edl.stats.keptMs + edl.stats.removedMs : (m.media.probe?.duration_ms ?? 0),
+        outMs: edl ? edl.stats.outMs : 0,
+        overlays: overlays.length,
+        musicWithoutDuck: overlays.filter((o) => o.lane === "music" && !(o.points?.length ?? 0)).length,
+        stems: false,
+        hasTranscript,
+      });
+      return {
+        ready: !hasBlocker(findings),
+        counts: summarize(findings),
+        findings: findings.map((f) => ({ severity: f.severity, title: f.title, detail: f.detail, action: f.action })),
+      };
     },
   },
   {

@@ -30,6 +30,11 @@ interface TimelineStore {
   loopSelection: boolean;
   /** 一次性捲動請求（Timeline 消費）。 */
   scrollReq: { ms: number; nonce: number } | null;
+  /**
+   * 目前可視範圍的起點（來源時間）。由 wavesurfer 的 scroll 事件回填 ——
+   * 捲動是 wavesurfer 自己管的，總覽條要畫「你在看哪裡」就得知道這個值。
+   */
+  viewStartMs: number;
   /** 目前媒體的拍網格（剪音樂用；語音檔信心低時為 null）。 */
   beatGrid: BeatGrid | null;
   /** 時間軸上顯示拍線 / 小節線。 */
@@ -95,6 +100,7 @@ interface TimelineStore {
   fit: () => void;
   zoomToSelection: () => void;
   scrollTo: (ms: number) => void;
+  setViewStart: (ms: number) => void;
   toggleLoudness: () => void;
   setTool: (tool: TimelineTool) => void;
   setSelection: (sel: TimeSelection | null) => void;
@@ -164,6 +170,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   selection: null,
   loopSelection: readBool("aicut:loopSelection", false),
   scrollReq: null,
+  viewStartMs: 0,
   beatGrid: null,
   rawGrid: null,
   gridOverride: NO_OVERRIDE,
@@ -278,6 +285,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
     if (px !== null) get().scrollTo(Math.max(0, selection.startMs - len * 1000 * 0.1));
   },
   scrollTo: (ms) => set((s) => ({ scrollReq: { ms: Math.max(0, ms), nonce: (s.scrollReq?.nonce ?? 0) + 1 } })),
+  setViewStart: (ms) => set((s) => (Math.abs(s.viewStartMs - ms) < 1 ? s : { viewStartMs: Math.max(0, ms) })),
   toggleLoudness: () =>
     set((s) => {
       writeBool("aicut:showLoudness", !s.showLoudness);

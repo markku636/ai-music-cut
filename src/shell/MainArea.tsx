@@ -27,6 +27,7 @@ import { selectActiveMedia, useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
 import { useUi } from "../store/ui";
 import { useTranscript } from "../store/transcript";
+import OverviewStrip from "../timeline/OverviewStrip";
 import SelectionBar from "../timeline/SelectionBar";
 import { addEffectOnSelection, applyCandidateRange, clearSelection, cutSelection, keepOnlySelection, removeEffect, updateEffectRange } from "../timeline/selectionActions";
 import Timeline, { type WaveMenuInfo } from "../timeline/Timeline";
@@ -419,6 +420,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
             {overlayMenu && <WaveContextMenu x={overlayMenu.x} y={overlayMenu.y} items={overlayMenuItems(overlayMenu.o)} onClose={() => setOverlayMenu(null)} />}
             {styleFor && mediaId && <StyleDialog mediaId={mediaId} startMs={styleFor.startMs} endMs={styleFor.endMs} onClose={() => setStyleFor(null)} />}
           </div>
+          <OverviewStrip mediaId={mediaId} durationMs={active.probe?.duration_ms ?? 0} />
           <Splitter axis="y" onPointerDown={timeline.onPointerDown} />
           {transcript && searchOpen && mediaId && (
             <TranscriptSearch mediaId={mediaId} transcript={transcript} onHits={onSearchHits} onClose={() => setSearchOpen(false)} />

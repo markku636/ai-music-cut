@@ -300,6 +300,8 @@ export default function Timeline(props: TimelineProps) {
       if (s.pxPerSec !== prev.pxPerSec || s.fitPxPerSec !== prev.fitPxPerSec) safeZoom(s.pxPerSec ?? s.fitPxPerSec);
       if (s.scrollReq && s.scrollReq !== prev.scrollReq) ws.setScrollTime(s.scrollReq.ms / 1000);
     });
+    // 捲動位置是 wavesurfer 自己管的；總覽條要畫「你在看哪一段」就得把它回填到 store
+    ws.on("scroll", (visibleStartTime) => useTimeline.getState().setViewStart(visibleStartTime * 1000));
     ws.once("ready", () => {
       const s = useTimeline.getState();
       safeZoom(s.pxPerSec ?? s.fitPxPerSec);

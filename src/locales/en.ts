@@ -1013,6 +1013,8 @@ const en: Catalog = {
   "維護提示詞": "Manage prompts",
   "音訊工具": "Audio tools",
   "外觀": "Appearance",
+  "總覽": "Overview",
+  "總覽：點一下跳過去，拖曳可以捲動": "Overview: click to jump, drag to scroll",
 };
 
 

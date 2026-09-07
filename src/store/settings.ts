@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   prompt_overrides: {},
   filler_rules: {},
   export_presets: [],
+  project_templates: [],
   claude_review_model: "haiku",
   judge_roles: "editor+reviewer",
   default_aggressiveness: 50,

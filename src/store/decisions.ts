@@ -96,6 +96,11 @@ interface DecisionsStore {
   setChapters: (mediaId: string, chapters: { ms: number; title: string }[]) => number;
   /** 放一段墊樂 / 音效到成品時間軸上；回傳 id。 */
   addOverlay: (mediaId: string, o: Omit<Overlay, "id">) => string;
+  /**
+   * 一次加好幾段（套用範本用）。整批算**一筆 undo** ——
+   * 套一個範本進來卻要按五次 Ctrl+Z 才收得回去，那是不合理的。
+   */
+  addOverlays: (mediaId: string, list: Overlay[], label: string) => void;
   updateOverlay: (mediaId: string, id: string, patch: Partial<Omit<Overlay, "id">>, label?: string) => void;
   removeOverlay: (mediaId: string, id: string) => void;
   addEffect: (mediaId: string, e: AudioEffect) => void;
@@ -398,6 +403,11 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       const item: Overlay = { ...o, id: overlayId(o.lane, o.outStartMs) };
       commit(mediaId, o.lane === "music" ? "加入配樂" : "加入音效", { overlays: [...list, item].sort((a, b) => a.outStartMs - b.outStartMs) });
       return item.id;
+    },
+    addOverlays: (mediaId, list, label) => {
+      if (!list.length) return;
+      const cur = get().overlays[mediaId] ?? [];
+      commit(mediaId, label, { overlays: [...cur, ...list].sort((a, b) => a.outStartMs - b.outStartMs) });
     },
     updateOverlay: (mediaId, id, p, label = "調整配樂") => {
       const list = get().overlays[mediaId] ?? [];

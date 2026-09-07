@@ -84,6 +84,13 @@ pub struct AppSettings {
     /// 使用者另存的輸出預設（內建的不存）。
     #[serde(default)]
     pub export_presets: Vec<ExportPreset>,
+    /// 專案範本，以 JSON 字串存放。
+    ///
+    /// 刻意**不定義結構**：範本的欄位會跟著剪輯功能一直長（角色、閃避、修聲…），
+    /// 每加一個欄位就要改 Rust、對兩邊型別、再發一版，划不來。這裡只負責存取，
+    /// 形狀由前端的 analysis/template.ts 定義並自己驗證（讀壞的會被濾掉）。
+    #[serde(default)]
+    pub project_templates: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -108,6 +115,7 @@ impl Default for AppSettings {
             prompt_overrides: std::collections::HashMap::new(),
             filler_rules: std::collections::HashMap::new(),
             export_presets: Vec::new(),
+            project_templates: Vec::new(),
         }
     }
 }

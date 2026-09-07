@@ -11,7 +11,7 @@ function c(kind: Candidate["kind"], s: number, e: number, score: number, source:
 }
 
 describe("decisions store", () => {
-  beforeEach(() => useDecisions.setState({ candidates: {}, decisions: {}, past: [], future: [], selectedIds: [] }));
+  beforeEach(() => useDecisions.setState({ candidates: {}, decisions: {}, overlays: {}, past: [], future: [], selectedIds: [] }));
 
   it("default states: suggest-only kinds are pending, high-score fillers auto", () => {
     expect(defaultStateFor(c("filler", 0, 100, 0.9), 50)).toBe("auto");
@@ -107,7 +107,7 @@ describe("decisions store", () => {
 });
 
 describe("addManualCuts（逐字稿批次剪除）", () => {
-  beforeEach(() => useDecisions.setState({ candidates: {}, decisions: {}, past: [], future: [], selectedIds: [] }));
+  beforeEach(() => useDecisions.setState({ candidates: {}, decisions: {}, overlays: {}, past: [], future: [], selectedIds: [] }));
 
   const cuts = [
     { startMs: 100, endMs: 200, wordIds: [1], sentenceId: 0 },
@@ -168,6 +168,32 @@ describe("addManualCuts（逐字稿批次剪除）", () => {
 
   it("空陣列不留下 undo 紀錄", () => {
     expect(useDecisions.getState().addManualCuts("m", [])).toBe(0);
+    expect(useDecisions.getState().past).toHaveLength(0);
+  });
+
+  it("addOverlays 整批算一筆 undo（套一個範本不該按五次 Ctrl+Z）", () => {
+    const st = useDecisions.getState();
+    const ov = (outStartMs: number, id: string) => ({
+      id,
+      lane: "music" as const,
+      mediaId: "m",
+      srcInMs: 0,
+      srcOutMs: 5000,
+      outStartMs,
+      gainDb: -18,
+      fadeInMs: 1000,
+      fadeOutMs: 1000,
+      points: [],
+    });
+    st.addOverlays("m", [ov(9000, "b"), ov(0, "a"), ov(4000, "c")], "套用範本");
+    expect(useDecisions.getState().overlays.m.map((o) => o.id)).toEqual(["a", "c", "b"]);
+    expect(useDecisions.getState().past).toHaveLength(1);
+    useDecisions.getState().undo();
+    expect(useDecisions.getState().overlays.m ?? []).toEqual([]);
+  });
+
+  it("addOverlays 空陣列不留下一筆什麼都沒做的 undo", () => {
+    useDecisions.getState().addOverlays("m", [], "套用範本");
     expect(useDecisions.getState().past).toHaveLength(0);
   });
 });

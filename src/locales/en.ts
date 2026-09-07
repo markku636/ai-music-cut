@@ -1091,6 +1091,26 @@ const en: Catalog = {
   "偏小聲": "Quiet",
   "偏大聲": "Loud",
   "來源響度（短期 3 秒 / 瞬間 400 毫秒）。目標 {tgt} LUFS。這是監看不是驗收 —— 成品還會經過逐段平衡與響度正規化。": "Source loudness (short-term 3 s / momentary 400 ms). Target {tgt} LUFS. This is monitoring, not verification — the export still goes through per-segment levelling and loudness normalisation.",
+  // ---- 專案範本 ----
+  "已更新範本「{name}」": "Updated template \"{name}\"",
+  "已存成範本「{name}」（{n} 段）": "Saved template \"{name}\" ({n} clips)",
+  "套用範本「{name}」": "Apply template \"{name}\"",
+  "有 {n} 段的來源檔還沒加進媒體清單，被跳過了": "{n} clip(s) skipped: their source files are not in the media list yet",
+  "已套用 {n} 段": "Applied {n} clip(s)",
+  "專案範本": "Project templates",
+  "週更節目每一集的開場曲、片尾曲、目標響度、修聲設定都一樣。範本只存這些跨集重複的東西 —— 剪輯決策與逐字稿不存，那是這一集的內容。片尾曲會錨在結尾，換一集長度不同也會跟著移動。": "A weekly show uses the same intro, the same outro, the same loudness target and the same cleanup every episode. A template stores only what repeats across episodes; cut decisions and transcripts stay out, those belong to this episode. The outro is anchored to the end, so it follows each episode's own length.",
+  "從這一集存成範本（{n} 段配樂 / 音效）": "Save this episode as a template ({n} music / SFX clips)",
+  "例如：AI 科技新鮮事": "e.g. Weekly Tech Roundup",
+  "儲存": "Save",
+  "還沒有範本": "No templates yet",
+  "把開場曲與片尾曲放好、設定好目標響度，再存成範本。": "Place your intro and outro, set the loudness target, then save it as a template.",
+  "套用到這一集": "Apply to this episode",
+  "已刪除範本「{name}」": "Deleted template \"{name}\"",
+  "目標 {lufs} LUFS · 激進度 {a}": "Target {lufs} LUFS · aggressiveness {a}",
+  "開頭 +{t}": "start +{t}",
+  "結尾 −{t}": "end −{t}",
+  "（沒有配樂 / 音效，只帶設定）": "(no music / SFX, settings only)",
+  "專案範本（開場 / 片尾 / 目標響度）": "Project templates (intro / outro / loudness target)",
 };
 
 

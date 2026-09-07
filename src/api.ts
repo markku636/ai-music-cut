@@ -28,6 +28,8 @@ export interface AppSettings {
   filler_rules: Record<string, string>;
   /** 使用者另存的輸出預設（內建的不存，見 analysis/exportPresets.ts）。 */
   export_presets: { id: string; label: string; format: string; target_lufs: number; leveling: boolean; stems: boolean }[];
+  /** 專案範本（JSON 字串；形狀由 analysis/template.ts 定義）。 */
+  project_templates: string[];
 }
 
 export interface FfmpegStatus {

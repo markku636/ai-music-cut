@@ -76,8 +76,16 @@ const HI: Thresholds = {
 
 const INT_KEYS: (keyof Thresholds)[] = ["unclearMinRun", "markerOverusePer30s", "restartMaxChars"];
 
+/** 預設激進度。壞值退回這裡，而不是退回 0。 */
+export const DEFAULT_AGGRESSIVENESS = 50;
+
 export function thresholdsFor(aggressiveness: number): Thresholds {
-  const a = Math.max(0, Math.min(100, aggressiveness)) / 100;
+  // 非有限值（專案檔壞掉、設定載入拿到 undefined）不能就這樣傳下去：
+  // Math.max(0, Math.min(100, NaN)) 還是 NaN，於是**每一條門檻都變成 NaN**，
+  // 而跟 NaN 的比較一律 false —— 結果是規則層一個候選都不產生，而且沒有任何錯誤訊息。
+  // 退回 0 也不行：那會靜靜地變成最保守，看起來就像「AI 什麼都沒抓到」。
+  const src = Number.isFinite(aggressiveness) ? aggressiveness : DEFAULT_AGGRESSIVENESS;
+  const a = Math.max(0, Math.min(100, src)) / 100;
   const out = {} as Thresholds;
   for (const k of Object.keys(LO) as (keyof Thresholds)[]) {
     const v = LO[k] + (HI[k] - LO[k]) * a;

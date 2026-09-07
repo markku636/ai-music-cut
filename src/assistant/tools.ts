@@ -500,7 +500,7 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     name: "undo",
-    description: "復原上一筆決策變更。",
+    description: "復原上一步。一步是**整批**的 —— cut_text 一次剪掉 40 個「呃」算一步，undo 一次就全部回來，不必也不該呼叫 40 次。回傳還剩幾步可以復原。",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: () => {
       const d = useDecisions.getState();
@@ -511,7 +511,7 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     name: "redo",
-    description: "重做上一筆被復原的變更。",
+    description: "重做剛才復原掉的那一步（同樣是整批）。只有在剛 undo 過而且中間沒有做別的改動時才有東西可以重做。",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: () => {
       const d = useDecisions.getState();

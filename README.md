@@ -2,6 +2,8 @@
 
 **繁體中文** · [English](README.en.md)
 
+> ☕ 這個工具免費且開源。如果幫上忙，可以 [請我喝杯咖啡](#贊助開源)。
+
 AI Podcast / 音訊智慧剪輯桌面工具（Tauri 2 + React 18），也有 CLI。丟進一段錄音，它會：
 
 1. **剪贅字與口吃**：嗯／呃／那個／就是／我我我……以及講到一半重講的片段，但**以自然順暢為最高原則**——句首的「然後」、有節奏感的語助詞會保留，不是全剪。規則層先提候選，Claude 再逐段判讀自然度。
@@ -151,6 +153,17 @@ AI Podcast / 音訊智慧剪輯桌面工具（Tauri 2 + React 18），也有 CLI
 | [![本機辨識](docs/screenshot-localasr.png)](docs/screenshot-localasr.png) | [![領域詞](docs/screenshot-hotwords.png)](docs/screenshot-hotwords.png) |
 | 選好套件與模型再按；按之前先給你看實際會執行的指令，跑起來輸出逐行顯示。 | 晶片式增刪、批次貼上；從這一集辨識信心低的字直接推薦（會排除贅字）。 |
 
+## 贊助開源
+
+這個工具免費且開源。如果它幫你省下了時間，可以請我喝杯咖啡，讓後續的更新繼續做下去。
+
+[![PayPal $5](https://img.shields.io/badge/PayPal-%245-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/8B7GRXA6UJH36)
+[![PayPal $10](https://img.shields.io/badge/PayPal-%2410-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/8LBTFUBBF2CHS)
+[![PayPal $15](https://img.shields.io/badge/PayPal-%2415-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/A653DD46GEU4W)
+[![PayPal $25](https://img.shields.io/badge/PayPal-%2425-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/Y5WPSXVGH3YS4)
+
+其他金額請走 [PayPal.Me](https://paypal.me/226network)。
+
 ## AI 後端
 
 **結構化產出**（AI 判讀、審核、節目筆記）可以選 **Claude Code** 或 **Codex**。
@@ -287,17 +300,6 @@ dev 便利：複製 `.env.example` 為 `.env.local`（gitignored）填 `AICUT_TT
 ## 架構
 
 見 [docs/architecture.md](docs/architecture.md)。殼層 / UI 原語 / 主題 / Claude CLI 橋接移植自 [db-kit](https://github.com/markku636/db-kit)。
-
-## ☕ 贊助開源
-
-這個工具免費且開源。如果它幫你省下了時間，可以請我喝杯咖啡，讓後續的更新繼續做下去。
-
-[![PayPal $5](https://img.shields.io/badge/PayPal-%245-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/8B7GRXA6UJH36)
-[![PayPal $10](https://img.shields.io/badge/PayPal-%2410-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/8LBTFUBBF2CHS)
-[![PayPal $15](https://img.shields.io/badge/PayPal-%2415-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/A653DD46GEU4W)
-[![PayPal $25](https://img.shields.io/badge/PayPal-%2425-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/Y5WPSXVGH3YS4)
-
-其他金額請走 [PayPal.Me](https://paypal.me/226network)。
 
 ## 授權
 

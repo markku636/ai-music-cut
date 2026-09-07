@@ -2,6 +2,8 @@
 
 [繁體中文](README.md) · **English**
 
+> ☕ Free and open source. If it helps, [buy me a coffee](#support-open-source).
+
 A desktop tool for smart editing of podcasts and audio (Tauri 2 + React 18), with a CLI. Drop in a recording and it will:
 
 1. **Cut fillers and stutters**: um / uh / "you know" / "so, like" / re-starts mid-sentence — but **naturalness comes first**. A sentence-initial "then" or a filler that carries the rhythm is kept, not blanket-cut. The rule layer proposes candidates; Claude then reads each window and judges whether the cut still sounds natural.
@@ -61,6 +63,17 @@ Speech recognition, source separation and music generation are served by self-ho
 | --- | --- |
 | [![Local ASR](docs/screenshot-localasr.png)](docs/screenshot-localasr.png) | [![Domain words](docs/screenshot-hotwords.png)](docs/screenshot-hotwords.png) |
 | Choose the package and model, then press install; you see the exact command first, and the output streams line by line. | Chip-style add/remove and bulk paste; suggestions come from the words this episode's recogniser was least sure about (fillers excluded). |
+
+## Support open source
+
+This tool is free and open source. If it saved you time, buy me a coffee so the updates keep coming.
+
+[![PayPal $5](https://img.shields.io/badge/PayPal-%245-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/8B7GRXA6UJH36)
+[![PayPal $10](https://img.shields.io/badge/PayPal-%2410-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/8LBTFUBBF2CHS)
+[![PayPal $15](https://img.shields.io/badge/PayPal-%2415-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/A653DD46GEU4W)
+[![PayPal $25](https://img.shields.io/badge/PayPal-%2425-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/Y5WPSXVGH3YS4)
+
+For any other amount, use [PayPal.Me](https://paypal.me/226network).
 
 ## AI backend
 
@@ -166,17 +179,6 @@ Dev conveniences: copy `.env.example` to `.env.local` (gitignored) and fill in `
 ## Architecture
 
 See [docs/architecture.md](docs/architecture.md). The shell, UI primitives, theming and Claude CLI bridge are ported from [db-kit](https://github.com/markku636/db-kit).
-
-## ☕ Support open source
-
-This tool is free and open source. If it saved you time, buy me a coffee so the updates keep coming.
-
-[![PayPal $5](https://img.shields.io/badge/PayPal-%245-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/8B7GRXA6UJH36)
-[![PayPal $10](https://img.shields.io/badge/PayPal-%2410-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/8LBTFUBBF2CHS)
-[![PayPal $15](https://img.shields.io/badge/PayPal-%2415-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/A653DD46GEU4W)
-[![PayPal $25](https://img.shields.io/badge/PayPal-%2425-0070ba?logo=paypal&logoColor=white)](https://www.paypal.com/ncp/payment/Y5WPSXVGH3YS4)
-
-For any other amount, use [PayPal.Me](https://paypal.me/226network).
 
 ## Licence
 

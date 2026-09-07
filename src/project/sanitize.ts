@@ -11,6 +11,7 @@
 // **壞掉的條目丟掉，不要整份拒絕開啟。** 少一個標記是可以接受的；因為一個壞欄位就
 // 打不開整個專案不行 —— 那是使用者一整集的工作。丟掉幾筆會回報數量，讓人知道發生過。
 
+import { MIN_PASTE_MS, type Paste } from "../analysis/edl/arrange";
 import { CLEANUP_OFF, normalizeCleanup, type CleanupSpec } from "../analysis/cleanup";
 import type { AudioEffect, EffectKind } from "../analysis/effects";
 import type { Overlay, OverlayLane } from "../analysis/overlays";
@@ -102,6 +103,37 @@ export function sanitizeEffects(v: unknown, r: SanitizeReport): AudioEffect[] {
     }
     // gain 的 db 壞掉就當 0（靜靜套一個 NaN 增益會讓整段變成無聲）
     out.push({ ...(x as AudioEffect), db: fin(o.db) ? (o.db as number) : undefined });
+  }
+  return out;
+}
+
+/**
+ * 貼上（剪下貼上 / 搬移）。
+ *
+ * 這一份特別要擋：壞掉的貼上會讓 keeps 出現一段長度為負、或指向檔案外面的區間，
+ * 而那會一路傳到剪接器變成一個讀不到的 ffmpeg 區間 —— 症狀是「輸出失敗」，
+ * 完全看不出來是專案檔裡有一筆爛資料。
+ */
+export function sanitizePastes(v: unknown, r: SanitizeReport): Paste[] {
+  if (!Array.isArray(v)) {
+    drop(r, "pastes", v == null ? 0 : 1);
+    return [];
+  }
+  const out: Paste[] = [];
+  for (const x of v) {
+    const o = rec(x);
+    if (!o || !str(o.id) || !fin(o.srcStartMs) || !fin(o.srcEndMs) || !fin(o.atMs)) {
+      drop(r, "pastes");
+      continue;
+    }
+    const a = o.srcStartMs as number;
+    const b = o.srcEndMs as number;
+    const at = o.atMs as number;
+    if (a < 0 || at < 0 || b - a < MIN_PASTE_MS) {
+      drop(r, "pastes");
+      continue;
+    }
+    out.push({ id: o.id as string, srcStartMs: a, srcEndMs: b, atMs: at });
   }
   return out;
 }

@@ -56,7 +56,7 @@ export function edlFor(mediaId: string): Edl | null {
     : undefined;
   const d = useDecisions.getState();
   const aggressiveness = useProject.getState().aggressiveness;
-  const key = [tr, local, d.candidates[mediaId], d.decisions[mediaId], d.splits[mediaId], aggressiveness, durationMs];
+  const key = [tr, local, d.candidates[mediaId], d.decisions[mediaId], d.splits[mediaId], d.pastes[mediaId], aggressiveness, durationMs];
   const hit = edlCache.get(mediaId);
   if (hit && sameKey(hit.key, key)) return hit.edl;
   const th = thresholdsFor(aggressiveness);
@@ -68,7 +68,7 @@ export function edlFor(mediaId: string): Edl | null {
     maxSentenceRemovalRatio: th.maxSentenceRemovalRatio,
   };
   const edl = buildEdl(
-    { words: tr?.words ?? [], sentences: tr?.sentences ?? [], vad: tr?.vad ?? [], durationMs, splits: d.splits[mediaId] ?? [] },
+    { words: tr?.words ?? [], sentences: tr?.sentences ?? [], vad: tr?.vad ?? [], durationMs, splits: d.splits[mediaId] ?? [], pastes: d.pastes[mediaId] ?? [] },
     d.candidates[mediaId] ?? [],
     d.decisions[mediaId] ?? {},
     opts,

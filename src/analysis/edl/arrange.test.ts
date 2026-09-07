@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyPastes, isRearranged, layoutOut, MIN_PASTE_MS, srcToOutArranged, type Paste } from "./arrange";
+import { isRearrangedKeeps, mapSrcToOut } from "./map";
 import type { KeepSegment } from "./build";
 
 const MIN_KEEP = 80;
@@ -136,5 +137,31 @@ describe("srcToOutArranged", () => {
     expect(srcToOutArranged(plain, 999)).toBe(999);
     expect(srcToOutArranged(plain, 2000)).toBe(1000);
     expect(srcToOutArranged(plain, 2500)).toBe(1500);
+  });
+});
+
+describe("mapSrcToOut 會自己認出重排（字幕 / 章節 / 節目筆記全靠它）", () => {
+  it("沒有重排時走原本的路徑，結果一模一樣", () => {
+    const plain = layoutOut(applyPastes([keep(0, 0, 1000), keep(1, 2000, 3000)], [], MIN_KEEP));
+    expect(isRearrangedKeeps(plain)).toBe(false);
+    for (const t of [0, 500, 999, 1500, 2000, 2500, 3000]) {
+      expect(mapSrcToOut(plain, t)).toBe(srcToOutArranged(plain, t));
+    }
+  });
+
+  it("有重排時**不會**再用「回第一個命中」那條捷徑", () => {
+    const laid = layoutOut(applyPastes([keep(0, 0, 1000), keep(1, 2000, 3000)], [paste("p1", 2400, 2600, 400)], MIN_KEEP));
+    expect(isRearrangedKeeps(laid)).toBe(true);
+    // 2500 同時落在貼上的那一塊與原本的段落；要回成品裡最早的那一次（500），
+    // 而不是依來源順序掃到的 2000-3000（1200 起）
+    expect(mapSrcToOut(laid, 2500)).toBe(500);
+  });
+
+  it("搬移之後，字幕的時間會落在搬過去的位置", () => {
+    // 把 2000-3000 剪掉、貼到 400 —— 這就是「搬移」
+    const moved = layoutOut(applyPastes([keep(0, 0, 1000)], [paste("m1", 2000, 3000, 400)], MIN_KEEP));
+    // 排列：0-400 | 2000-3000(m1) | 400-1000
+    expect(mapSrcToOut(moved, 2500)).toBe(900); // 400 + (2500-2000)
+    expect(mapSrcToOut(moved, 500)).toBe(1500); // 1400 + (500-400)
   });
 });

@@ -8,6 +8,7 @@ import HighlightsDialog from "./dialogs/HighlightsDialog";
 import ShowNotesDialog from "./dialogs/ShowNotesDialog";
 import AutoCutDialog from "./dialogs/AutoCutDialog";
 import BatchDialog from "./dialogs/BatchDialog";
+import { clipboard, copySelection, cutSelectionToClipboard, moveSelectionToPlayhead, pasteAtPlayhead } from "./timeline/clipboard";
 import FillersDialog from "./dialogs/FillersDialog";
 import TakesDialog from "./dialogs/TakesDialog";
 import TemplateDialog from "./dialogs/TemplateDialog";
@@ -482,6 +483,23 @@ export default function App() {
           if (m?.probe) useTimeline.getState().setSelection({ startMs: 0, endMs: m.probe.duration_ms });
         },
         findText: () => useUi.getState().setTranscriptSearch(true),
+        cutToClipboard: () => {
+          if (!cutSelectionToClipboard()) toast.info(t("先在波形上拖一段"));
+          else toast.success(t("已剪下（Ctrl+V 貼到播放線）"));
+        },
+        copyToClipboard: () => {
+          if (!copySelection()) toast.info(t("先在波形上拖一段"));
+          else toast.success(t("已複製（Ctrl+V 貼到播放線）"));
+        },
+        pasteAtPlayhead: () => {
+          if (!clipboard()) return toast.info(t("剪貼簿是空的"));
+          if (!pasteAtPlayhead()) toast.error(t("貼不上去（剪貼簿是別的音檔，或那一段太短）"));
+          else toast.success(t("已貼上"));
+        },
+        moveToPlayhead: () => {
+          if (!moveSelectionToPlayhead()) toast.info(t("搬不過去（沒有選取，或播放線就在選取範圍裡）"));
+          else toast.success(t("已搬移"));
+        },
         toggleSkim: () => useTimeline.getState().toggleSkim(),
       }),
     [],

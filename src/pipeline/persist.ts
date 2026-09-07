@@ -1,4 +1,5 @@
 // 專案檔 ↔ 執行期 store 的橋：存檔時把候選 / 決策併進 analysis[mediaId]；載入時還原。
+import type { Paste } from "../analysis/edl/arrange";
 import type { CleanupSpec } from "../analysis/cleanup";
 import type { ReelRange } from "../analysis/reel";
 import type { ShowNotes } from "../analysis/shownotes";
@@ -15,6 +16,7 @@ import {
   sanitizeOverlays,
   sanitizeSpeakers,
   sanitizeSplits,
+  sanitizePastes,
 } from "../project/sanitize";
 import type { Candidate, DecisionMap, Marker, SplitPoint, Transcript } from "../analysis/types";
 import type { MediaAnalysisV1 } from "../project/format";
@@ -30,6 +32,7 @@ export interface StoredAnalysis extends MediaAnalysisV1 {
   decisions?: DecisionMap;
   effects?: AudioEffect[];
   splits?: SplitPoint[];
+  pastes?: Paste[];
   markers?: Marker[];
   overlays?: Overlay[];
   /** 講者標籤（誰在什麼時候講；進 undo）。 */
@@ -51,7 +54,7 @@ export function enrichAnalysis(analysis: Record<string, MediaAnalysisV1>): Recor
   const hl = useHighlights.getState();
   const sn = useShowNotes.getState();
   const out: Record<string, MediaAnalysisV1> = { ...analysis };
-  const ids = new Set([...Object.keys(analysis), ...Object.keys(ts.byMedia), ...Object.keys(d.candidates), ...Object.keys(d.effects), ...Object.keys(d.splits), ...Object.keys(d.markers), ...Object.keys(d.overlays), ...Object.keys(d.speakers), ...Object.keys(cl.byMedia), ...Object.keys(hl.byMedia), ...Object.keys(sn.byMedia)]);
+  const ids = new Set([...Object.keys(analysis), ...Object.keys(ts.byMedia), ...Object.keys(d.candidates), ...Object.keys(d.effects), ...Object.keys(d.splits), ...Object.keys(d.pastes), ...Object.keys(d.markers), ...Object.keys(d.overlays), ...Object.keys(d.speakers), ...Object.keys(cl.byMedia), ...Object.keys(hl.byMedia), ...Object.keys(sn.byMedia)]);
   for (const id of ids) {
     const rec: StoredAnalysis = { ...(analysis[id] as StoredAnalysis | undefined) };
     if (ts.byMedia[id]) rec.transcript = ts.byMedia[id];
@@ -61,6 +64,8 @@ export function enrichAnalysis(analysis: Record<string, MediaAnalysisV1>): Recor
     else delete rec.effects;
     if (d.splits[id]?.length) rec.splits = d.splits[id];
     else delete rec.splits;
+    if (d.pastes[id]?.length) rec.pastes = d.pastes[id];
+    else delete rec.pastes;
     if (d.markers[id]?.length) rec.markers = d.markers[id];
     else delete rec.markers;
     if (d.overlays[id]?.length) rec.overlays = d.overlays[id];
@@ -74,7 +79,7 @@ export function enrichAnalysis(analysis: Record<string, MediaAnalysisV1>): Recor
     if (sn.byMedia[id]) rec.showNotes = sn.byMedia[id];
     else delete rec.showNotes;
     // 沒逐字稿也可能有人工剪輯 / 效果 / 切點（未分析就手動剪）
-    if (rec.transcript || rec.candidates?.length || rec.effects?.length || rec.splits?.length || rec.markers?.length || rec.overlays?.length || rec.speakers?.list.length || rec.cleanup || rec.highlights?.length || rec.showNotes) out[id] = rec;
+    if (rec.transcript || rec.candidates?.length || rec.effects?.length || rec.splits?.length || rec.pastes?.length || rec.markers?.length || rec.overlays?.length || rec.speakers?.list.length || rec.cleanup || rec.highlights?.length || rec.showNotes) out[id] = rec;
   }
   return out;
 }
@@ -94,6 +99,7 @@ export function restoreDecisions(mediaId: string, rec: StoredAnalysis | undefine
   const decisions = sanitizeDecisions(rec?.decisions, known, r);
   const effects = sanitizeEffects(rec?.effects, r);
   const splits = sanitizeSplits(rec?.splits, r);
+  const pastes = sanitizePastes(rec?.pastes, r);
   const markers = sanitizeMarkers(rec?.markers, r);
   const overlays = sanitizeOverlays(rec?.overlays, r);
 
@@ -107,11 +113,11 @@ export function restoreDecisions(mediaId: string, rec: StoredAnalysis | undefine
     console.warn("[project] 專案檔有壞掉的欄位，已略過：", r.dropped);
   }
   if (!rec?.candidates || !rec.decisions) {
-    if (effects.length || splits.length || markers.length || overlays.length || speakers?.list.length)
-      useDecisions.getState().load(mediaId, [], {}, effects, splits, markers, overlays, speakers);
+    if (effects.length || splits.length || pastes.length || markers.length || overlays.length || speakers?.list.length)
+      useDecisions.getState().load(mediaId, [], {}, effects, splits, markers, overlays, speakers, pastes);
     return false;
   }
-  useDecisions.getState().load(mediaId, cands, decisions, effects, splits, markers, overlays, speakers);
+  useDecisions.getState().load(mediaId, cands, decisions, effects, splits, markers, overlays, speakers, pastes);
   return cands.length > 0;
 }
 
@@ -122,6 +128,7 @@ export function inspectAnalysis(rec: StoredAnalysis | undefined) {
   sanitizeDecisions(rec?.decisions, new Set(cands.map((c) => c.id)), r);
   sanitizeEffects(rec?.effects, r);
   sanitizeSplits(rec?.splits, r);
+  sanitizePastes(rec?.pastes, r);
   sanitizeMarkers(rec?.markers, r);
   sanitizeOverlays(rec?.overlays, r);
   sanitizeCleanup(rec?.cleanup, r);

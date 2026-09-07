@@ -16,7 +16,7 @@ const EDL: Edl = {
   ],
   stats: { removedMs: 700, keptMs: 4300, outMs: 4430, cutCount: 2, byKind: {} },
   downgrades: [],
-  removals: [],
+  removals: [], rearranged: false,
 };
 
 describe("mapSrcToOut", () => {

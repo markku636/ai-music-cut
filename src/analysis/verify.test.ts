@@ -24,7 +24,7 @@ const EDL: Edl = {
   joins: [],
   stats: { removedMs: 1000, keptMs: 2000, outMs: 2000, cutCount: 1, byKind: {} },
   downgrades: [],
-  removals: [],
+  removals: [], rearranged: false,
 };
 
 const SRC = tr([

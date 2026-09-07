@@ -17,6 +17,7 @@ const edl: Edl = {
   stats: { removedMs: 3000, keptMs: 7000, outMs: 7000, cutCount: 1, byKind: {} },
   downgrades: [],
   removals: [{ startMs: 2000, endMs: 5000, candidateIds: ["c"], speech: true, userRange: false }],
+  rearranged: false
 };
 
 describe("buildChapters", () => {

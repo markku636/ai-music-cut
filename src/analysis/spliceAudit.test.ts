@@ -40,7 +40,7 @@ const EDL: Edl = {
   joins: [],
   stats: { removedMs: 2000, keptMs: 4000, outMs: 4000, cutCount: 1, byKind: {} },
   downgrades: [],
-  removals: [],
+  removals: [], rearranged: false,
 };
 
 describe("spliceAudit", () => {
@@ -90,7 +90,7 @@ describe("成品混了配樂時的判定", () => {
     joins: [],
     stats: { removedMs: 2000, keptMs: 8000, outMs: 8000, cutCount: 1, byKind: {} },
     downgrades: [],
-    removals: [],
+    removals: [], rearranged: false,
   } as unknown as Parameters<typeof auditSplice>[2];
 
   function envelope(fill: (i: number) => number): LocalAnalysis {
@@ -159,7 +159,7 @@ describe("訊號鏈的共同延遲（修聲濾鏡）", () => {
       id: i, srcStartMs: i * segMs, srcEndMs: (i + 1) * segMs,
       outStartMs: i * segMs, outEndMs: (i + 1) * segMs, gainDb: 0,
     }));
-    return { keeps, joins: [], stats: { removedMs: 0, keptMs: n * segMs, outMs: n * segMs, cutCount: 0, byKind: {} }, downgrades: [], removals: [] } as unknown as Parameters<typeof auditSplice>[2];
+    return { keeps, joins: [], stats: { removedMs: 0, keptMs: n * segMs, outMs: n * segMs, cutCount: 0, byKind: {} }, downgrades: [], removals: [], rearranged: false } as unknown as Parameters<typeof auditSplice>[2];
   }
 
   const N = 12;

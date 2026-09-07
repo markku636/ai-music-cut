@@ -38,12 +38,15 @@ export default function PreviewBar({ mediaId }: { mediaId: string }) {
   const decisions = useDecisions((s) => s.decisions[mediaId] ?? EMPTY_D);
   const decide = useDecisions((s) => s.decide);
   const aggressiveness = useProject((s) => s.aggressiveness);
+  // 接縫清單與「預覽是否過期」都吃 EDL —— 少了 splits / pastes 就會停在舊的那一份
+  const splits = useDecisions((s) => s.splits[mediaId] ?? EMPTY_D2);
+  const pastes = useDecisions((s) => s.pastes[mediaId] ?? EMPTY_D2);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const edl = useMemo(() => edlFor(mediaId), [mediaId, candidates, decisions, aggressiveness]);
+  const edl = useMemo(() => edlFor(mediaId), [mediaId, candidates, decisions, splits, pastes, aggressiveness]);
   const seams = useMemo(() => (edl ? seamsOf(edl) : []), [edl]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const liveKey = useMemo(() => currentPreviewKey(mediaId), [mediaId, candidates, decisions, aggressiveness]);
+  const liveKey = useMemo(() => currentPreviewKey(mediaId), [mediaId, candidates, decisions, splits, pastes, aggressiveness]);
   // 決策一改，手上的成品預覽就過期了 —— 自動退回「即時」，但**不自動重渲染**
   const stale = !!rendered && !!liveKey && rendered.key !== liveKey;
 
@@ -174,4 +177,5 @@ export default function PreviewBar({ mediaId }: { mediaId: string }) {
 }
 
 const EMPTY: never[] = [];
+const EMPTY_D2: never[] = [];
 const EMPTY_D = {};

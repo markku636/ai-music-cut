@@ -132,6 +132,15 @@ export interface Edl {
   stats: EdlStats;
   downgrades: Downgrade[];
   removals: Removal[];
+  /**
+   * 這份 EDL 的 keeps 已經離開「依來源時間遞增」的排列（有貼上 / 搬移）。
+   *
+   * **下游必須看這個旗標。** 整條管線有很多地方建立在舊的不變式上
+   * （keeps 是剪除區的補集 ⇒ 依來源排序、不重疊、每段只出現一次），
+   * 其中最嚴重的是 Rust 的剪接器：它是單趟前向串流，`si` 只前進不回頭，
+   * 所以重排過的段落會**產出零個 frame** —— 成品靜靜地少掉內容，沒有任何錯誤。
+   */
+  rearranged: boolean;
 }
 
 export interface EdlInput {
@@ -397,7 +406,9 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
   const outMs = keeps.length ? keeps[keeps.length - 1].outEndMs : 0;
   // 切點造成的接縫不算「剪了幾刀」—— 它沒有拿掉任何東西，計進去只會讓面板上的數字說謊。
   const cutCount = joins.filter((j) => !j.splitId).length;
-  return { keeps, joins, stats: { removedMs, keptMs, outMs, cutCount, byKind }, downgrades, removals };
+  // 一次算好，下游不必各自去猜（而且猜的方式各不相同就是 bug 的來源）
+  const rearranged = pastes.length > 0 || keeps.some((k, i) => i > 0 && k.srcStartMs < keeps[i - 1].srcStartMs);
+  return { keeps, joins, stats: { removedMs, keptMs, outMs, cutCount, byKind }, downgrades, removals, rearranged };
 }
 
 function hasKeptWordBetween(words: Word[], cutWordIds: Set<number>, fromMs: number, toMs: number): boolean {

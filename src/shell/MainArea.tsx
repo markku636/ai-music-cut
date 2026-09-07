@@ -73,6 +73,9 @@ export default function MainArea() {
   const decisions = useDecisions((s) => (mediaId ? s.decisions[mediaId] ?? EMPTY_D : EMPTY_D));
   const effects = useDecisions((s) => (mediaId ? s.effects[mediaId] ?? EMPTY_E : EMPTY_E));
   const splits = useDecisions((s) => (mediaId ? s.splits[mediaId] ?? EMPTY_S : EMPTY_S));
+  // 貼上也要進相依。漏掉的話症狀是「貼上之後時間軸完全不動」，而且沒有任何錯誤訊息 ——
+  // 這正是 v0.97 當時我沒發現的原因：我在測試裡直接呼叫 edlFor，繞過了 React。
+  const pastes = useDecisions((s) => (mediaId ? s.pastes[mediaId] ?? EMPTY_S : EMPTY_S));
   const speakers = useDecisions((s) => (mediaId ? s.speakers[mediaId] ?? EMPTY_SPK : EMPTY_SPK));
   const selectedIds = useDecisions((s) => s.selectedIds);
   const aggressiveness = useProject((s) => s.aggressiveness);
@@ -154,7 +157,7 @@ export default function MainArea() {
   // edlFor 從 store 直接讀（getState），所以 lint 看不出它依賴什麼；
   // 這些 dep 就是「該重算」的訊號，刻意留著。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const edl = useMemo(() => (mediaId ? edlFor(mediaId) : null), [mediaId, candidates, decisions, splits, aggressiveness, local, transcript]);
+  const edl = useMemo(() => (mediaId ? edlFor(mediaId) : null), [mediaId, candidates, decisions, splits, pastes, aggressiveness, local, transcript]);
   const cuts = useMemo(
     () => edl?.removals.map((r) => ({ startMs: r.startMs, endMs: r.endMs })) ?? activeRanges(candidates, decisions),
     [edl, candidates, decisions],

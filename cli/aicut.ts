@@ -18,6 +18,7 @@ import { normalizeTranscript, type ServerTranscript } from "../src/analysis/norm
 import { runRulesAt } from "../src/analysis/rules";
 import { thresholdsFor } from "../src/analysis/thresholds";
 import { SUGGEST_ONLY_KINDS, isActiveState, KIND_LABEL, type Candidate, type DecisionMap, type DecisionState, type SplitPoint, type Transcript } from "../src/analysis/types";
+import type { Paste } from "../src/analysis/edl/arrange";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../src/analysis/beats";
 import type { LocalAnalysis } from "../src/analysis/peaks";
 import { actualWords, expectedWords, verifyEdit, type VerifyReport } from "../src/analysis/verify";
@@ -182,6 +183,12 @@ interface Analysis {
   /** App 裡用刀片切的切點。沒讀的話 CLI 會剪出跟 App 不一樣長度的成品。 */
   splits: SplitPoint[];
   /**
+   * App 裡剪下貼上 / 搬移產生的區塊。跟 splits 同一個道理，但更嚴重：
+   * 沒讀的話 CLI 不只長度不一樣，**內容的順序也不一樣** —— 使用者搬過的段落會回到原位，
+   * 而且沒有任何錯誤訊息。
+   */
+  pastes: Paste[];
+  /**
    * CLI **做不到**的東西有幾個。
    *
    * CLI 的剪接器是 ffmpeg 的 atrim + concat，沒有 App 那套逐 frame 混音，也不寫章節。
@@ -216,7 +223,7 @@ async function analyze(file: string, ff: Ffmpeg, flags: Record<string, string | 
     log(`AI 判讀完成：剪 ${applied}、不剪 ${dropped}、新增建議 ${r.added.length}${r.failed ? `（${r.failed} 個視窗失敗）` : ""}`);
     for (const w of r.warnings.slice(0, 5)) log(`  ! ${w}`);
   }
-  return { transcript, candidates, decisions, effects: [], splits: [], unsupported: { overlays: 0, chapters: 0 } };
+  return { transcript, candidates, decisions, effects: [], splits: [], pastes: [], unsupported: { overlays: 0, chapters: 0 } };
 }
 
 function summarizeKinds(cands: Candidate[]): string {
@@ -238,6 +245,7 @@ async function loadProject(p: string): Promise<Analysis & { mediaPath: string | 
         decisions?: DecisionMap;
         effects?: AudioEffect[];
         splits?: SplitPoint[];
+        pastes?: Paste[];
         overlays?: { lane: string }[];
         markers?: { kind: string }[];
       }
@@ -253,6 +261,7 @@ async function loadProject(p: string): Promise<Analysis & { mediaPath: string | 
     decisions: rec.decisions ?? {},
     effects: rec.effects ?? [],
     splits: rec.splits ?? [],
+    pastes: rec.pastes ?? [],
     unsupported: {
       overlays: rec.overlays?.length ?? 0,
       chapters: (rec.markers ?? []).filter((m) => m.kind === "chapter").length,
@@ -267,7 +276,7 @@ function edlOf(a: Analysis, durationMs: number, aggressiveness: number): Edl {
   const th = thresholdsFor(aggressiveness);
   const tr = a.transcript;
   return buildEdl(
-    { words: tr.words, sentences: tr.sentences, vad: tr.vad, durationMs: tr.durationMs || durationMs, splits: a.splits },
+    { words: tr.words, sentences: tr.sentences, vad: tr.vad, durationMs: tr.durationMs || durationMs, splits: a.splits, pastes: a.pastes },
     a.candidates,
     a.decisions,
     { ...DEFAULT_EDL_OPTIONS, maxSentenceRemovalRatio: th.maxSentenceRemovalRatio },

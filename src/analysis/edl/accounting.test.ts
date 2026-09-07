@@ -95,7 +95,7 @@ function declaredShift(kind: string, ms: number): number {
 describe("EDL 成品時間帳（隨機輸入）", () => {
   const SEEDS = Array.from({ length: 60 }, (_, i) => i * 7919 + 13);
 
-  it("保留段在來源時間上遞增且不重疊", () => {
+  it("保留段在來源時間上遞增且不重疊（**沒有貼上時**才成立）", () => {
     for (const seed of SEEDS) {
       const c = makeCase(seed);
       const { keeps } = buildEdl(c.input, c.candidates, c.decisions, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
@@ -212,6 +212,77 @@ describe("EDL 成品時間帳（隨機輸入）", () => {
       const { keeps } = buildEdl(c.input, [], {}, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
       expect(keeps.length, `seed ${seed}`).toBe(1);
       expect(mapSrcToOut(keeps, keeps[0].srcStartMs + 100), `seed ${seed}`).toBeCloseTo(100, 3);
+    }
+  });
+});
+
+/**
+ * 帶貼上的隨機案例。
+ *
+ * v0.97 之後 keeps 可能不照來源排序、同一段來源可能出現兩次，
+ * 而上面那 60 seeds × 10 條性質**完全沒有覆蓋這個情況** —— 它們是假的綠燈。
+ * 這一組專門補那個洞：帳務不變式（成品長度、接點落差）在重排後同樣必須成立。
+ */
+function withPastes(seed: number): { input: EdlInput; candidates: Candidate[]; decisions: DecisionMap } {
+  const c = makeCase(seed);
+  const dur = c.input.durationMs;
+  const rnd = rng(seed ^ 0x5eed);
+  const n = 1 + Math.floor(rnd() * 2);
+  const pastes = [];
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor(rnd() * dur * 0.6);
+    const len = 200 + Math.floor(rnd() * 800);
+    const at = Math.floor(rnd() * dur);
+    pastes.push({ id: `p${i}`, srcStartMs: a, srcEndMs: Math.min(dur, a + len), atMs: at });
+  }
+  return { ...c, input: { ...c.input, pastes } };
+}
+
+describe("EDL 成品時間帳（帶貼上 / 搬移的隨機輸入）", () => {
+  const SEEDS = Array.from({ length: 40 }, (_, i) => i * 6151 + 29);
+
+  it("成品總長 = 各段長度總和 + gap − crossfade", () => {
+    for (const seed of SEEDS) {
+      const c = withPastes(seed);
+      const edl = buildEdl(c.input, c.candidates, c.decisions, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
+      const segSum = edl.keeps.reduce((n2, k) => n2 + (k.srcEndMs - k.srcStartMs), 0);
+      const gaps = edl.joins.filter((j) => j.kind === "gap").reduce((n2, j) => n2 + j.ms, 0);
+      const xf = edl.joins.filter((j) => j.kind === "crossfade").reduce((n2, j) => n2 + j.ms, 0);
+      expect(Math.abs(segSum + gaps - xf - edl.stats.outMs), `seed ${seed}`).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("成品時間嚴格遞增（順序是成品順序，不是來源順序）", () => {
+    for (const seed of SEEDS) {
+      const c = withPastes(seed);
+      const { keeps } = buildEdl(c.input, c.candidates, c.decisions, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
+      for (let i = 1; i < keeps.length; i++) {
+        expect(keeps[i].outStartMs, `seed ${seed} keep ${i}`).toBeGreaterThan(keeps[i - 1].outStartMs);
+      }
+    }
+  });
+
+  it("每一段都有正的長度（不能出現長度為零或負的段）", () => {
+    for (const seed of SEEDS) {
+      const c = withPastes(seed);
+      const { keeps } = buildEdl(c.input, c.candidates, c.decisions, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
+      for (const k of keeps) expect(k.srcEndMs, `seed ${seed}`).toBeGreaterThan(k.srcStartMs);
+    }
+  });
+
+  it("**有貼上就一定要標記 rearranged**（下游靠這個旗標擋住輸出）", () => {
+    for (const seed of SEEDS) {
+      const c = withPastes(seed);
+      const edl = buildEdl(c.input, c.candidates, c.decisions, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
+      expect(edl.rearranged, `seed ${seed}`).toBe(true);
+    }
+  });
+
+  it("沒有貼上時 rearranged 必須是 false（否則會把正常專案也擋掉）", () => {
+    for (const seed of SEEDS) {
+      const c = makeCase(seed);
+      const edl = buildEdl(c.input, c.candidates, c.decisions, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
+      expect(edl.rearranged, `seed ${seed}`).toBe(false);
     }
   });
 });

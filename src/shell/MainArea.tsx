@@ -474,6 +474,8 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
               seams={seams}
               onSeamMenu={(seam, x, y) => setSeamMenu({ seam, x, y })}
               markers={markers}
+              speakerTurns={speakers.turns}
+              speakers={speakers.list}
               onMarkerMove={(id, ms) => mediaId && updateMarker(mediaId, id, { ms })}
               onMarkerMenu={(marker, x, y) => setMarkerMenu({ marker, x, y })}
               edl={edl}

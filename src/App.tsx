@@ -11,6 +11,7 @@ import BatchDialog from "./dialogs/BatchDialog";
 import FillersDialog from "./dialogs/FillersDialog";
 import TemplateDialog from "./dialogs/TemplateDialog";
 import SpeakersDialog from "./dialogs/SpeakersDialog";
+import { nextSpeakerChange, speakerAtMs } from "./analysis/speakers";
 import CaptionsDialog from "./dialogs/CaptionsDialog";
 import SplitExportDialog from "./dialogs/SplitExportDialog";
 import BundleDialog from "./dialogs/BundleDialog";
@@ -437,6 +438,23 @@ export default function App() {
           const cur = usePlayback.getState().currentMs;
           const next = dir > 0 ? list.find((m) => m.ms > cur + 5) : [...list].reverse().find((m) => m.ms < cur - 5);
           if (next) seekTo(next.ms);
+        },
+        stepSpeaker: (dir) => {
+          const id = useProject.getState().activeMediaId;
+          if (!id) return;
+          const st = useDecisions.getState().speakers[id];
+          if (!st?.turns.length) {
+            toast.info(t("這一集還沒有講者標籤"));
+            return;
+          }
+          const next = nextSpeakerChange(st.turns, usePlayback.getState().currentMs, dir);
+          if (next == null) {
+            toast.info(dir > 0 ? t("後面沒有換人了") : t("前面沒有換人了"));
+            return;
+          }
+          seekTo(next);
+          const who = st.list.find((x) => x.id === speakerAtMs(st.turns, next))?.label;
+          if (who) toast.info(t("換到 {who}", { who }));
         },
         blade: () => {
           const r = bladeAtPlayhead({ toggle: true });

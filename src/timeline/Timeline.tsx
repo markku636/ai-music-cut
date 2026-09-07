@@ -16,9 +16,11 @@ import { useTimeline } from "../store/timeline";
 import { useT } from "../i18n";
 import { useTheme } from "../theme";
 import { formatMs } from "../time";
+import type { Speaker, SpeakerTurn } from "../analysis/speakers";
 import BeatGridOverlay from "./BeatGridOverlay";
 import PlayheadOverlay from "./PlayheadOverlay";
 import MarkerOverlay from "./MarkerOverlay";
+import SpeakerRibbon from "./SpeakerRibbon";
 import OverlayLanes from "./OverlayLanes";
 import TrimHandles from "./TrimHandles";
 import type { SeamInfo } from "./trimActions";
@@ -157,6 +159,9 @@ export interface TimelineProps {
   /** 右鍵接縫。 */
   onSeamMenu: (seam: SeamInfo, x: number, y: number) => void;
   markers: Marker[];
+  /** 講者段落與名單（沒有講者標籤時給空的）。 */
+  speakerTurns: SpeakerTurn[];
+  speakers: Speaker[];
   onMarkerMove: (id: string, ms: number) => void;
   onMarkerMenu: (marker: Marker, x: number, y: number) => void;
   edl: Edl | null;
@@ -515,6 +520,7 @@ export default function Timeline(props: TimelineProps) {
         <BeatGridOverlay ws={wsInstance} height={waveH + RULER_H} />
         <TrimHandles ws={wsInstance} height={waveH + RULER_H} seams={props.seams} onOpenMenu={props.onSeamMenu} />
         <MarkerOverlay ws={wsInstance} markers={props.markers} onMove={props.onMarkerMove} onMenu={props.onMarkerMenu} />
+        <SpeakerRibbon ws={wsInstance} turns={props.speakerTurns} speakers={props.speakers} top={RULER_H + waveH - 4} />
         <OverlayLanes
           ws={wsInstance}
           edl={props.edl}

@@ -1207,6 +1207,11 @@ const en: Catalog = {
   // ---- 選取範圍響度 ----
   "選取範圍的平均響度（能量平均，跳過靜音）。括號裡是跟整集比差幾 LU —— 正數代表這段比整集大聲。": "Average loudness of the selection (energy mean, silence skipped). The bracket shows how many LU it differs from the whole episode; positive means this stretch is louder.",
   "選取 {lufs}": "sel {lufs}",
+  // ---- 換人導覽 ----
+  "後面沒有換人了": "No further speaker change ahead",
+  "前面沒有換人了": "No earlier speaker change",
+  "換到 {who}": "Now {who}",
+  "上一個 / 下一個換人處（多人節目）": "Previous / next speaker change (multi-person shows)",
 };
 
 

@@ -304,6 +304,29 @@ export function dominantSpeaker(turns: SpeakerTurn[], startMs: number, endMs: nu
 }
 
 /**
+ * 下一個 / 上一個「換人」的時間點。
+ *
+ * 換人的點是**段落的起點**，不是段落的結尾 —— 一段講完到下一段開始之間可能有沉默，
+ * 跳到結尾會落在沒人講話的地方。
+ *
+ * `dir` 1 = 往後、-1 = 往前。沒有下一個就回 null（讓呼叫端決定要不要留在原地，
+ * 而不是硬跳到頭尾）。
+ */
+export function nextSpeakerChange(turns: SpeakerTurn[], fromMs: number, dir: 1 | -1): number | null {
+  // 同一個人連續的兩段之間不算換人（tidyTurns 之後理論上不會有，但手動指派會產生）
+  const points: number[] = [];
+  for (let i = 0; i < turns.length; i++) {
+    if (i === 0 || turns[i].speakerId !== turns[i - 1].speakerId) points.push(turns[i].startMs);
+  }
+  if (dir === 1) {
+    for (const p of points) if (p > fromMs + 1) return p;
+    return null;
+  }
+  for (let i = points.length - 1; i >= 0; i--) if (points[i] < fromMs - 1) return points[i];
+  return null;
+}
+
+/**
  * 手動把一段時間指派給某個人（單軌素材唯一的路，也是自動指派錯掉時的補救）。
  *
  * 做法是**先在既有段落上挖掉這個範圍**再放進去，不是疊上去 —— 段落重疊的話

@@ -3,6 +3,7 @@ import {
   assignRange,
   assignWords,
   dominantSpeaker,
+  nextSpeakerChange,
   attributeTurns,
   DEFAULT_ATTRIBUTE,
   micFramesDb,
@@ -267,6 +268,47 @@ describe("dominantSpeaker", () => {
 
   it("沒有段落時回 null", () => {
     expect(dominantSpeaker([], 0, 1000)).toBeNull();
+  });
+});
+
+describe("nextSpeakerChange", () => {
+  const turns: SpeakerTurn[] = [
+    { startMs: 0, endMs: 1000, speakerId: "a" },
+    { startMs: 2000, endMs: 3000, speakerId: "b" },
+    { startMs: 4000, endMs: 5000, speakerId: "a" },
+  ];
+
+  it("往後跳到下一個換人的**起點**（不是上一段的結尾 —— 那裡沒人在講）", () => {
+    expect(nextSpeakerChange(turns, 500, 1)).toBe(2000);
+    expect(nextSpeakerChange(turns, 2500, 1)).toBe(4000);
+  });
+
+  it("往前跳", () => {
+    expect(nextSpeakerChange(turns, 4500, -1)).toBe(4000); // 最近的一個換人點，不是再往前那個
+    expect(nextSpeakerChange(turns, 2500, -1)).toBe(2000);
+  });
+
+  it("沒有下一個就回 null（不要硬跳到頭尾）", () => {
+    expect(nextSpeakerChange(turns, 4500, 1)).toBeNull();
+    expect(nextSpeakerChange(turns, 0, -1)).toBeNull();
+  });
+
+  it("同一個人連續兩段不算換人", () => {
+    const same: SpeakerTurn[] = [
+      { startMs: 0, endMs: 1000, speakerId: "a" },
+      { startMs: 2000, endMs: 3000, speakerId: "a" },
+      { startMs: 4000, endMs: 5000, speakerId: "b" },
+    ];
+    expect(nextSpeakerChange(same, 500, 1)).toBe(4000);
+  });
+
+  it("剛好站在換人點上不會原地不動", () => {
+    expect(nextSpeakerChange(turns, 2000, 1)).toBe(4000);
+    expect(nextSpeakerChange(turns, 2000, -1)).toBe(0);
+  });
+
+  it("沒有段落時回 null", () => {
+    expect(nextSpeakerChange([], 0, 1)).toBeNull();
   });
 });
 

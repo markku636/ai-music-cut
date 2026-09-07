@@ -41,6 +41,8 @@ export interface HotkeyHandlers {
   nudge?: (ms: number) => void;
   /** M：下標記；Shift+M：下章節（會寫進成品檔案）；Alt+M：下待辦。 */
   addMarker?: (kind: "standard" | "chapter" | "todo") => void;
+  /** Alt+Shift+[ / ]：上 / 下一個換人處（多人節目）。 */
+  stepSpeaker?: (dir: -1 | 1) => void;
   /** Alt+[ / Alt+]：上 / 下一個標記。 */
   stepMarker?: (dir: 1 | -1) => void;
   escape?: () => void;
@@ -224,11 +226,14 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
         else seekBy(e.shiftKey ? 5000 : 1000);
         return;
       case "[":
-        if (e.altKey) h.stepMarker?.(-1);
+        // Alt+Shift 疊在 Alt 上面：標記與換人處是兩種不同的「跳到下一個」
+        if (e.altKey && e.shiftKey) h.stepSpeaker?.(-1);
+        else if (e.altKey) h.stepMarker?.(-1);
         else h.prevCandidate?.();
         return;
       case "]":
-        if (e.altKey) h.stepMarker?.(1);
+        if (e.altKey && e.shiftKey) h.stepSpeaker?.(1);
+        else if (e.altKey) h.stepMarker?.(1);
         else h.nextCandidate?.();
         return;
       case "m":

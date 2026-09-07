@@ -204,7 +204,7 @@ const en: Catalog = {
   "我可以直接操作剪輯決策（接受 / 拒絕候選、新增剪除、調激進度），也能解釋為什麼某段建議剪或不剪。": "I can act on cut decisions directly (accept / reject candidates, add cuts, adjust aggressiveness) and explain why a passage should or shouldn't be cut.",
   "先開啟並分析一個音檔。": "Open and analyze an audio file first.",
   "思考中…": "Thinking…",
-  "例：把 10 分鐘後的「就是」都剪掉，但句首的留著": "e.g. cut every “就是” after 10:00 except sentence-initial ones",
+  "例：把 10 分鐘後的「就是」都剪掉，但句首的留著": "e.g. cut every “you know” after 10:00 except sentence-initial ones",
   "需要 claude CLI": "Requires claude CLI",
   "停止": "Stop",
   "送出（Enter）": "Send (Enter)",
@@ -1218,6 +1218,12 @@ const en: Catalog = {
   // ---- 既有章節標記 ----
   "你已經標了 {n} 個章節": "You already marked {n} chapters",
   "這些已經會寫進成品檔案與發布包的章節清單，不用再產一次。下面產節目筆記是為了摘要與節錄 —— 它會另外提一份章節建議。": "These already go into the exported file and the bundle's chapter list, so there is no need to regenerate them. Generating show notes below is for the summary and quotes; it will propose its own chapters separately.",
+  // ---- AI 工具選單分組 ----
+  "這一集": "This episode",
+  "聲音": "Sound",
+  "精華": "Highlights",
+  "交付": "Delivery",
+  "跨集": "Across episodes",
 };
 
 

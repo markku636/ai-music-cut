@@ -57,6 +57,10 @@ export default function Toolbar(p: ToolbarProps) {
   // 分成三層：主要動作 4 顆（開啟 / 分析 / 輸出 / 儲存）、AI 工具收成下拉、
   // 快捷鍵 / 設定 / 關於 移到最右邊（那是「偶爾才用一次」的東西）。
   type Tool = { icon: ReactNode; label: string; onClick: () => void; disabled: boolean; active?: boolean; hint?: string; badge?: boolean };
+  // 分組標題列。十六個工具排成一條平的清單、順序又是「誰先做出來誰在上面」，
+  // 每次都得整份掃過去才找得到要按的那一個。依「一集的實際流程」分組：
+  // 先問 AI → 修內容 → 修聲音 → 挑精華 → 交付 → 跨集。
+  const isGroup = (x: Tool | { group: string }): x is { group: string } => "group" in x;
   const tools: Tool[] = [
     { icon: <Icon icon={FolderOpen} size={20} />, label: t("開啟音檔"), onClick: p.onOpen, disabled: false, hint: t("Ctrl+O") },
     { icon: <Icon icon={WandSparkles} size={20} />, label: t("分析"), onClick: p.onAnalyze, disabled: !p.canAnalyze, hint: t("先開啟一個音檔") },
@@ -64,23 +68,28 @@ export default function Toolbar(p: ToolbarProps) {
     { icon: <Icon icon={Zap} size={20} />, label: t("一鍵粗剪"), onClick: p.onAutoCut, disabled: !p.canAutoCut, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Save} size={20} />, label: t("儲存專案"), onClick: p.onSave, disabled: false, badge: p.dirty, hint: t("Ctrl+S") },
   ];
-  const aiTools: Tool[] = [
-    { icon: <Icon icon={BrainCircuit} size={16} />, label: t("AI 判讀（剪輯＋審核）"), onClick: p.onJudge, disabled: !p.canJudge, hint: t("先完成分析") },
-    { icon: <Icon icon={Layers} size={16} />, label: t("批次處理（多集一次跑完）"), onClick: p.onBatch, disabled: !p.canBatch, hint: t("媒體清單裡要有檔案") },
-    { icon: <Icon icon={MessageSquareOff} size={16} />, label: t("贅字管理（依詞整群處理）"), onClick: p.onFillers, disabled: false },
-    { icon: <Icon icon={LayoutTemplate} size={16} />, label: t("專案範本（開場 / 片尾 / 目標響度）"), onClick: p.onTemplates, disabled: false },
+  const aiTools: (Tool | { group: string })[] = [
     { icon: <Icon icon={Sparkles} size={16} />, label: t("AI 助手"), onClick: () => useAssistant.getState().toggle(), disabled: false, active: assistantOpen },
-    { icon: <Icon icon={Disc3} size={16} />, label: t("AI 配樂"), onClick: p.onMusic, disabled: false },
-    { icon: <Icon icon={MicOff} size={16} />, label: t("去人聲"), onClick: p.onSeparate, disabled: !p.canSeparate, hint: t("先開啟一個音檔") },
+    { group: t("這一集") },
+    { icon: <Icon icon={BrainCircuit} size={16} />, label: t("AI 判讀（剪輯＋審核）"), onClick: p.onJudge, disabled: !p.canJudge, hint: t("先完成分析") },
+    { icon: <Icon icon={MessageSquareOff} size={16} />, label: t("贅字管理（依詞整群處理）"), onClick: p.onFillers, disabled: false },
+    { icon: <Icon icon={Users} size={16} />, label: t("講者（誰講了多久 / 改名 / 手動指派）"), onClick: p.onSpeakers, disabled: false },
+    { icon: <Icon icon={Link2} size={16} />, label: t("同步麥克風"), onClick: p.onSyncMics, disabled: !p.canSyncMics, hint: t("媒體清單裡要有兩個以上的檔案") },
+    { group: t("聲音") },
     { icon: <Icon icon={Wand2} size={16} />, label: t("修聲（降噪 / 去隆隆 / 齒音）"), onClick: p.onCleanup, disabled: !p.canCleanup, hint: t("先開啟一個音檔") },
+    { icon: <Icon icon={MicOff} size={16} />, label: t("去人聲"), onClick: p.onSeparate, disabled: !p.canSeparate, hint: t("先開啟一個音檔") },
+    { icon: <Icon icon={Disc3} size={16} />, label: t("AI 配樂"), onClick: p.onMusic, disabled: false },
+    { group: t("精華") },
     { icon: <Icon icon={Zap} size={16} />, label: t("精華片段"), onClick: p.onHighlight, disabled: !p.canHighlight, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Star} size={16} />, label: t("精華合輯（串成一支預告）"), onClick: p.onHighlights, disabled: !p.canHighlights, hint: t("先開啟一個音檔") },
+    { group: t("交付") },
     { icon: <Icon icon={FileText} size={16} />, label: t("節目筆記（摘要 / 章節 / 節錄）"), onClick: p.onShowNotes, disabled: !p.canShowNotes, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Captions} size={16} />, label: t("字幕與逐字稿（SRT / VTT / Markdown）"), onClick: p.onCaptions, disabled: !p.canCaptions, hint: t("先完成分析") },
     { icon: <Icon icon={Scissors} size={16} />, label: t("依章節分割輸出（一次錄多集）"), onClick: p.onSplitExport, disabled: !p.canSplitExport, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Package} size={16} />, label: t("發布包（音檔＋字幕＋筆記＋章節）"), onClick: p.onBundle, disabled: !p.canBundle, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={Link2} size={16} />, label: t("同步麥克風"), onClick: p.onSyncMics, disabled: !p.canSyncMics, hint: t("媒體清單裡要有兩個以上的檔案") },
-    { icon: <Icon icon={Users} size={16} />, label: t("講者（誰講了多久 / 改名 / 手動指派）"), onClick: p.onSpeakers, disabled: false },
+    { group: t("跨集") },
+    { icon: <Icon icon={Layers} size={16} />, label: t("批次處理（多集一次跑完）"), onClick: p.onBatch, disabled: !p.canBatch, hint: t("媒體清單裡要有檔案") },
+    { icon: <Icon icon={LayoutTemplate} size={16} />, label: t("專案範本（開場 / 片尾 / 目標響度）"), onClick: p.onTemplates, disabled: false },
   ];
   const utilTools: Tool[] = [
     { icon: <Icon icon={Keyboard} size={18} />, label: t("快捷鍵 (F1)"), onClick: p.onHelp, disabled: false },
@@ -183,7 +192,12 @@ export default function Toolbar(p: ToolbarProps) {
         </button>
         {aiOpen && (
           <div className="absolute left-0 top-full mt-1 z-50 min-w-56 rounded-md border border-fg/10 bg-elevated shadow-e2 py-1">
-            {aiTools.map((tool) => (
+            {aiTools.map((tool) =>
+              isGroup(tool) ? (
+                <div key={`g-${tool.group}`} className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide text-fg/30 select-none">
+                  {tool.group}
+                </div>
+              ) : (
               <button
                 type="button"
                 key={tool.label}
@@ -198,7 +212,8 @@ export default function Toolbar(p: ToolbarProps) {
                 {tool.icon}
                 {tool.label}
               </button>
-            ))}
+              ),
+            )}
           </div>
         )}
       </div>

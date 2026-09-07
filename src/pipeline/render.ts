@@ -25,6 +25,7 @@ import { splitUnits } from "../analysis/loudness/units";
 import { unitSpeakerMap } from "../analysis/speakerLevel";
 import { t } from "../i18n";
 import { isCleanupActive, type CleanupSpec } from "../analysis/cleanup";
+import type { AudioEffect } from "../analysis/effects";
 import { useCleanup } from "../store/cleanup";
 import { useDecisions } from "../store/decisions";
 import { newJobId, useJobs } from "../store/jobs";
@@ -74,6 +75,8 @@ export interface RenderOptions {
    * 把目標降到線性拿得到的位置。
    */
   preserveDynamics?: boolean;
+  /** 尚未套用、只為了試聽的效果（EffectDialog 的 A/B 用）。 */
+  extraEffects?: AudioEffect[];
 }
 
 function sep(p: string): string {
@@ -162,7 +165,8 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     joins.push({ kind: "crossfade", ms });
   }
   const channels = Math.max(1, Math.min(2, media.probe?.audio?.channels ?? 1));
-  const effects = (useDecisions.getState().effects[mediaId] ?? []).map((e) => ({ kind: e.kind, start_ms: e.startMs, end_ms: e.endMs, db: e.db ?? 0 }));
+  // extraEffects：還沒套用、只是要試聽的效果（EffectDialog 的 A/B）—— 跟已存的合在一起渲染
+  const effects = [...(useDecisions.getState().effects[mediaId] ?? []), ...(opts.extraEffects ?? [])].map((e) => ({ kind: e.kind, start_ms: e.startMs, end_ms: e.endMs, db: e.db ?? 0 }));
   if (reel && units.length) {
     // 預告一定是從句子中間開始、句子中間結束，不淡就是硬切進一個字的中段。
     // **只加進這一趟的 plan，不寫進 store** —— 這是輸出這支預告的處理，

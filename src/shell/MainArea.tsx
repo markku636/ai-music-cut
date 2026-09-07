@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookMarked, Check, Crop, Flag, ListTree, MoveHorizontal, Music, Palette, Pencil, Play, Repeat, Scissors, Slice, SquareDashed, Tags, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
+import { BookMarked, Check, Flag, ListTree, MoveHorizontal, Music, Pencil, Play, Scissors, Slice, SquareDashed, Tags, Trash, TrendingDown, TrendingUp, Volume2, Wind, X, ZoomIn } from "lucide-react";
 import type { AudioEffect } from "../analysis/effects";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
 import { activeRanges } from "../analysis/edl/build";
@@ -34,10 +34,10 @@ import { useUi } from "../store/ui";
 import { useTranscript } from "../store/transcript";
 import OverviewStrip from "../timeline/OverviewStrip";
 import SelectionBar from "../timeline/SelectionBar";
-import { addEffectOnSelection, applyCandidateRange, clearSelection, cutSelection, keepOnlySelection, removeEffect, updateEffectRange } from "../timeline/selectionActions";
+import { applyCandidateRange, removeEffect, updateEffectRange } from "../timeline/selectionActions";
 import Timeline, { type WaveMenuInfo } from "../timeline/Timeline";
 import WaveContextMenu, { type MenuItem } from "../timeline/WaveContextMenu";
-import { bladeAt, liftSelection, removeSeamSplit, seamsOfEdl, setSeamPause, type SeamInfo } from "../timeline/trimActions";
+import { bladeAt, removeSeamSplit, seamsOfEdl, setSeamPause, type SeamInfo } from "../timeline/trimActions";
 import { formatMs } from "../time";
 import TranscriptEditor from "../transcript/TranscriptEditor";
 import TranscriptPlaceholder from "../transcript/TranscriptPlaceholder";
@@ -46,7 +46,7 @@ import type { TextHit } from "../analysis/textSearch";
 import ReviewMode from "../decisions/ReviewMode";
 import { runCommand } from "../commands/registry";
 import { analyzeWithPreflight, openSettings } from "../commands/appActions";
-import { openDialog } from "../store/dialogs";
+import { selectionMenuItems } from "../commands/menuModel";
 import Splitter from "./Splitter";
 import { useResizable } from "./useResizable";
 
@@ -59,7 +59,6 @@ const EMPTY_MK: Marker[] = [];
 const EMPTY_OV: Overlay[] = [];
 /** 配樂音量的常用檔位（dB）。 */
 const OVERLAY_GAINS = [0, -6, -12, -18, -24];
-const GAIN_STEPS = [6, 3, -3, -6, -12];
 
 export default function MainArea() {
   const t = useT();
@@ -88,10 +87,8 @@ export default function MainArea() {
   const [menu, setMenu] = useState<WaveMenuInfo | null>(null);
   const reviewing = useDecisions((s) => s.reviewing);
   const setReviewing = useDecisions((s) => s.setReviewing);
-  const loopSel = useTimeline((s) => s.loopSelection);
-  const toggleLoop = useTimeline((s) => s.toggleLoop);
-  const zoomToSelection = useTimeline((s) => s.zoomToSelection);
   const fitZoom = useTimeline((s) => s.fit);
+  const uiMode = useUi((s) => s.mode);
   const decide = useDecisions((s) => s.decide);
   const toggleWordCut = useDecisions((s) => s.toggleWordCut);
   const seek = usePlayback((s) => s.seek);
@@ -264,26 +261,8 @@ export default function MainArea() {
         { label: t("移除效果"), icon: Trash, danger: true, onClick: () => removeEffect(fx.id) },
       ];
     }
-    if (selection) {
-      return [
-        { label: t("播放選取"), icon: Play, shortcut: "Space", onClick: () => playRange(selection.startMs, selection.endMs, { skip: false, loop: loopSel }) },
-        { label: t("循環播放"), icon: Repeat, checked: loopSel, onClick: toggleLoop },
-        { separator: true },
-        { label: t("剪掉"), icon: Scissors, shortcut: "Delete", danger: true, onClick: () => void cutSelection() },
-        { label: t("提起（留白靜音，不關洞）"), icon: VolumeX, shortcut: "Shift+Delete", onClick: () => void liftSelection() },
-        { label: t("只保留（頭尾剪掉）"), icon: Crop, onClick: () => void keepOnlySelection() },
-        { separator: true },
-        { label: t("改成另一種曲風…"), icon: Palette, onClick: () => openDialog("style", { startMs: selection.startMs, endMs: selection.endMs }) },
-        { separator: true },
-        { label: t("靜音"), icon: VolumeX, onClick: () => addEffectOnSelection("mute") },
-        { label: t("淡入"), icon: TrendingUp, onClick: () => addEffectOnSelection("fade_in") },
-        { label: t("淡出"), icon: TrendingDown, onClick: () => addEffectOnSelection("fade_out") },
-        ...GAIN_STEPS.map<MenuItem>((db) => ({ label: t("增益 {db} dB", { db: db > 0 ? `+${db}` : db }), icon: Volume2, onClick: () => addEffectOnSelection("gain", db) })),
-        { separator: true },
-        { label: t("縮放到選取"), icon: ZoomIn, shortcut: "Z", onClick: zoomToSelection },
-        { label: t("清除選取"), icon: X, shortcut: "Esc", onClick: clearSelection },
-      ];
-    }
+    // 有選取：效果 ▸ / 修復 ▸ 從指令註冊表長出來（簡易模式是平的七格）
+    if (selection) return selectionMenuItems({ mode: uiMode });
     return [
       { label: t("從這裡播放"), icon: Play, onClick: () => { seek(info.ms); playRange(info.ms, dur, { skip: true }); } },
       { label: t("在這裡切一刀"), icon: Slice, shortcut: "B", onClick: () => void bladeAt(info.ms) },

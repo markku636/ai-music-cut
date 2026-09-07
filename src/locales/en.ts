@@ -1365,6 +1365,20 @@ const en: Catalog = {
   "頭尾都剪掉，只留下拖選的": "Cut the head and tail; keep only what you selected",
   "顯示拍線": "Show beat grid",
   "顯示響度表": "Show loudness meter",
+  // R1 效果對話框
+  "{name}（建議值）": "{name} (suggested)",
+  "已套用：{label}": "Applied: {label}",
+  "把選的這一段變大聲或變小聲": "Make the selected part louder or quieter",
+  "把選的這一段變大聲或變小聲（dB）。超過 +6 dB 容易破音。": "Make the selected part louder or quieter (dB). Above +6 dB it tends to clip.",
+  "沒有可以試聽的內容": "Nothing to preview",
+  "處理後": "Processed",
+  "處理後試聽渲染失敗": "Processed preview failed to render",
+  "超過 +6 dB 容易破音": "Above +6 dB it tends to clip",
+  "這個效果沒有試聽": "This effect has no preview",
+  "進階": "Advanced",
+  "開頭慢慢變大聲、結尾慢慢變小聲": "Fade in at the start, fade out at the end",
+  "預設": "Presets",
+  "0 dB＝沒有改變": "0 dB = unchanged",
 };
 
 

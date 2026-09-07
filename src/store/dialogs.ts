@@ -36,7 +36,8 @@ export type DialogId =
   | "showNotes"
   | "cleanup"
   | "highlights"
-  | "style";
+  | "style"
+  | "effect";
 
 /** 有參數的對話框；沒列在這裡的就是沒有參數。 */
 export interface DialogPropMap {
@@ -44,6 +45,7 @@ export interface DialogPropMap {
   render: { range?: { startMs: number; endMs: number } | null; reel?: ReelRange[] | null; reelBed?: string | null };
   verify: { outPath: string | null; outDurationMs: number | null };
   style: { startMs: number; endMs: number };
+  effect: { specId: string; initial?: Record<string, number | string | boolean>; range?: { startMs: number; endMs: number } | null };
   palette: { query?: string };
 }
 

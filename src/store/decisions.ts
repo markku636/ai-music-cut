@@ -133,6 +133,8 @@ interface DecisionsStore {
   updateOverlay: (mediaId: string, id: string, patch: Partial<Omit<Overlay, "id">>, label?: string) => void;
   removeOverlay: (mediaId: string, id: string) => void;
   addEffect: (mediaId: string, e: AudioEffect) => void;
+  /** 一次加好幾個效果（淡入 + 淡出）＝一筆 undo。不可以拿 addEffect 跑迴圈：那會塞 N 筆。 */
+  addEffects: (mediaId: string, list: AudioEffect[], label: string) => void;
   updateEffect: (mediaId: string, id: string, patch: Partial<Omit<AudioEffect, "id">>) => void;
   removeEffect: (mediaId: string, id: string) => void;
   bulk: (mediaId: string, pred: (c: Candidate, d: Decision | undefined) => boolean, state: DecisionState, label?: string) => number;
@@ -503,6 +505,12 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     addEffect: (mediaId, e) => {
       const list = (get().effects[mediaId] ?? []).filter((x) => x.id !== e.id);
       commit(mediaId, `效果：${effectLabel(e)}`, { decisions: get().decisions[mediaId] ?? {}, effects: [...list, e].sort((a, b) => a.startMs - b.startMs) });
+    },
+    addEffects: (mediaId, incoming, label) => {
+      if (!incoming.length) return;
+      const ids = new Set(incoming.map((e) => e.id));
+      const list = (get().effects[mediaId] ?? []).filter((x) => !ids.has(x.id));
+      commit(mediaId, label, { decisions: get().decisions[mediaId] ?? {}, effects: [...list, ...incoming].sort((a, b) => a.startMs - b.startMs) });
     },
     updateEffect: (mediaId, id, patch) => {
       const list = get().effects[mediaId] ?? [];

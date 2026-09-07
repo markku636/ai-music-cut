@@ -4,6 +4,8 @@ import { create } from "zustand";
 
 export type RailTab = "decisions" | "index" | "history" | "assistant" | "verify";
 export type Density = "compact" | "normal" | "comfortable";
+/** 簡易（小白）/ 專業。兩邊共用同一套指令與波形，只是組合不同。 */
+export type UiMode = "simple" | "pro";
 
 /** 密度 → 根字級縮放。CSS 變數 --ui-scale 由 applyDensity 寫到 <html>。 */
 export const DENSITY_SCALE: Record<Density, number> = {
@@ -21,9 +23,10 @@ interface Persisted {
   railOpen: boolean;
   railWidth: number;
   density: Density;
+  mode: UiMode;
 }
 
-const DEFAULTS: Persisted = { tab: "decisions", railOpen: true, railWidth: 320, density: "normal" };
+const DEFAULTS: Persisted = { tab: "decisions", railOpen: true, railWidth: 320, density: "normal", mode: "pro" };
 
 function load(): Persisted {
   try {
@@ -35,6 +38,7 @@ function load(): Persisted {
       railOpen: v.railOpen !== false,
       railWidth: Math.max(RAIL_MIN, Math.min(RAIL_MAX, Number(v.railWidth) || DEFAULTS.railWidth)),
       density: v.density === "compact" || v.density === "comfortable" ? v.density : "normal",
+      mode: v.mode === "simple" ? "simple" : "pro",
     };
   } catch {
     return DEFAULTS;
@@ -64,13 +68,15 @@ interface UiStore extends Persisted {
   setRailOpen: (v: boolean) => void;
   setRailWidth: (w: number) => void;
   setDensity: (d: Density) => void;
+  setMode: (m: UiMode) => void;
+  toggleMode: () => void;
 }
 
 export const useUi = create<UiStore>((set, get) => {
   const init = load();
   const persist = () => {
     const s = get();
-    save({ tab: s.tab, railOpen: s.railOpen, railWidth: s.railWidth, density: s.density });
+    save({ tab: s.tab, railOpen: s.railOpen, railWidth: s.railWidth, density: s.density, mode: s.mode });
   };
   return {
     ...init,
@@ -96,6 +102,14 @@ export const useUi = create<UiStore>((set, get) => {
     setDensity: (density) => {
       set({ density });
       applyDensity(density);
+      persist();
+    },
+    setMode: (mode) => {
+      set({ mode });
+      persist();
+    },
+    toggleMode: () => {
+      set((s) => ({ mode: s.mode === "simple" ? "pro" : "simple" }));
       persist();
     },
   };

@@ -44,6 +44,7 @@ const REG: Record<DialogId, { comp: AnyComp; needs: Needs }> = {
   cleanup: { comp: dlg(() => import("../dialogs/CleanupDialog")), needs: "media" },
   highlights: { comp: dlg(() => import("../dialogs/HighlightsDialog")), needs: "media" },
   style: { comp: dlg(() => import("../dialogs/StyleDialog")), needs: "media" },
+  effect: { comp: dlg(() => import("../dialogs/EffectDialog")), needs: "media" },
 };
 
 export default function DialogHost() {

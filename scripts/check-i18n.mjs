@@ -25,6 +25,7 @@ const CJK = /[一-鿿]/;
  */
 const TABLE_SOURCES = [
   "commands/",
+  "effects/",
   "dialogs/ShortcutsHelp.tsx",
   "analysis/types.ts",
   "analysis/effects.ts",

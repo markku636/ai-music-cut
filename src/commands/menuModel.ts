@@ -1,6 +1,6 @@
 import { t } from "../i18n";
 import type { MenuItem } from "../ui/MenuPanel";
-import { commandsIn, runCommandObject } from "./registry";
+import { command, commandsIn, runCommandObject } from "./registry";
 import { formatShortcut } from "./shortcut";
 import type { Command, CommandGroup, Surface } from "./types";
 
@@ -87,6 +87,69 @@ export function collapseSeparators(items: MenuItem[]): MenuItem[] {
 
 export function groupMenu(group: CommandGroup, surface: Surface = "menu", opts: ToMenuOpts = {}): MenuItem[] {
   return commandsToMenu(commandsIn(group, surface), opts);
+}
+
+function byIds(ids: string[], opts: ToMenuOpts = {}): MenuItem[] {
+  const out: MenuItem[] = [];
+  for (const id of ids) {
+    const c = command(id);
+    if (!c) continue;
+    const it = commandToMenuItem(c, opts);
+    if (it) out.push(it);
+  }
+  return out;
+}
+
+/** 選取選單裡「先選一段」是廢話 —— 選單本身就隱含有選取，這個原因的項目直接不畫。 */
+const SELECTION_WHY = "先在波形上拖一段";
+
+export interface SelectionMenuCtx {
+  mode: "pro" | "simple";
+}
+
+/**
+ * 簡易模式的右鍵：固定 7 格，每格一串候選指令 id，取第一個已註冊的。
+ * 例如「去雜音」在範圍降噪（R4）進來之前退回整檔降噪。
+ */
+const SIMPLE_SELECTION: string[][] = [
+  ["playback.playSelection"],
+  ["edit.cut"],
+  ["edit.keepOnly"],
+  ["repair.denoise.quick", "repair.cleanup.quick"],
+  ["effect.gain.preset.p6"],
+  ["effect.gain.preset.m6"],
+  ["effect.fadeBoth"],
+];
+
+/** 波形上有選取時的右鍵選單。 */
+export function selectionMenuItems(ctx: SelectionMenuCtx): MenuItem[] {
+  if (ctx.mode === "simple") {
+    const out: MenuItem[] = [];
+    for (const slot of SIMPLE_SELECTION) {
+      const c = slot.map(command).find((x): x is Command => !!x);
+      if (!c) continue;
+      const it = commandToMenuItem(c, { simpleLabel: true, noShortcut: true, hideWhy: SELECTION_WHY });
+      if (it) out.push(it);
+    }
+    return out;
+  }
+  const opts: ToMenuOpts = { hideWhy: SELECTION_WHY };
+  const effect = commandsToMenu(commandsIn("effect", "context"), opts);
+  const repair = commandsToMenu(commandsIn("repair", "context"), opts);
+  return collapseSeparators([
+    ...byIds(["playback.playSelection", "playback.loop"], opts),
+    { separator: true },
+    ...byIds(["edit.cut", "edit.lift", "edit.keepOnly"], opts),
+    { separator: true },
+    ...(effect.length ? [{ label: t("效果"), children: effect } as MenuItem] : []),
+    ...(repair.length ? [{ label: t("修復"), children: repair } as MenuItem] : []),
+    { separator: true },
+    ...byIds(["ai.style"], opts),
+    { separator: true },
+    ...byIds(["file.exportRange", "select.highlight"], opts),
+    { separator: true },
+    ...byIds(["select.zoom", "select.clear"], opts),
+  ]);
 }
 
 /** 工具列「更多 ▾」：效果 ▸ / 修復 ▸ 兩個子選單 + 檢視 / 工具 / 說明。 */

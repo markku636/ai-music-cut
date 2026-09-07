@@ -1212,6 +1212,9 @@ const en: Catalog = {
   "前面沒有換人了": "No earlier speaker change",
   "換到 {who}": "Now {who}",
   "上一個 / 下一個換人處（多人節目）": "Previous / next speaker change (multi-person shows)",
+  // ---- AI 判讀開關 ----
+  "允許 AI 判讀（關掉就完全不呼叫 claude，工具列 / 一鍵粗剪 / 批次都不會）": "Allow AI review (off means claude is never called: not from the toolbar, one-click rough cut or batch)",
+  "AI 判讀在設定裡被關掉了（規則層結果仍可用）": "AI review is switched off in Settings (the rule-layer results are still there)",
 };
 
 

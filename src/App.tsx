@@ -12,6 +12,7 @@ import FillersDialog from "./dialogs/FillersDialog";
 import TemplateDialog from "./dialogs/TemplateDialog";
 import SpeakersDialog from "./dialogs/SpeakersDialog";
 import { nextSpeakerChange, speakerAtMs } from "./analysis/speakers";
+import { defaultAggressiveness } from "./store/project";
 import CaptionsDialog from "./dialogs/CaptionsDialog";
 import SplitExportDialog from "./dialogs/SplitExportDialog";
 import BundleDialog from "./dialogs/BundleDialog";
@@ -237,7 +238,12 @@ export default function App() {
   // 啟動：套主題、載設定並探測工具狀態。
   useEffect(() => {
     applyAppTheme(useTheme.getState().themeId);
-    void useSettings.getState().load();
+    void useSettings.getState().load().then(() => {
+      // 設定載完才套「預設激進度」：store 的初始值是在模組載入時決定的，那時設定還沒進來。
+      // 只在還沒開任何東西的時候套 —— 已經載入的專案有自己存的值，不能被設定蓋掉。
+      const p = useProject.getState();
+      if (!p.path && p.media.length === 0) p.setAggressiveness(defaultAggressiveness());
+    });
     // React 已掛載 → 撤掉 index.html 的開場畫面。
     // 直接 remove() 的話，開場動畫在快的機器上只會閃一下就不見（等於白做），
     // 所以從網頁開始算至少讓它待滿 SPLASH_MIN_MS 再淡出；減少動態偏好時不等。

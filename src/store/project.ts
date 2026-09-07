@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useSettings } from "./settings";
 import { api, type MediaProbe } from "../api";
 import { APP_NAME } from "../brand";
 import { buildProjectFile, parseProjectFile, type MediaAnalysisV1, type ProjectFileV1 } from "../project/format";
@@ -43,12 +44,25 @@ function fileName(p: string): string {
   return p.split(/[\\/]/).pop() ?? p;
 }
 
+/**
+ * 設定裡的預設激進度。設定還沒載入時退回 50（跟 DEFAULT_SETTINGS 一致）。
+ *
+ * 讀的是 store 的**當下值**而不是在模組載入時抓一次 —— 設定是非同步載入的，
+ * 抓一次的話永遠拿到預設值。
+ */
+export function defaultAggressiveness(): number {
+  const v = useSettings.getState().s.default_aggressiveness;
+  return Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : 50;
+}
+
 export const useProject = create<ProjectStore>((set, get) => ({
   path: null,
   dirty: false,
   createdAt: null,
   media: [],
   activeMediaId: null,
+  // 模組載入時設定還沒讀進來，所以這裡就是 50；真正套用預設值的地方是
+  // App 啟動流程（設定載完之後）與 newProject()。
   aggressiveness: 50,
   targetLufs: -16,
   analysis: {},
@@ -96,7 +110,9 @@ export const useProject = create<ProjectStore>((set, get) => ({
   setTargetLufs: (v) => set({ targetLufs: v, dirty: true }),
   markDirty: () => set({ dirty: true }),
   newProject: () =>
-    set({ path: null, dirty: false, createdAt: null, media: [], activeMediaId: null, analysis: {}, aggressiveness: 50, targetLufs: -16 }),
+    // 新專案要吃設定裡的「預設激進度」。這一條原本寫死 50，設定裡那個滑桿因此
+    // **完全沒有作用** —— 使用者拉了它，每一個新專案還是 50。
+    set({ path: null, dirty: false, createdAt: null, media: [], activeMediaId: null, analysis: {}, aggressiveness: defaultAggressiveness(), targetLufs: -16 }),
 
   loadFrom: async (path) => {
     const doc = await api.projectLoad(path);

@@ -37,6 +37,12 @@ interface CachedReview {
 const CONCURRENCY = 2;
 
 export async function runJudge(mediaId: string): Promise<void> {
+  // 設定裡的總開關。擋在這裡而不是各個呼叫端 —— 工具列、一鍵粗剪、批次三條路都會
+  // 走到這支，擋在入口才不會漏掉其中一條。
+  if (!useSettings.getState().s.judge_enabled) {
+    toast.info(t("AI 判讀在設定裡被關掉了（規則層結果仍可用）"));
+    return;
+  }
   const tr = useTranscript.getState().byMedia[mediaId];
   if (!tr) throw new Error(t("尚未分析"));
   const claude = useSettings.getState().claude ?? (await api.claudeDetect().catch(() => null));

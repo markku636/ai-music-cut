@@ -270,7 +270,7 @@ export default function SettingsDialog({
             <Field label={t("AI 判讀")}>
               <label className="flex items-center gap-2 h-7 text-sm">
                 <input type="checkbox" checked={draft.judge_enabled} onChange={(e) => void commit({ judge_enabled: e.target.checked })} />
-                {t("分析後自動用 Claude 判讀自然度")}
+                {t("允許 AI 判讀（關掉就完全不呼叫 claude，工具列 / 一鍵粗剪 / 批次都不會）")}
               </label>
             </Field>
           </FormGrid>

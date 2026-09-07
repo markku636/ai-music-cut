@@ -6,10 +6,28 @@
 import type { Candidate, DecisionMap, Word } from "../analysis/types";
 import { isActiveState } from "../analysis/types";
 
+// id → 字的索引，**依 words 陣列快取**。
+//
+// 原本每次呼叫 candidateText / normForGroup 都現建一份 Map。單看一次是 O(字數)，
+// 但 buildGroups 會對**每一筆候選**呼叫一次 —— 57 分鐘的節目是 4560 筆候選 × 11400 個字
+// ＝ 五千兩百萬次插入，實測佔掉「接受一筆候選」那 3.8 秒裡的 73%。
+//
+// 只快取結構（哪個 id 對到哪個物件）。Map 裡存的是字的**參照**，所以修正辨識文字這種
+// 就地改欄位的操作照樣讀得到新值；會讓索引失效的只有增刪字，用長度擋掉。
+const indexCache = new WeakMap<Word[], { len: number; byId: Map<number, Word> }>();
+
+function wordIndex(words: Word[]): Map<number, Word> {
+  const hit = indexCache.get(words);
+  if (hit && hit.len === words.length) return hit.byId;
+  const byId = new Map(words.map((w) => [w.id, w]));
+  indexCache.set(words, { len: words.length, byId });
+  return byId;
+}
+
 /** 候選實際涵蓋的原文（拿來顯示與分組）。沒有字（長停頓 / 雜音）就回空字串。 */
 export function candidateText(c: Candidate, words: Word[]): string {
   if (!c.wordIds.length) return "";
-  const byId = new Map(words.map((w) => [w.id, w]));
+  const byId = wordIndex(words);
   return c.wordIds
     .map((id) => byId.get(id)?.text ?? "")
     .join("")
@@ -19,7 +37,7 @@ export function candidateText(c: Candidate, words: Word[]): string {
 /** 分組用的正規化字串：去掉標點與空白、統一大小寫，讓「就是，」與「就是」同一組。 */
 export function normForGroup(c: Candidate, words: Word[]): string {
   if (!c.wordIds.length) return "";
-  const byId = new Map(words.map((w) => [w.id, w]));
+  const byId = wordIndex(words);
   return c.wordIds
     .map((id) => byId.get(id)?.norm ?? "")
     .join("")

@@ -104,7 +104,7 @@ function stepCandidate(dir: 1 | -1) {
   const c = list[next];
   d.select([c.id]);
   usePlayback.getState().seek(Math.max(0, c.startMs - 300));
-  document.querySelector(`[data-cid="${CSS.escape(c.id)}"]`)?.scrollIntoView({ block: "nearest" });
+  // 捲進視野交給 DecisionPanel：清單虛擬化之後，那一列可能不在 DOM 裡，querySelector 會落空。
 }
 
 function decideSelected(state: "accepted" | "rejected") {

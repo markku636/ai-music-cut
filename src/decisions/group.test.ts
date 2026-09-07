@@ -97,3 +97,35 @@ describe("sampleForAudition", () => {
     expect(sampleForAudition(g, {}, 3)).toHaveLength(1);
   });
 });
+
+// 字表索引是快取的（依陣列識別）。快取錯了會顯示上一份逐字稿的字，
+// 而且因為只是「字不對」不是壞掉，很難發現 —— 所以把失效條件釘死。
+describe("字表索引快取", () => {
+  it("換一個新的 words 陣列就要用新的內容", () => {
+    const a = [w(0, "甲")];
+    const b = [w(0, "乙")];
+    expect(candidateText(c("x", "filler", [0]), a)).toBe("甲");
+    expect(candidateText(c("x", "filler", [0]), b)).toBe("乙");
+    expect(candidateText(c("x", "filler", [0]), a)).toBe("甲");
+  });
+
+  it("就地修正一個字的文字，讀得到新值（快取存的是參照）", () => {
+    const arr = [w(0, "在座"), w(1, "各位")];
+    expect(candidateText(c("x", "filler", [0, 1]), arr)).toBe("在座各位");
+    arr[0].text = "再做";
+    expect(candidateText(c("x", "filler", [0, 1]), arr)).toBe("再做各位");
+  });
+
+  it("同一個陣列被加了字（長度變了）→ 索引重建", () => {
+    const arr = [w(0, "甲")];
+    expect(candidateText(c("x", "filler", [0]), arr)).toBe("甲");
+    arr.push(w(1, "乙"));
+    expect(candidateText(c("x", "filler", [0, 1]), arr)).toBe("甲乙");
+  });
+
+  it("正規化字串也吃同一份索引", () => {
+    const arr = [w(0, "就是，", "就是")];
+    expect(normForGroup(c("x", "filler", [0]), arr)).toBe("就是");
+    expect(candidateText(c("x", "filler", [0]), arr)).toBe("就是，");
+  });
+});

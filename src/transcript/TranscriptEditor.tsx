@@ -1,11 +1,10 @@
 import { memo, useEffect, useMemo, useRef } from "react";
-import { isActiveState, type Candidate, type DecisionMap, type Sentence, type Transcript, type Word } from "../analysis/types";
+import { isActiveState, type Candidate, type DecisionMap, type Sentence, type Transcript } from "../analysis/types";
 import { speakerColor, type Speaker } from "../analysis/speakers";
 import { usePlayback } from "../store/playback";
 import { wordIndexAt } from "../store/transcript";
 import { formatMs } from "../time";
-
-export type WordMark = "cut" | "pending" | "";
+import { sameRow, type RowProps, type WordMark } from "./rowEquals";
 
 export interface TranscriptEditorProps {
   transcript: Transcript | null;
@@ -173,24 +172,7 @@ const SentenceRow = memo(function SentenceRow({
   activeHitWordIds,
   speaker,
   showSpeakerName,
-}: {
-  sentence: Sentence;
-  words: Word[];
-  activeWordId: number;
-  isActive: boolean;
-  marks: { mark: Map<number, WordMark>; cov: Map<number, string[]>; reason: Map<number, string> };
-  selectedWordIds: Set<number>;
-  selection: { startMs: number; endMs: number } | null;
-  onSeek: (ms: number) => void;
-  onWordClick: (wordId: number, candidateIds: string[], shift: boolean) => void;
-  onWordToggle: (wordId: number) => void;
-  onWordMenu?: (wordId: number, x: number, y: number) => void;
-  onSentenceSelect?: (s: Sentence) => void;
-  hitWordIds?: Set<number>;
-  activeHitWordIds?: Set<number>;
-  speaker?: Speaker | null;
-  showSpeakerName?: boolean;
-}) {
+}: RowProps) {
   return (
     <div
       data-sid={sentence.id}
@@ -259,4 +241,4 @@ const SentenceRow = memo(function SentenceRow({
       </div>
     </div>
   );
-});
+}, sameRow);

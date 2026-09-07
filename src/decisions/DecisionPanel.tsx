@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, ChevronLeft, ChevronRight, ListChecks, Play, X } from "lucide-react";
 import { candidateText } from "./group";
+import { useVirtual } from "../ui/useVirtual";
 import OpinionChips from "./OpinionChips";
 import { useTranscript } from "../store/transcript";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState } from "../analysis/types";
@@ -133,6 +134,22 @@ export default function DecisionPanel({
     [candidates, decisions, stateFilter, kindFilter],
   );
 
+  // 4560 筆候選全部鋪進 DOM 是 91200 個節點（含 13723 個 svg 圖示），
+  // 之後每一次決策 React 都得把它們重新對帳一遍。只畫看得到的那幾列。
+  const visibleKeys = useMemo(() => visible.map((c) => c.id), [visible]);
+  const v = useVirtual(visibleKeys, 96);
+  const rows = visible.slice(v.start, v.end);
+
+  // 鍵盤在候選之間移動（[ / ]）時要把那一列捲進視野 ——
+  // 它可能根本不在 DOM 裡，所以不能靠 scrollIntoView。
+  const lastScrolled = useRef<string | null>(null);
+  const firstSelected = selectedIds[0] ?? null;
+  useEffect(() => {
+    if (!firstSelected || firstSelected === lastScrolled.current) return;
+    lastScrolled.current = firstSelected;
+    v.scrollToKey(firstSelected);
+  }, [firstSelected, v]);
+
   if (!embedded && !open) {
     return (
       <div className="w-7 shrink-0 bg-panel border-l border-fg/10 flex flex-col items-center pt-2">
@@ -255,7 +272,7 @@ export default function DecisionPanel({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div ref={v.scrollRef} className="flex-1 min-h-0 overflow-auto">
         {!mediaId || !candidates.length ? (
           analysisState === "analyzing" ? (
             <EmptyState compact icon={ListChecks} title={<span className="inline-flex items-center gap-2"><Spinner size={12} />{t("分析中…")}</span>} hint={t("逐字稿與候選會在轉寫完成後出現")} />
@@ -279,13 +296,16 @@ export default function DecisionPanel({
             />
           )
         ) : (
-          visible.map((c) => {
+          <>
+            <div style={{ height: v.padTop }} />
+            {rows.map((c) => {
             const d = decisions[c.id];
             const st: DecisionState = d?.state ?? "pending";
             const selected = selectedIds.includes(c.id);
             return (
               <div
                 key={c.id}
+                ref={v.measure(c.id)}
                 data-cid={c.id}
                 onClick={() => onRow(c)}
                 className={`px-3 py-2 border-b border-fg/5 cursor-pointer ${selected ? "bg-accent/12" : "hover:bg-fg/5"} ${st === "rejected" ? "opacity-50" : ""} ${d?.conflict ? "border-l-2 border-l-warning" : ""}`}
@@ -336,7 +356,9 @@ export default function DecisionPanel({
                 </div>
               </div>
             );
-          })
+            })}
+            <div style={{ height: v.padBottom }} />
+          </>
         )}
       </div>
     </div>

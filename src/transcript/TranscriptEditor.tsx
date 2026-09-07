@@ -15,6 +15,8 @@ export interface TranscriptEditorProps {
   onWordClick: (wordId: number, candidateIds: string[], shift: boolean) => void;
   /** 雙擊字：切換剪 / 不剪（沒候選則新增手動剪除）。 */
   onWordToggle: (wordId: number) => void;
+  /** 右鍵一個字（修正辨識錯誤）。 */
+  onWordMenu?: (wordId: number, x: number, y: number) => void;
   /** 目前的時間選取（高亮落在範圍內的字）。 */
   selection?: { startMs: number; endMs: number } | null;
   /** 右鍵句子時間戳：把整句變成時間選取。 */
@@ -35,6 +37,7 @@ export default function TranscriptEditor({
   selection = null,
   onWordClick,
   onWordToggle,
+  onWordMenu,
   onSentenceSelect,
   hitWordIds,
   activeHitWordIds,
@@ -107,6 +110,7 @@ export default function TranscriptEditor({
           onSeek={seek}
           onWordClick={onWordClick}
           onWordToggle={onWordToggle}
+          onWordMenu={onWordMenu}
           onSentenceSelect={onSentenceSelect}
           hitWordIds={hitWordIds}
           activeHitWordIds={activeHitWordIds}
@@ -127,6 +131,7 @@ const SentenceRow = memo(function SentenceRow({
   onSeek,
   onWordClick,
   onWordToggle,
+  onWordMenu,
   onSentenceSelect,
   hitWordIds,
   activeHitWordIds,
@@ -141,6 +146,7 @@ const SentenceRow = memo(function SentenceRow({
   onSeek: (ms: number) => void;
   onWordClick: (wordId: number, candidateIds: string[], shift: boolean) => void;
   onWordToggle: (wordId: number) => void;
+  onWordMenu?: (wordId: number, x: number, y: number) => void;
   onSentenceSelect?: (s: Sentence) => void;
   hitWordIds?: Set<number>;
   activeHitWordIds?: Set<number>;
@@ -185,7 +191,12 @@ const SentenceRow = memo(function SentenceRow({
                 e.preventDefault();
                 onWordToggle(id);
               }}
-              title={`${formatMs(w.startMs)} · p=${w.prob.toFixed(2)}${reason ? `\n${reason}` : ""}\n雙擊：剪 / 還原`}
+              onContextMenu={(e) => {
+                if (!onWordMenu) return;
+                e.preventDefault();
+                onWordMenu(id, e.clientX, e.clientY);
+              }}
+              title={`${formatMs(w.startMs)} · p=${w.prob.toFixed(2)}${reason ? `\n${reason}` : ""}\n雙擊：剪 / 還原　右鍵：修正辨識`}
             >
               {w.text}
             </span>

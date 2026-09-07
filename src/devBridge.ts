@@ -19,6 +19,8 @@ import * as exportPresets from "./analysis/exportPresets";
 import * as preflight from "./analysis/preflight";
 import * as keepOnly from "./analysis/keepOnly";
 import * as stepDiff from "./analysis/stepDiff";
+import * as correct from "./analysis/correct";
+import * as hotwords from "./analysis/hotwords";
 import * as textSearch from "./analysis/textSearch";
 import * as roleMixLib from "./preview/roleMix";
 import { useRoleMix } from "./store/roleMix";
@@ -79,6 +81,8 @@ export interface DevBridge {
   preflight: typeof preflight;
   keepOnly: typeof keepOnly;
   stepDiff: typeof stepDiff;
+  correct: typeof correct;
+  hotwords: typeof hotwords;
   textSearch: typeof textSearch;
   roleMix: typeof useRoleMix;
   roleMixLib: typeof roleMixLib;
@@ -159,6 +163,8 @@ export function installDevBridge() {
     preflight,
     keepOnly,
     stepDiff,
+    correct,
+    hotwords,
     textSearch,
     roleMix: useRoleMix,
     roleMixLib,

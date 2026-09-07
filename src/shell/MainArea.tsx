@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookMarked, Check, Crop, Flag, ListTree, MoveHorizontal, Music, Palette, Play, Repeat, Scissors, Slice, SquareDashed, Tags, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
+import { BookMarked, Check, Crop, Flag, ListTree, MoveHorizontal, Music, Palette, Pencil, Play, Repeat, Scissors, Slice, SquareDashed, Tags, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
 import type { AudioEffect } from "../analysis/effects";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
 import { activeRanges } from "../analysis/edl/build";
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, LANE_LABEL, planDuck, voiceRegionsInOutput, type Overlay } from "../analysis/overlays";
 import { BUILTIN_ROLES, overlayRole, roleLabel } from "../analysis/roles";
+import { correctAll, correctWord, occurrences } from "../analysis/correct";
+import { addHotword, parseHotwords, serializeHotwords } from "../analysis/hotwords";
+import { useSettings } from "../store/settings";
 import { mapSrcToOut } from "../analysis/edl/map";
 import { MARKER_KIND_LABEL, isActiveState, type Candidate, type DecisionMap, type Marker, type MarkerKind, type SplitPoint } from "../analysis/types";
 import { EmptyState, Button } from "../ui/index";
@@ -126,6 +129,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   const addOverlay = useDecisions((s) => s.addOverlay);
   const allMedia = useProject((s) => s.media);
   const [overlayMenu, setOverlayMenu] = useState<{ o: Overlay; x: number; y: number } | null>(null);
+  const [wordMenu, setWordMenu] = useState<{ id: number; x: number; y: number } | null>(null);
   // 可以拿來當配樂 / 音效的其他媒體（自己不能疊自己）
   const otherMedia = allMedia.filter((m) => m.id !== mediaId);
   // 吸附目標：接縫（EDL 的保留段邊界，含刀片切點）+ 句界 + 字界 + 頭尾。
@@ -286,6 +290,43 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
     return voiceRegionsInOutput(regions, edl.keeps);
   };
 
+  /**
+   * 修正辨識錯誤。**只改文字不動時間軸** —— 字的起訖是辨識器對出來的，
+   * 改文字不代表那段聲音變了，所以剪輯決策與 EDL 完全不受影響。
+   */
+  const applyCorrection = (wordId: number, all: boolean) => {
+    if (!mediaId || !transcript) return;
+    const w = transcript.words.find((x) => x.id === wordId);
+    if (!w) return;
+    const next = window.prompt(t("這個字實際上是什麼？"), w.text.trim());
+    if (next == null) return;
+    const r = all ? correctAll(transcript, wordId, next) : correctWord(transcript, wordId, next);
+    if (!r.changed) return;
+    useTranscript.getState().setTranscript(mediaId, r.transcript);
+    useProject.getState().markDirty();
+    const n = r.count;
+    toast.success(t("已改成「{w}」（{n} 處）", { w: next.trim(), n }));
+    // 修正是這一次，領域詞是下一次 —— 兩件事接起來才不用改第二遍
+    const words = parseHotwords(useSettings.getState().s.hotwords);
+    if (!words.some((x) => x.toLowerCase() === next.trim().toLowerCase())) {
+      void useSettings.getState().save({ hotwords: serializeHotwords(addHotword(words, next)) });
+      toast.info(t("順便加進領域詞，下一次辨識器就認得了"));
+    }
+  };
+
+  const wordMenuItems = (wordId: number): MenuItem[] => {
+    const w = transcript?.words.find((x) => x.id === wordId);
+    const n = transcript ? occurrences(transcript, wordId) : 0;
+    return [
+      { label: w ? `「${w.text.trim()}」　p=${w.prob.toFixed(2)}` : String(wordId), disabled: true },
+      { separator: true },
+      { label: t("修正這個字…"), icon: Pencil, onClick: () => applyCorrection(wordId, false) },
+      ...(n > 1
+        ? [{ label: t("整份都改掉（{n} 處）…", { n }), icon: Pencil, onClick: () => applyCorrection(wordId, true) } as MenuItem]
+        : []),
+    ];
+  };
+
   const overlayMenuItems = (o: Overlay): MenuItem[] => {
     const len = Math.max(0, o.srcOutMs - o.srcInMs);
     return [
@@ -436,6 +477,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
             {menu && <WaveContextMenu x={menu.x} y={menu.y} items={menuItems(menu)} onClose={() => setMenu(null)} />}
             {seamMenu && <WaveContextMenu x={seamMenu.x} y={seamMenu.y} items={seamMenuItems(seamMenu.seam)} onClose={() => setSeamMenu(null)} />}
             {markerMenu && <WaveContextMenu x={markerMenu.x} y={markerMenu.y} items={markerMenuItems(markerMenu.marker)} onClose={() => setMarkerMenu(null)} />}
+            {wordMenu && <WaveContextMenu x={wordMenu.x} y={wordMenu.y} items={wordMenuItems(wordMenu.id)} onClose={() => setWordMenu(null)} />}
             {overlayMenu && <WaveContextMenu x={overlayMenu.x} y={overlayMenu.y} items={overlayMenuItems(overlayMenu.o)} onClose={() => setOverlayMenu(null)} />}
             {styleFor && mediaId && <StyleDialog mediaId={mediaId} startMs={styleFor.startMs} endMs={styleFor.endMs} onClose={() => setStyleFor(null)} />}
           </div>
@@ -446,6 +488,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
           )}
           {transcript ? (
             <TranscriptEditor
+              onWordMenu={(id, x, y) => setWordMenu({ id, x, y })}
               transcript={transcript}
               candidates={candidates}
               decisions={decisions}

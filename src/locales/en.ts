@@ -1082,6 +1082,11 @@ const en: Catalog = {
   "還有 {n} 筆…": "{n} more…",
   "這一步只改了一筆，直接點那一列還原就好": "This step changed only one thing — just click the row to undo it",
   "還原選取的（{n}）": "Undo selected ({n})",
+  "這個字實際上是什麼？": "What is this word actually?",
+  "已改成「{w}」（{n} 處）": "Changed to “{w}” ({n} places)",
+  "順便加進領域詞，下一次辨識器就認得了": "Added to domain words too — the recogniser will know it next time",
+  "修正這個字…": "Correct this word…",
+  "整份都改掉（{n} 處）…": "Change all ({n} places)…",
 };
 
 

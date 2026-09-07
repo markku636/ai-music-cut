@@ -352,6 +352,18 @@ export interface MergeDone {
   out_path: string;
   elapsed_ms: number;
 }
+export interface AlignSpec {
+  src: string;
+  out_path: string;
+  /** dub 相對 guide 的位移（正 = 前面補靜音；負 = 砍掉開頭）。 */
+  offset_ms: number;
+  segments: { dub_start_ms: number; tempo: number }[];
+  channels: number;
+}
+export interface AlignDone {
+  out_path: string;
+  elapsed_ms: number;
+}
 
 /** ttls /v1/separate 各軌落地結果。 */
 export interface SeparateStem {
@@ -499,6 +511,11 @@ export const api = {
   convertFile: (spec: ConvertSpec) => invoke<ConvertDone>("convert_file", { spec }),
   /** 幾個檔接成一個 48k 24-bit wav。 */
   mergeFiles: (spec: MergeSpec) => invoke<MergeDone>("merge_files", { spec }),
+  /** 時間對齊：dub 依分段速率（asendcmd 驅動的 atempo）扭到 guide 時間軸。 */
+  alignRender: (spec: AlignSpec) => invoke<AlignDone>("align_render", { spec }),
+  /** 對齊試聽：guide + 另一軌同一段（sum / split），回 mp3 路徑。 */
+  alignPreview: (guide: string, other: string, fingerprint: string, startMs: number, durMs: number, split: boolean, key: string) =>
+    invoke<string>("align_preview", { guide, other, fingerprint, startMs, durMs, split, key }),
   renderCancel: (jobId: string) => invoke<void>("render_cancel", { jobId }),
   projectSave: (path: string, doc: unknown) => invoke<void>("project_save", { path, doc }),
   /** 寫純文字檔（節目筆記的 .md）。不加 BOM。 */

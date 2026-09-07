@@ -6,6 +6,7 @@ import { Link2, Mic } from "lucide-react";
 import { useState } from "react";
 import { useT } from "../i18n";
 import { analyzeMicSync, combineMics, type MicSyncRow } from "../pipeline/syncMics";
+import { suggestDrift } from "../pipeline/align";
 import { useProject } from "../store/project";
 import { Badge, Button, Modal, Spinner } from "../ui/index";
 import { toast } from "../ui";
@@ -22,6 +23,7 @@ export default function SyncDialog({ onClose }: { onClose: () => void }) {
   const [rows, setRows] = useState<MicSyncRow[] | null>(null);
   const [busy, setBusy] = useState<null | "analyze" | "combine">(null);
   const [crosstalkDb, setCrosstalkDb] = useState<number | null>(-12);
+  const [drift, setDrift] = useState(false);
 
   const toggle = (id: string) => {
     setRows(null);
@@ -31,7 +33,10 @@ export default function SyncDialog({ onClose }: { onClose: () => void }) {
   const run = async () => {
     setBusy("analyze");
     try {
-      setRows(await analyzeMicSync(picked));
+      const r = await analyzeMicSync(picked);
+      setRows(r);
+      const durOf = (id: string) => useProject.getState().media.find((m) => m.id === id)?.probe?.duration_ms ?? 0;
+      setDrift(r.slice(1).some((x) => suggestDrift(durOf(r[0].mediaId), durOf(x.mediaId), x.offsetMs)));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -43,7 +48,7 @@ export default function SyncDialog({ onClose }: { onClose: () => void }) {
     if (!rows) return;
     setBusy("combine");
     try {
-      const out = await combineMics(rows, crosstalkDb ?? undefined);
+      const out = await combineMics(rows, crosstalkDb ?? undefined, drift);
       toast.success(t("已合併成一軌：{name}", { name: out.split(/[\\/]/).pop() ?? out }));
       onClose();
     } catch (e) {

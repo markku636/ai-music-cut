@@ -522,6 +522,25 @@ pub async fn merge_files(state: State<'_, AppState>, spec: crate::merge::MergeSp
     crate::merge::merge_files(&bins, &spec).await
 }
 
+/// 時間對齊：把 dub 依分段速率扭到 guide 的時間軸，輸出 wav。
+#[tauri::command]
+pub async fn align_render(state: State<'_, AppState>, spec: crate::align::AlignSpec) -> AppResult<crate::align::AlignDone> {
+    let bins = state.ffmpeg_bins().await?;
+    crate::align::render(&bins, &spec).await
+}
+
+/// 對齊試聽：guide 與另一軌同一段疊在一起或左右分開，回 mp3 路徑（快取在媒體目錄 align/）。
+#[tauri::command]
+pub async fn align_preview(app: AppHandle, state: State<'_, AppState>, guide: String, other: String, fingerprint: String, start_ms: f64, dur_ms: f64, split: bool, key: String) -> AppResult<String> {
+    let bins = state.ffmpeg_bins().await?;
+    let safe_key: String = key.chars().filter(|c| c.is_ascii_alphanumeric()).take(32).collect();
+    let out = media::media_dir(&app, &fingerprint)?.join("align").join(format!("ab-{}-{}.mp3", safe_key, if split { "split" } else { "sum" }));
+    if !out.is_file() {
+        crate::align::preview_pair(&bins, &guide, &other, start_ms, dur_ms, split, &out).await?;
+    }
+    Ok(out.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub fn render_cancel(state: State<'_, AppState>, job_id: String) {
     if let Some(f) = state.cancel_flags.lock().get(&job_id) {

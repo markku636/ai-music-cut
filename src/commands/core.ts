@@ -379,6 +379,7 @@ export const CORE_COMMANDS: Command[] = [
   { id: "tool.takes", title: "替代 take（同一句講了好幾次）", group: "tool", section: "這一集", icon: Layers, enabled: needsAnalysis, run: () => openDialog("takes") },
   { id: "tool.speakers", title: "講者（誰講了多久 / 改名 / 手動指派）", group: "tool", section: "這一集", icon: Users, enabled: () => OK, run: () => openDialog("speakers") },
   { id: "tool.sync", title: "同步麥克風", group: "tool", section: "這一集", icon: Link2, enabled: needsTwoMedia, run: () => openDialog("sync") },
+  { id: "tool.align", title: "對齊（Guide / Dub：補錄對回原位、漂移、疊錄）", group: "tool", section: "這一集", icon: Link2, keywords: ["align", "vocalign", "dtw", "adr", "drift", "double"], enabled: needsTwoMedia, run: () => openDialog("align") },
   { id: "tool.batch", title: "批次處理（多集一次跑完）", group: "tool", section: "跨集", icon: Layers, enabled: needsAnyMedia, run: () => openDialog("batch") },
   { id: "tool.templates", title: "專案範本（開場 / 片尾 / 目標響度）", group: "tool", section: "跨集", icon: LayoutTemplate, enabled: () => OK, run: () => openDialog("templates") },
   { id: "tool.prompts", title: "提示詞", group: "tool", section: "設定", icon: ScrollText, enabled: () => OK, run: () => openDialog("prompts") },

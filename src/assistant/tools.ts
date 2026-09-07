@@ -5,6 +5,7 @@ import { effectId as fxEffectId } from "../analysis/effects";
 import { allEffectSpecs, applyEffect, effectContext, effectSpec, rangeFor } from "../effects/registry";
 import { resolveValues, type ParamValue } from "../effects/spec";
 import { makeNoisePrint, matchLoudnessGainDb, peakNormalizeGainDb } from "../analysis/levels";
+import { analyzeAlignment, LOW_CONFIDENCE as ALIGN_LOW_CONFIDENCE, renderAlignment, type AlignMode } from "../pipeline/align";
 import { RENDER_FORMATS } from "../analysis/formats";
 import { api, type McpToolCall, type McpToolDef } from "../api";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState, type MarkerKind } from "../analysis/types";
@@ -1407,6 +1408,39 @@ export const TOOLS: ToolSpec[] = [
         effects: app.kind === "effects" ? app.effects.map((e) => ({ id: e.id, kind: e.kind, startMs: e.startMs, endMs: e.endMs, params: e.params ?? null })) : [],
         appliedAt: app.kind === "effects" ? "輸出時（範圍濾波）或即時（增益類）" : app.kind,
       };
+    },
+  },
+  {
+    name: "align_tracks",
+    description:
+      "把一軌（dub）在時間上扭到另一軌（guide）對齊（VocALign 式 DTW，只做時間不做音高）。mode：adr 補錄一句對回原位 / drift 多麥時鐘漂移 / music 疊錄。render=true 會輸出 <dub>_aligned.wav 加進媒體清單並回驗收；信心 < 0.3 時拒絕渲染並說明。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        guideId: { type: "string" },
+        dubId: { type: "string" },
+        mode: { type: "string", enum: ["adr", "drift", "music"] },
+        tightness: { type: "number", minimum: 0, maximum: 100 },
+        render: { type: "boolean" },
+      },
+      required: ["guideId", "dubId"],
+      additionalProperties: false,
+    },
+    handler: async (a) => {
+      const mode = (a.mode === "drift" || a.mode === "music" ? a.mode : "adr") as AlignMode;
+      const r = await analyzeAlignment(String(a.guideId), String(a.dubId), { mode, tightness: typeof a.tightness === "number" ? a.tightness : undefined });
+      const base = {
+        offsetMs: Math.round(r.offsetMs),
+        maxDeviationMs: Math.round(r.summary.maxDeviationMs),
+        driftSecPerHour: Math.round((r.summary.slope - 1) * 3600 * 100) / 100,
+        segments: r.segments.length,
+        resampleOnly: r.resampleRatio != null,
+        confidence: Math.round(r.confidence * 100) / 100,
+      };
+      if (!a.render) return base;
+      if (r.confidence < ALIGN_LOW_CONFIDENCE) throw new ToolError(`信心只有 ${Math.round(r.confidence * 100)}%（< 30%），可能沒對上，不輸出。把 guide / dub 換成同一段內容再試。`);
+      const out = await renderAlignment(r);
+      return { ...base, outPath: out.outPath, mediaId: out.mediaId, verdict: out.verdict };
     },
   },
   {

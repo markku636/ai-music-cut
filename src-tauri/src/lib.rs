@@ -1,4 +1,5 @@
 mod agent;
+mod align;
 mod cleanup;
 mod codex;
 mod convert;
@@ -111,6 +112,8 @@ pub fn run() {
             commands::media_spectrum,
             commands::convert_file,
             commands::merge_files,
+            commands::align_render,
+            commands::align_preview,
             commands::project_save,
             commands::write_text_file,
             commands::project_load,

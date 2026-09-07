@@ -15,6 +15,7 @@ import { useDecisions } from "../store/decisions";
 import { useProject } from "../store/project";
 import { useTranscript } from "../store/transcript";
 import { ensureLocalAnalysis } from "./waveform";
+import { alignForSync } from "./align";
 
 export interface MicSyncRow {
   mediaId: string;
@@ -69,24 +70,35 @@ export async function analyzeMicSync(mediaIds: string[], opts: SyncOptions = DEF
  * 誰講的資訊永遠拿不回來了。而在這裡它是**確定性的不是猜的** —— 每支麥都收得到別人，
  * 但自己的麥一定最大聲。這一步不做，之後就只能靠聲紋模型去猜（見 analysis/speakers.ts）。
  */
-export async function combineMics(rows: MicSyncRow[], crosstalkDb?: number): Promise<string> {
+export async function combineMics(rows: MicSyncRow[], crosstalkDb?: number, driftCorrect = false): Promise<string> {
   const proj = useProject.getState();
   const paths: string[] = [];
-  for (const r of rows) {
-    const m = proj.media.find((x) => x.id === r.mediaId);
-    if (!m) throw new Error(t("找不到媒體：{name}", { name: r.name }));
-    paths.push(m.path);
+  // 漂移校正：非基準軌先用 DTW 扭到基準軌的時間軸（_aligned.wav），之後 delay 一律 0
+  let delays = rows.map((r) => Math.max(0, Math.round(r.delayMs)));
+  if (driftCorrect) {
+    delays = rows.map(() => 0);
+    for (let i = 0; i < rows.length; i++) {
+      const m = proj.media.find((x) => x.id === rows[i].mediaId);
+      if (!m) throw new Error(t("找不到媒體：{name}", { name: rows[i].name }));
+      if (i === 0) {
+        paths.push(m.path);
+        continue;
+      }
+      const a = await alignForSync(rows[0].mediaId, rows[i].mediaId);
+      paths.push(a.path);
+    }
+  } else {
+    for (const r of rows) {
+      const m = proj.media.find((x) => x.id === r.mediaId);
+      if (!m) throw new Error(t("找不到媒體：{name}", { name: r.name }));
+      paths.push(m.path);
+    }
   }
   const first = proj.media.find((m) => m.id === rows[0].mediaId)!;
   const base = first.path.replace(/\.[^.]+$/, "");
   const outPath = `${base}_synced.wav`;
   const gates = crosstalkDb == null ? undefined : rows.map((r) => (r.canGate ? toRenderGate(gateSpec(r.gate, crosstalkDb)) : null));
-  await api.mediaCombine(
-    paths,
-    rows.map((r) => Math.max(0, Math.round(r.delayMs))),
-    outPath,
-    gates,
-  );
+  await api.mediaCombine(paths, delays, outPath, gates);
   const id = await useProject.getState().openMedia(outPath);
   useProject.getState().setActive(id);
   const sp = speakersFrom(rows);

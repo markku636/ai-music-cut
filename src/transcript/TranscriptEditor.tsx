@@ -5,6 +5,7 @@ import { usePlayback } from "../store/playback";
 import { wordIndexAt } from "../store/transcript";
 import { formatMs } from "../time";
 import { sameRow, type RowProps, type WordMark } from "./rowEquals";
+import { useVirtual } from "../ui/useVirtual";
 
 export interface TranscriptEditorProps {
   transcript: Transcript | null;
@@ -53,7 +54,6 @@ export default function TranscriptEditor({
   const currentMs = usePlayback((s) => s.currentMs);
   const follow = usePlayback((s) => s.followMode !== "off");
   const seek = usePlayback((s) => s.seek);
-  const listRef = useRef<HTMLDivElement>(null);
 
   const words = useMemo(() => transcript?.words ?? [], [transcript]);
   const activeIdx = useMemo(() => {
@@ -94,13 +94,29 @@ export default function TranscriptEditor({
   }, [transcript]);
   const activeSentence = activeWordId >= 0 ? (sentenceOf.get(activeWordId) ?? -1) : -1;
 
+  // 「只看主持人講的話」：留著的句子時間戳還是原本的，點下去仍然跳到那句話在音檔裡的
+  // 位置 —— 篩選只影響看得到什麼，**不影響剪輯**（不會因為篩掉就變成剪掉）。
+  const rows = useMemo(
+    () =>
+      onlySpeaker && sentenceSpeaker
+        ? (transcript?.sentences ?? []).filter((s) => sentenceSpeaker.get(s.id) === onlySpeaker)
+        : (transcript?.sentences ?? []),
+    [onlySpeaker, sentenceSpeaker, transcript],
+  );
+
+  // 逐字稿是會跟著節目長度一起長的清單：57 分鐘就有 1140 句、將近一萬五千個 DOM 節點，
+  // 三小時的錄音會是它的三倍。只畫看得到的那幾句。
+  const rowKeys = useMemo(() => rows.map((s) => String(s.id)), [rows]);
+  const v = useVirtual(rowKeys, 40);
+  const win = rows.slice(v.start, v.end);
+
   const lastScrolled = useRef(-1);
   useEffect(() => {
     if (!follow || activeSentence < 0 || activeSentence === lastScrolled.current) return;
     lastScrolled.current = activeSentence;
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-sid="${activeSentence}"]`);
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [follow, activeSentence]);
+    // 那一句可能不在 DOM 裡（虛擬清單），所以不能用 scrollIntoView。
+    v.scrollToKey(String(activeSentence), { block: "center" });
+  }, [follow, activeSentence, v]);
 
   // 講者只在**換人的那一句**寫出名字。每一列都掛一次「Mark：」是雜訊，
   // 真正要一眼看出來的是「這裡換人了」。沒換人的列只留左邊的色條。
@@ -119,17 +135,16 @@ export default function TranscriptEditor({
 
   if (!transcript) return null;
 
-  // 「只看主持人講的話」：留著的句子時間戳還是原本的，點下去仍然跳到那句話在音檔裡的
-  // 位置 —— 篩選只影響看得到什麼，**不影響剪輯**（不會因為篩掉就變成剪掉）。
-  const rows = onlySpeaker && sentenceSpeaker ? transcript.sentences.filter((s) => sentenceSpeaker.get(s.id) === onlySpeaker) : transcript.sentences;
   return (
-    <div ref={listRef} className="flex-1 min-h-0 overflow-auto px-4 py-3 text-[15px] leading-7 select-none">
+    <div ref={v.scrollRef} className="flex-1 min-h-0 overflow-auto px-4 py-3 text-[15px] leading-7 select-none">
       {onlySpeaker && rows.length === 0 && (
         <div className="px-2 py-6 text-center text-[12px] text-fg/40">{"—"}</div>
       )}
-      {rows.map((s) => (
+      <div style={{ height: v.padTop }} />
+      {win.map((s) => (
         <SentenceRow
           key={s.id}
+          rowRef={v.measure(String(s.id))}
           sentence={s}
           words={words}
           // **只把 activeWordId 傳給真的含有它的那一列。**
@@ -151,11 +166,13 @@ export default function TranscriptEditor({
           showSpeakerName={showName.has(s.id)}
         />
       ))}
+      <div style={{ height: v.padBottom }} />
     </div>
   );
 }
 
 const SentenceRow = memo(function SentenceRow({
+  rowRef,
   sentence,
   words,
   activeWordId,
@@ -175,6 +192,7 @@ const SentenceRow = memo(function SentenceRow({
 }: RowProps) {
   return (
     <div
+      ref={rowRef}
       data-sid={sentence.id}
       data-speaker={speaker?.id}
       className={`flex gap-3 rounded-md px-2 py-1 ${isActive ? "bg-accent/8" : ""}`}

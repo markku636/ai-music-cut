@@ -15,6 +15,7 @@ import { useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
 import { useTimeline } from "../store/timeline";
 import { formatMs } from "../time";
+import { useVirtual } from "../ui/useVirtual";
 import type { SeamInfo } from "../timeline/trimActions";
 import { Input } from "../ui/index";
 
@@ -116,6 +117,12 @@ export default function IndexPanel({
     });
   }, [rows, q, filter]);
 
+  // 接縫 + 候選 + 效果會隨節目長度一起長：57 分鐘、一半候選被接受時，這份清單
+  // 光是索引分頁就鋪了四萬九千個 DOM 節點，切過來要 719 毫秒。只畫看得到的那幾列。
+  const shownKeys = useMemo(() => shown.map((r) => r.key), [shown]);
+  const v = useVirtual(shownKeys, 40);
+  const win = shown.slice(v.start, v.end);
+
   const go = (r: Row) => {
     seek(r.ms);
     playRange(Math.max(0, r.ms - 200), r.ms + 2500, { skip: true });
@@ -189,18 +196,19 @@ export default function IndexPanel({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div ref={v.scrollRef} className="flex-1 min-h-0 overflow-auto">
         {shown.length === 0 ? (
           <div className="p-4 text-[12px] text-fg/40 leading-relaxed">
             {rows.length === 0 ? t("還沒有標記。按 M 下一個標記、Shift+M 下一個章節（章節會寫進成品檔案）。") : t("沒有符合的項目。")}
           </div>
         ) : (
           <ul>
-            {shown.map((r) => {
+            <li style={{ height: v.padTop }} />
+            {win.map((r) => {
               const Icon = ICONS[r.kind];
               const isEditing = editing === r.key && r.marker;
               return (
-                <li key={r.key} className="border-b border-fg/5 hover:bg-fg/5 group">
+                <li key={r.key} ref={v.measure(r.key)} className="border-b border-fg/5 hover:bg-fg/5 group">
                   <div className="flex items-start gap-1.5 px-2 py-1.5">
                     <Icon size={12} className={"mt-0.5 shrink-0 " + toneOf(r.kind)} />
                     <button type="button" onClick={() => go(r)} className="mono text-[11px] tabular-nums text-fg/45 hover:text-accent shrink-0 mt-px">
@@ -259,6 +267,7 @@ export default function IndexPanel({
                 </li>
               );
             })}
+            <li style={{ height: v.padBottom }} />
           </ul>
         )}
       </div>

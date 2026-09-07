@@ -4,6 +4,8 @@ import type { Speaker } from "../analysis/speakers";
 export type WordMark = "cut" | "pending" | "";
 
 export interface RowProps {
+  /** 量高度用（虛擬清單）。每次繪製都是新的函式，所以**不比較**它。 */
+  rowRef?: (el: HTMLElement | null) => void;
   sentence: Sentence;
   words: Word[];
   activeWordId: number;

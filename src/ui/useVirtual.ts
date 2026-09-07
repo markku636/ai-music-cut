@@ -13,8 +13,13 @@ export interface Virtual {
   padBottom: number;
   /** 掛在每一列上（ref callback），用來量高度。 */
   measure: (key: string) => (el: HTMLElement | null) => void;
-  /** 把某一列捲進視野（鍵盤選取候選時要用 —— 那一列可能根本不在 DOM 裡）。 */
-  scrollToKey: (key: string) => void;
+  /**
+   * 把某一列捲進視野（那一列可能根本不在 DOM 裡，所以不能用 scrollIntoView）。
+   *
+   * block="nearest"（預設）已經看得到就不動 —— 鍵盤連按時清單才不會一直跳。
+   * block="center" 一律置中，跟著播放線讀逐字稿時要的是這個。
+   */
+  scrollToKey: (key: string, opts?: { block?: "nearest" | "center" }) => void;
 }
 
 export function useVirtual(keys: string[], estimate: number, overscan = 6): Virtual {
@@ -77,7 +82,7 @@ export function useVirtual(keys: string[], estimate: number, overscan = 6): Virt
   const win = windowFor({ count: keys.length, heights: heightList, estimate: est, scrollTop: view.top, viewportHeight: view.height, overscan });
 
   const scrollToKey = useCallback(
-    (key: string) => {
+    (key: string, opts?: { block?: "nearest" | "center" }) => {
       const el = scrollRef.current;
       if (!el) return;
       const idx = keys.indexOf(key);
@@ -85,10 +90,14 @@ export function useVirtual(keys: string[], estimate: number, overscan = 6): Virt
       const h = (i: number) => heights.current.get(keys[i]) ?? est;
       let top = 0;
       for (let i = 0; i < idx; i++) top += h(i);
-      const bottom = top + h(idx);
+      const height = h(idx);
+      if (opts?.block === "center") {
+        el.scrollTop = Math.max(0, top - (el.clientHeight - height) / 2);
+        return;
+      }
       // 已經看得到就不要動（鍵盤連按時清單一直跳很難用）
-      if (top >= el.scrollTop && bottom <= el.scrollTop + el.clientHeight) return;
-      el.scrollTop = top < el.scrollTop ? top : bottom - el.clientHeight;
+      if (top >= el.scrollTop && top + height <= el.scrollTop + el.clientHeight) return;
+      el.scrollTop = top < el.scrollTop ? top : top + height - el.clientHeight;
     },
     [keys, est],
   );

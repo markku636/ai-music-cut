@@ -133,7 +133,10 @@ export default function TranscriptEditor({
           key={s.id}
           sentence={s}
           words={words}
-          activeWordId={activeWordId}
+          // **只把 activeWordId 傳給真的含有它的那一列。**
+          // 傳給每一列的話，播放線每動一次、1140 個 memo 全部失效 ——
+          // 實測 57 分鐘的節目每格要 274 毫秒（3.7 fps），而真正需要重畫的只有兩列。
+          activeWordId={activeSentence === s.id ? activeWordId : -1}
           isActive={s.id === activeSentence}
           marks={marks}
           selectedWordIds={selectedWordIds}

@@ -9,7 +9,7 @@ import { correctAll, correctWord, occurrences } from "../analysis/correct";
 import { addHotword, parseHotwords, serializeHotwords } from "../analysis/hotwords";
 import { useSettings } from "../store/settings";
 import { mapSrcToOut } from "../analysis/edl/map";
-import { MARKER_KIND_LABEL, isActiveState, type Candidate, type DecisionMap, type Marker, type MarkerKind, type SplitPoint } from "../analysis/types";
+import { MARKER_KIND_LABEL, isActiveState, type Candidate, type DecisionMap, type Marker, type MarkerKind, type SplitPoint, type Sentence } from "../analysis/types";
 import { EmptyState, Button } from "../ui/index";
 import { toast } from "../ui";
 import { useT } from "../i18n";
@@ -82,6 +82,11 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   const aggressiveness = useProject((s) => s.aggressiveness);
   const select = useDecisions((s) => s.select);
   const removeCandidate = useDecisions((s) => s.removeCandidate);
+  // handler 要穩住識別，所以讀 ref 而不是把這兩個放進依賴
+  const transcriptRef = useRef(transcript);
+  transcriptRef.current = transcript;
+  const mediaIdRef = useRef(mediaId);
+  mediaIdRef.current = mediaId;
   const [onlySpeaker, setOnlySpeaker] = useState<string | null>(null);
   const [menu, setMenu] = useState<WaveMenuInfo | null>(null);
   const [styleFor, setStyleFor] = useState<{ startMs: number; endMs: number } | null>(null);
@@ -103,6 +108,42 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   const [searchHits, setSearchHits] = useState<{ hits: TextHit[]; at: number }>({ hits: [], at: 0 });
   const hitWordIds = useMemo(() => new Set(searchHits.hits.flatMap((h) => h.wordIds)), [searchHits]);
   const activeHitWordIds = useMemo(() => new Set(searchHits.hits[searchHits.at]?.wordIds ?? []), [searchHits]);
+
+  // 這四個 handler **一定要穩住識別**。
+  //
+  // 它們原本是寫在 JSX 裡的箭頭函式，MainArea 每次重繪都會產生新的一份 ——
+  // 而 MainArea 在播放線每動一次就會重繪。逐字稿的每一列都是 memo 的，但收到四個
+  // 新函式之後 memo 一律失效：實測 57 分鐘的節目（1140 句），拖十次播放線產生
+  // **22800 次列重繪**，等於每一格都把整份逐字稿重畫一遍。
+  const onWordClick = useCallback(
+    (wordId: number, cids: string[], shift: boolean) => {
+      const tr = transcriptRef.current;
+      const w = tr?.words[wordId];
+      if (!tr || !w) return;
+      if (shift && anchorWord.current != null && tr.words[anchorWord.current]) {
+        const a = tr.words[anchorWord.current];
+        setSelection({ startMs: Math.min(a.startMs, w.startMs), endMs: Math.max(a.endMs, w.endMs) });
+        return;
+      }
+      anchorWord.current = wordId;
+      seek(w.startMs);
+      select(cids.slice(0, 1));
+    },
+    [seek, select, setSelection],
+  );
+  const onWordToggle = useCallback(
+    (wordId: number) => {
+      const tr = transcriptRef.current;
+      const w = tr?.words[wordId];
+      const id = mediaIdRef.current;
+      if (!tr || !w || !id) return;
+      const sid = tr.sentences.find((x) => x.wordIds.includes(wordId))?.id ?? -1;
+      toggleWordCut(id, wordId, w, sid);
+    },
+    [toggleWordCut],
+  );
+  const onWordMenu = useCallback((id: number, x: number, y: number) => setWordMenu({ id, x, y }), []);
+  const onSentenceSelect = useCallback((s: Sentence) => setSelection({ startMs: s.startMs, endMs: s.endMs }), [setSelection]);
 
   // 講者標籤：段落 → 字 → 句。一句一個講者（換人的接縫上少數幾個字被串音判錯是常態，
   // 句層的多數決正好把它吸收掉），沒有標籤時整條路都不算。
@@ -528,31 +569,15 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
           )}
           {transcript ? (
             <TranscriptEditor
-              onWordMenu={(id, x, y) => setWordMenu({ id, x, y })}
+              onWordMenu={onWordMenu}
               transcript={transcript}
               candidates={candidates}
               decisions={decisions}
               selectedIds={selectedIds}
               selection={selection}
-              onWordClick={(wordId, cids, shift) => {
-                const w = transcript.words[wordId];
-                if (!w) return;
-                if (shift && anchorWord.current != null && transcript.words[anchorWord.current]) {
-                  const a = transcript.words[anchorWord.current];
-                  setSelection({ startMs: Math.min(a.startMs, w.startMs), endMs: Math.max(a.endMs, w.endMs) });
-                  return;
-                }
-                anchorWord.current = wordId;
-                seek(w.startMs);
-                select(cids.slice(0, 1));
-              }}
-              onWordToggle={(wordId) => {
-                const w = transcript.words[wordId];
-                if (!w || !mediaId) return;
-                const sid = transcript.sentences.find((s) => s.wordIds.includes(wordId))?.id ?? -1;
-                toggleWordCut(mediaId, wordId, w, sid);
-              }}
-              onSentenceSelect={(s) => setSelection({ startMs: s.startMs, endMs: s.endMs })}
+              onWordClick={onWordClick}
+              onWordToggle={onWordToggle}
+              onSentenceSelect={onSentenceSelect}
               hitWordIds={hitWordIds}
               activeHitWordIds={activeHitWordIds}
               sentenceSpeaker={sentenceSpeaker}

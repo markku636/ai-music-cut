@@ -20,7 +20,26 @@ export function runRulesFor(mediaId: string, opts: { label?: string; record?: bo
   return cands.length;
 }
 
-/** 目前決策 → EDL（含自然度守門）。 */
+/**
+ * `edlFor` 的快取。
+ *
+ * **一次 buildEdl 在 57 分鐘的節目上要 48 毫秒**，而全 App 有二十幾個地方會叫它 ——
+ * 時間軸、預覽列、審核模式、總覽條、字幕、章節、分割輸出…… 每個元件各自 useMemo，
+ * 等於同一份 EDL 在一次決策變更後被重算四五遍。實測（11400 字）：接受一筆候選要
+ * **4.1 秒**才畫得出來、拖播放線每格 272 毫秒。
+ *
+ * 鍵用**物件識別**而不是內容雜湊：zustand 每次變更都會換掉陣列 / 物件，
+ * 所以識別相同就代表內容真的沒動，比算雜湊便宜得多（雜湊 4560 筆候選本身就不便宜）。
+ */
+const edlCache = new Map<string, { key: unknown[]; edl: Edl | null }>();
+
+function sameKey(a: unknown[], b: unknown[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** 目前決策 → EDL（含自然度守門）。同樣的輸入會回同一個物件（見上面的快取說明）。 */
 export function edlFor(mediaId: string): Edl | null {
   const ts = useTranscript.getState();
   const tr = ts.byMedia[mediaId];
@@ -36,19 +55,31 @@ export function edlFor(mediaId: string): Edl | null {
       }
     : undefined;
   const d = useDecisions.getState();
-  const th = thresholdsFor(useProject.getState().aggressiveness);
+  const aggressiveness = useProject.getState().aggressiveness;
+  const key = [tr, local, d.candidates[mediaId], d.decisions[mediaId], d.splits[mediaId], aggressiveness, durationMs];
+  const hit = edlCache.get(mediaId);
+  if (hit && sameKey(hit.key, key)) return hit.edl;
+  const th = thresholdsFor(aggressiveness);
   // pauseKeepMs 以前傳在這裡，但 EdlOptions 根本沒有這個欄位 —— 是個從來沒生效過的死參數。
   // 呼吸感現在走 breath（句中 / 句尾 / 段落三級，隨激進度縮放）。
   const opts: EdlOptions = {
     ...DEFAULT_EDL_OPTIONS,
-    breath: breathFor(useProject.getState().aggressiveness),
+    breath: breathFor(aggressiveness),
     maxSentenceRemovalRatio: th.maxSentenceRemovalRatio,
   };
-  return buildEdl(
+  const edl = buildEdl(
     { words: tr?.words ?? [], sentences: tr?.sentences ?? [], vad: tr?.vad ?? [], durationMs, splits: d.splits[mediaId] ?? [] },
     d.candidates[mediaId] ?? [],
     d.decisions[mediaId] ?? {},
     opts,
     probe,
   );
+  edlCache.set(mediaId, { key, edl });
+  return edl;
+}
+
+/** 關檔 / 換專案時清掉，不要讓舊媒體的 EDL 一直佔著記憶體。 */
+export function clearEdlCache(mediaId?: string): void {
+  if (mediaId) edlCache.delete(mediaId);
+  else edlCache.clear();
 }

@@ -5,6 +5,7 @@ import { RuleContext, type AnalysisInput } from "./context";
 import { fillerRule } from "./fillers";
 import { noiseRule } from "./noise";
 import { pauseRule } from "./pauses";
+import { redoRule } from "./redo";
 import { repeatRule } from "./repeats";
 import { unclearRule } from "./unclear";
 
@@ -37,7 +38,7 @@ export function dedupe(cands: Candidate[]): Candidate[] {
 /** 用給定門檻跑規則層。 */
 export function runRules(input: AnalysisInput, th: Thresholds): Candidate[] {
   const ctx = new RuleContext(input, th);
-  const all = [...fillerRule(ctx), ...repeatRule(ctx), ...pauseRule(ctx), ...unclearRule(ctx), ...noiseRule(ctx)];
+  const all = [...fillerRule(ctx), ...repeatRule(ctx), ...pauseRule(ctx), ...unclearRule(ctx), ...noiseRule(ctx), ...redoRule(ctx)];
   return dedupe(all);
 }
 

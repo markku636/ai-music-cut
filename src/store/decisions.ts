@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { effectLabel, type AudioEffect } from "../analysis/effects";
 import { stepsTo } from "../analysis/history";
+import { revertSubset } from "../analysis/stepDiff";
 import { thresholdsFor } from "../analysis/thresholds";
 import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, markerId, splitPointId, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState, type Marker, type MarkerKind, type Opinion, type SplitPoint } from "../analysis/types";
 import { overlayId, type Overlay } from "../analysis/overlays";
@@ -117,6 +118,11 @@ interface DecisionsStore {
    * 內部就是連續 undo / redo —— 每一步都是完整快照，跳過去與一步一步按等價。
    */
   jumpTo: (index: number) => void;
+  /**
+   * 只還原某一步裡的其中幾筆決策（歷史面板的「部分還原」）。
+   * 疊在目前狀態上，所以那一步之後改的其他東西不受影響。
+   */
+  revertPart: (stepIndex: number, ids: string[]) => void;
   clear: (mediaId: string) => void;
   /** 專案載入：直接放入（不記 undo）。 */
   load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[], splits?: SplitPoint[], markers?: Marker[], overlays?: Overlay[]) => void;
@@ -477,6 +483,17 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       const { undo, redo } = stepsTo(past, future, index);
       for (let i = 0; i < undo; i++) get().undo();
       for (let i = 0; i < redo; i++) get().redo();
+    },
+    revertPart: (stepIndex, ids) => {
+      if (!ids.length) return;
+      const { past, future } = get();
+      // stepIndex 是歷史面板的列號（1 = 第一次改動），對應 all[stepIndex - 1]
+      const all = [...past, ...[...future].reverse()];
+      const patch = all[stepIndex - 1];
+      if (!patch) return;
+      const mediaId = patch.mediaId;
+      const cur = get().decisions[mediaId] ?? {};
+      commit(mediaId, `部分還原：${patch.label}`, { decisions: revertSubset(cur, patch.before.decisions, ids) });
     },
     load: (mediaId, candidates, decisions, effects = [], splits = [], markers = [], overlays = []) =>
       set((s) => ({

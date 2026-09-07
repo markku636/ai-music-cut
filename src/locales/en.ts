@@ -1077,6 +1077,11 @@ const en: Catalog = {
   "只留下含有命中的整個句子，其他全部剪掉（做精華版用）。一次 undo 就能還原。": "Keeps whole sentences that contain a match and cuts everything else (for making a highlight version). One undo restores it.",
   "只保留（{n} 句）": "Keep only ({n})",
   "預設是本機：用你電腦上的 faster-whisper，不上傳、不需要金鑰，第一次要裝套件與模型（下面一鍵裝）。有 ttls 金鑰的話切過去比較快，而且不佔你的機器。": "Local is the default: faster-whisper on your own machine — nothing uploaded, no key needed, but the package and model install on first use (one click below). With a ttls key, switching over is faster and does not tie up your machine.",
+  "看這一步改了什麼": "See what this step changed",
+  "這一步沒有改到「剪不剪」（可能只動了效果或標記）。": "This step did not change what gets cut (it may have only touched effects or markers).",
+  "還有 {n} 筆…": "{n} more…",
+  "這一步只改了一筆，直接點那一列還原就好": "This step changed only one thing — just click the row to undo it",
+  "還原選取的（{n}）": "Undo selected ({n})",
 };
 
 

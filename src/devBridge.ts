@@ -18,6 +18,7 @@ import * as roles from "./analysis/roles";
 import * as exportPresets from "./analysis/exportPresets";
 import * as preflight from "./analysis/preflight";
 import * as keepOnly from "./analysis/keepOnly";
+import * as stepDiff from "./analysis/stepDiff";
 import * as textSearch from "./analysis/textSearch";
 import * as roleMixLib from "./preview/roleMix";
 import { useRoleMix } from "./store/roleMix";
@@ -77,6 +78,7 @@ export interface DevBridge {
   exportPresets: typeof exportPresets;
   preflight: typeof preflight;
   keepOnly: typeof keepOnly;
+  stepDiff: typeof stepDiff;
   textSearch: typeof textSearch;
   roleMix: typeof useRoleMix;
   roleMixLib: typeof roleMixLib;
@@ -156,6 +158,7 @@ export function installDevBridge() {
     exportPresets,
     preflight,
     keepOnly,
+    stepDiff,
     textSearch,
     roleMix: useRoleMix,
     roleMixLib,

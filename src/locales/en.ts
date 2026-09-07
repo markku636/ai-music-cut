@@ -1129,6 +1129,25 @@ const en: Catalog = {
   "在波形上拉一段時間選取，這裡就會出現「指派給他」。": "Drag a time range on the waveform and an assign button appears here.",
   "多麥克風講者指派": "Speaker labels from multi-mic",
   "講者（誰講了多久 / 改名 / 手動指派）": "Speakers (who talked how long / rename / assign)",
+  // ---- 字幕與逐字稿匯出 ----
+  "字幕與逐字稿": "Captions & transcript",
+  "存檔": "Save file",
+  "先分析這個音檔，字幕才有內容可以產。": "Analyse this file first so the captions have something to work from.",
+  "沒有可以匯出的內容": "Nothing to export",
+  "整份逐字稿都落在被剪掉的區間裡。": "The whole transcript falls inside cut regions.",
+  "時間戳是**成品**時間，不是逐字稿的時間 —— 被剪掉的字整個不會出現，後面的字幕跟著往前挪。所以字幕不會愈到後面愈飄。": "Timestamps are output time, not transcript time: cut words disappear entirely and everything after them shifts earlier, so the captions do not drift further out of sync as the episode goes on.",
+  "把講者名字寫進去": "Include speaker names",
+  "{n} 則 · 到 {t} 為止": "{n} cues · up to {t}",
+  "沒有講者標籤": "no speaker labels",
+  "字幕與逐字稿（SRT / VTT / Markdown）": "Captions & transcript (SRT / VTT / Markdown)",
+  "SRT": "SRT",
+  "WebVTT": "WebVTT",
+  "Markdown": "Markdown",
+  "純文字": "Plain text",
+  "YouTube / 多數播放器": "YouTube / most players",
+  "網頁播放器 / HTML5": "Web players / HTML5",
+  "部落格 / 節目筆記": "Blog / show notes",
+  "只有內容": "Content only",
 };
 
 

@@ -508,6 +508,14 @@ pub struct LoudnormStats {
     pub target_offset: f64,
     pub output_i: Option<f64>,
     pub output_tp: Option<f64>,
+    /// `linear`（只套一個增益）或 `dynamic`（動態壓縮）。
+    ///
+    /// **這個欄位很重要而且一直被丟掉。** 我們送的是 `linear=true`，但那只是「請求」——
+    /// 需要的增益會讓峰值超過上限時，ffmpeg 會**自己退回 dynamic**，也就是動態壓縮。
+    /// 成品因此被壓過，動態變小、聽起來比較平。ffmpeg 只在 JSON 裡講一次，不解析就
+    /// 永遠不知道自己交出去的是壓過的檔案。
+    #[serde(default)]
+    pub normalization_type: Option<String>,
 }
 
 /// 從 ffmpeg stderr 撈 loudnorm 的 JSON 區塊。
@@ -526,6 +534,7 @@ pub fn parse_loudnorm_json(stderr: &str) -> Option<LoudnormStats> {
         target_offset: f("target_offset").unwrap_or(0.0),
         output_i: f("output_i"),
         output_tp: f("output_tp"),
+        normalization_type: v.get("normalization_type").and_then(|x| x.as_str()).map(str::to_string),
     })
 }
 
@@ -899,5 +908,17 @@ mod tests {
         let m2 = parse_loudnorm_json(&s2).unwrap();
         assert_eq!(m2.input_lra, 7.2);
         assert!(parse_loudnorm_json("nothing here").is_none());
+        // 舊版 / 沒有這個欄位的輸出不能整包解析失敗
+        assert_eq!(m.normalization_type, None);
+    }
+
+    #[test]
+    fn parses_normalization_type() {
+        // 這一欄是「ffmpeg 有沒有偷偷改用動態壓縮」唯一的證據：我們送的是 linear=true，
+        // 但需要的增益會讓峰值超過上限時，它會自己退回 dynamic 而且只在 JSON 裡講一次。
+        let s = "[Parsed_loudnorm_0 @ 0x1]\n{\n\t\"input_i\" : \"-51.00\",\n\t\"input_tp\" : \"-17.79\",\n\t\"input_lra\" : \"0.00\",\n\t\"input_thresh\" : \"-61.00\",\n\t\"output_i\" : \"-18.44\",\n\t\"output_tp\" : \"-1.50\",\n\t\"normalization_type\" : \"dynamic\",\n\t\"target_offset\" : \"2.44\"\n}\n";
+        let m = parse_loudnorm_json(s).unwrap();
+        assert_eq!(m.normalization_type.as_deref(), Some("dynamic"));
+        assert_eq!(m.output_i, Some(-18.44));
     }
 }

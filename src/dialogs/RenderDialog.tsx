@@ -165,7 +165,17 @@ export default function RenderDialog({
   };
 
   const compliance = useMemo(
-    () => (done?.ok ? checkCompliance({ outputLufs: done.output_lufs, outputTp: done.output_tp, targetLufs: target }) : null),
+    () =>
+      done?.ok
+        ? checkCompliance({
+            outputLufs: done.output_lufs,
+            outputTp: done.output_tp,
+            targetLufs: target,
+            // 我們送的是 linear=true，但那只是請求 —— ffmpeg 拉不動時會自己退回 dynamic
+            // （動態壓縮）。它只在 JSON 裡講一次，不帶進來就永遠不知道成品被壓過。
+            normalizationType: done.measured?.normalization_type ?? null,
+          })
+        : null,
     [done, target],
   );
   const miss = useMemo(

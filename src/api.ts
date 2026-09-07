@@ -231,6 +231,11 @@ export interface LoudnormStats {
   target_offset: number;
   output_i: number | null;
   output_tp: number | null;
+  /**
+   * `linear` 或 `dynamic`。我們送 linear=true 只是請求 —— 需要的增益會讓峰值超過上限時
+   * ffmpeg 會自己退回 dynamic（動態壓縮），成品的動態會被壓掉。
+   */
+  normalization_type?: string | null;
 }
 
 /** 串音衰減（ffmpeg agate 的參數；門檻由該軌自己的能量分布量出來）。 */

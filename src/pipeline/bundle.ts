@@ -96,10 +96,13 @@ export async function buildBundle(mediaId: string, opts: BundleOptions, onStep?:
   const built = buildRenderPlan(mediaId, { format: opts.audioFormat, outPath: audioPath, leveling: true, targetLufs: opts.targetLufs });
   let measuredLufs: number | null = null;
   let measuredTp: number | null = null;
+  // ffmpeg 可能自己從 linear 退回 dynamic（動態壓縮）；它只在 JSON 裡講一次
+  let normType: string | null = null;
   try {
     const r = await runRender(mediaId, { format: opts.audioFormat, outPath: audioPath, leveling: true, targetLufs: opts.targetLufs }, onProgress);
     measuredLufs = typeof r.output_lufs === "number" && Number.isFinite(r.output_lufs) ? r.output_lufs : null;
     measuredTp = typeof r.output_tp === "number" && Number.isFinite(r.output_tp) ? r.output_tp : null;
+    normType = r.measured?.normalization_type ?? null;
     written.push(audio);
   } catch (e) {
     failed.push({ fileName: audio.fileName, error: e instanceof Error ? e.message : String(e) });
@@ -172,7 +175,7 @@ export async function buildBundle(mediaId: string, opts: BundleOptions, onStep?:
       srcMs: built ? built.edl.stats.keptMs + built.edl.stats.removedMs : (media.probe?.duration_ms ?? 0),
       targetLufs: opts.targetLufs,
       measuredLufs,
-      compliance: measuredLufs == null ? null : checkCompliance({ outputLufs: measuredLufs, outputTp: measuredTp, targetLufs: opts.targetLufs }),
+      compliance: measuredLufs == null ? null : checkCompliance({ outputLufs: measuredLufs, outputTp: measuredTp, targetLufs: opts.targetLufs, normalizationType: normType }),
       miss: measuredLufs == null ? null : explainMiss({ outputLufs: measuredLufs, outputTp: measuredTp, targetLufs: opts.targetLufs }),
       chapters: chapters.map((c) => ({ outMs: c.startMs, title: c.title })),
       speakers: speakers?.list.length

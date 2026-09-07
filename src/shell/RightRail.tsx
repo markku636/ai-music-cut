@@ -1,4 +1,5 @@
-import { ChevronRight, ListChecks, ListTree, ShieldCheck, Sparkles } from "lucide-react";
+import { ChevronRight, History, ListChecks, ListTree, ShieldCheck, Sparkles } from "lucide-react";
+import HistoryPanel from "./HistoryPanel";
 import AssistantPanel from "../assistant/AssistantPanel";
 import DecisionPanel from "../decisions/DecisionPanel";
 import IndexPanel from "../decisions/IndexPanel";
@@ -56,6 +57,7 @@ export default function RightRail({
   const TABS: { id: RailTab; icon: typeof ListChecks; label: string; badge: number; tone: "warning" | "danger" | "neutral" }[] = [
     { id: "decisions", icon: ListChecks, label: t("決策"), badge: conflicts || pending, tone: conflicts ? "danger" : "warning" },
     { id: "index", icon: ListTree, label: t("索引"), badge: todoOpen, tone: "warning" },
+    { id: "history", icon: History, label: t("歷史"), badge: 0, tone: "neutral" },
     { id: "assistant", icon: Sparkles, label: t("AI 助手"), badge: 0, tone: "neutral" },
     { id: "verify", icon: ShieldCheck, label: t("驗收"), badge: verifyBadge, tone: "danger" },
   ];
@@ -85,6 +87,7 @@ export default function RightRail({
           <div className="flex-1 min-h-0 flex flex-col">
             {tab === "decisions" && <DecisionPanel mediaId={mediaId} analysisState={analysisState} onRerunRules={onRerunRules} embedded />}
             {tab === "index" && <IndexPanel mediaId={mediaId} seams={seams} candidates={candidates} decisions={decisions} effects={effects} />}
+            {tab === "history" && <HistoryPanel />}
             {tab === "assistant" && <AssistantPanel embedded />}
             {tab === "verify" && <VerifyTab mediaId={mediaId} onVerify={onVerify} />}
           </div>

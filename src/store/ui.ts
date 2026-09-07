@@ -2,7 +2,7 @@
 // 不是專案內容，不該進專案檔、也不該跟著檔案走。
 import { create } from "zustand";
 
-export type RailTab = "decisions" | "index" | "assistant" | "verify";
+export type RailTab = "decisions" | "index" | "history" | "assistant" | "verify";
 export type Density = "compact" | "normal" | "comfortable";
 
 /** 密度 → 根字級縮放。CSS 變數 --ui-scale 由 applyDensity 寫到 <html>。 */

@@ -1015,6 +1015,14 @@ const en: Catalog = {
   "外觀": "Appearance",
   "總覽": "Overview",
   "總覽：點一下跳過去，拖曳可以捲動": "Overview: click to jump, drag to scroll",
+  "還沒有任何改動": "No changes yet",
+  "剪掉一段、接受一筆候選或跑一次粗剪之後，這裡會列出每一步，點一下就跳回去。": "Cut something, accept a candidate or run a rough cut, and every step shows up here — click one to jump back to it.",
+  "{n} 步": "{n} steps",
+  "（{n} 步可重做）": "({n} can be redone)",
+  "回到最初（可以再點回來）": "Back to the start (you can come forward again)",
+  "回到最初": "Back to start",
+  "開啟時的狀態": "State when opened",
+  "歷史": "History",
 };
 
 

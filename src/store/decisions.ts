@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { effectLabel, type AudioEffect } from "../analysis/effects";
+import { stepsTo } from "../analysis/history";
 import { thresholdsFor } from "../analysis/thresholds";
 import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, markerId, splitPointId, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState, type Marker, type MarkerKind, type Opinion, type SplitPoint } from "../analysis/types";
 import { overlayId, type Overlay } from "../analysis/overlays";
@@ -16,9 +17,11 @@ interface Snapshot {
   overlays: Overlay[];
 }
 
-interface Patch {
+export interface Patch {
   label: string;
   mediaId: string;
+  /** 發生時間（epoch ms）；歷史面板顯示先後用。 */
+  at: number;
   before: Snapshot;
   after: Snapshot;
 }
@@ -109,6 +112,11 @@ interface DecisionsStore {
   setReviewing: (v: boolean) => void;
   undo: () => void;
   redo: () => void;
+  /**
+   * 直接跳到歷史上的第 n 個狀態（0 = 初始）。
+   * 內部就是連續 undo / redo —— 每一步都是完整快照，跳過去與一步一步按等價。
+   */
+  jumpTo: (index: number) => void;
   clear: (mediaId: string) => void;
   /** 專案載入：直接放入（不記 undo）。 */
   load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[], splits?: SplitPoint[], markers?: Marker[], overlays?: Overlay[]) => void;
@@ -152,7 +160,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       splits: { ...s.splits, [mediaId]: after.splits },
       markers: { ...s.markers, [mediaId]: after.markers },
       overlays: { ...s.overlays, [mediaId]: after.overlays },
-      past: record ? [...s.past.slice(-(MAX_HISTORY - 1)), { label, mediaId, before, after }] : s.past,
+      past: record ? [...s.past.slice(-(MAX_HISTORY - 1)), { label, mediaId, at: Date.now(), before, after }] : s.past,
       future: record ? [] : s.future,
     }));
     useProject.getState().markDirty();
@@ -463,6 +471,12 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         past: [...s.past, p],
       }));
       useProject.getState().markDirty();
+    },
+    jumpTo: (index) => {
+      const { past, future } = get();
+      const { undo, redo } = stepsTo(past, future, index);
+      for (let i = 0; i < undo; i++) get().undo();
+      for (let i = 0; i < redo; i++) get().redo();
     },
     load: (mediaId, candidates, decisions, effects = [], splits = [], markers = [], overlays = []) =>
       set((s) => ({

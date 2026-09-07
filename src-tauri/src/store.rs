@@ -24,6 +24,20 @@ fn default_agent_backend() -> String {
     "claude".to_string()
 }
 
+/// 使用者另存的輸出預設。內建的那幾個寫在前端，**不存這裡** ——
+/// 全部存下來的話，之後平台改了規範或我們修正內建值，舊使用者會被凍在舊版本。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportPreset {
+    pub id: String,
+    pub label: String,
+    pub format: String,
+    pub target_lufs: f32,
+    #[serde(default)]
+    pub leveling: bool,
+    #[serde(default)]
+    pub stems: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
@@ -60,6 +74,9 @@ pub struct AppSettings {
     /// 同樣只存被動過的那幾個詞，內建詞表照樣會跟著版本進步。
     #[serde(default)]
     pub filler_rules: std::collections::HashMap<String, String>,
+    /// 使用者另存的輸出預設（內建的不存）。
+    #[serde(default)]
+    pub export_presets: Vec<ExportPreset>,
 }
 
 impl Default for AppSettings {
@@ -83,6 +100,7 @@ impl Default for AppSettings {
             recent_projects: Vec::new(),
             prompt_overrides: std::collections::HashMap::new(),
             filler_rules: std::collections::HashMap::new(),
+            export_presets: Vec::new(),
         }
     }
 }

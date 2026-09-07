@@ -11,6 +11,14 @@ import { buildRenderPlan, defaultOutPath, runRender, type RenderFormat } from ".
 import { renderStems, type StemProgress } from "../pipeline/stems";
 import { useDecisions } from "../store/decisions";
 import { roleLabel, rolesInUse } from "../analysis/roles";
+import {
+  allPresets,
+  matchPreset,
+  parseUserPresets,
+  removeUserPreset,
+  saveUserPreset,
+  type ExportPreset,
+} from "../analysis/exportPresets";
 import type { Overlay } from "../analysis/overlays";
 import { useProject } from "../store/project";
 import { useVerify } from "../store/verify";
@@ -19,6 +27,11 @@ import { formatMs } from "../time";
 
 // 空陣列常數：selector 每次回傳新的 [] 會讓 zustand 每次都判定變了
 const EMPTY_OVERLAYS: Overlay[] = [];
+
+/** 前端的形狀 → 設定檔的形狀（Rust 端是 snake_case）。 */
+function toStored(p: ExportPreset) {
+  return { id: p.id, label: p.label, format: p.format, target_lufs: p.targetLufs, leveling: p.leveling, stems: p.stems };
+}
 
 export default function RenderDialog({
   mediaId,
@@ -53,6 +66,23 @@ export default function RenderDialog({
   // 沒有另一份清單要同步
   const roles = useMemo(() => rolesInUse(overlays), [overlays]);
   const [target, setTarget] = useState<number>(projTarget || settings.target_lufs || -16);
+
+  // 輸出預設集（Premiere / Audition 的 Export Presets）：每一集都要重複做的
+  // 四個決定（格式 / 響度 / 逐段平衡 / 分軌）其實只有幾種固定組合
+  const userPresets = useMemo(() => parseUserPresets(settings.export_presets), [settings.export_presets]);
+  const presets = useMemo(() => allPresets(userPresets), [userPresets]);
+  const shape = { format, targetLufs: target, leveling, stems };
+  const active = matchPreset(shape, userPresets);
+
+  const applyPreset = (id: string) => {
+    const p = presets.find((x) => x.id === id);
+    if (!p) return;
+    setFormat(p.format);
+    setTarget(p.targetLufs);
+    setLeveling(p.leveling);
+    // 沒有 overlay 時分軌本來就不生效，勾了只會讓人以為壞了
+    setStems(p.stems && hasOverlays);
+  };
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<RenderProgress | null>(null);
   const [done, setDone] = useState<RenderDone | null>(null);
@@ -164,6 +194,56 @@ export default function RenderDialog({
             )}
           </div>
         )}
+        <Field
+          label={t("輸出預設")}
+          hint={active?.note ? t(active.note) : t("平台規範是別人訂的，不是每一集要重新想的東西。")}
+        >
+          <div className="flex gap-2">
+            <Select
+              value={active?.id ?? ""}
+              disabled={busy}
+              onChange={(e) => e.target.value && applyPreset(e.target.value)}
+              className="flex-1"
+            >
+              {!active && <option value="">{t("自訂")}</option>}
+              {presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {t(p.label)}
+                </option>
+              ))}
+            </Select>
+            <Button
+              variant="ghost"
+              disabled={busy}
+              title={t("把目前的格式 / 響度 / 逐段平衡 / 分軌存成一個預設")}
+              onClick={() => {
+                const name = window.prompt(t("預設名稱"), active ? "" : t("我的預設"));
+                if (name == null) return;
+                const next = saveUserPreset(userPresets, name, shape);
+                if (next === userPresets) {
+                  toast.error(t("名稱空白或跟內建的重複"));
+                  return;
+                }
+                void useSettings.getState().save({ export_presets: next.map(toStored) });
+                toast.success(t("已存成預設「{name}」", { name: name.trim() }));
+              }}
+            >
+              {t("另存")}
+            </Button>
+            {active && !active.builtin && (
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  void useSettings.getState().save({ export_presets: removeUserPreset(userPresets, active.id).map(toStored) });
+                  toast.info(t("已刪除預設「{name}」", { name: active.label }));
+                }}
+              >
+                {t("刪除")}
+              </Button>
+            )}
+          </div>
+        </Field>
         <FormGrid>
           <Field label={t("格式")}>
             <Select value={format} onChange={(e) => setFormat(e.target.value as RenderFormat)} disabled={busy}>

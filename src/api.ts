@@ -26,6 +26,8 @@ export interface AppSettings {
   prompt_overrides: Record<string, string>;
   /** 使用者的贅字裁決（詞 -> "always" | "context" | "never"）；只存被動過的那幾個。 */
   filler_rules: Record<string, string>;
+  /** 使用者另存的輸出預設（內建的不存，見 analysis/exportPresets.ts）。 */
+  export_presets: { id: string; label: string; format: string; target_lufs: number; leveling: boolean; stems: boolean }[];
 }
 
 export interface FfmpegStatus {

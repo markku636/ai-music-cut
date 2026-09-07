@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   asr_source: "ttls",
   prompt_overrides: {},
   filler_rules: {},
+  export_presets: [],
   claude_review_model: "haiku",
   judge_roles: "editor+reviewer",
   default_aggressiveness: 50,

@@ -16,6 +16,7 @@ import * as batch from "./pipeline/batch";
 import * as lexicon from "./analysis/lexicon";
 import * as roles from "./analysis/roles";
 import * as exportPresets from "./analysis/exportPresets";
+import * as preflight from "./analysis/preflight";
 import * as roleMixLib from "./preview/roleMix";
 import { useRoleMix } from "./store/roleMix";
 import * as fillerStats from "./analysis/fillerStats";
@@ -70,6 +71,7 @@ export interface DevBridge {
   lexicon: typeof lexicon;
   roles: typeof roles;
   exportPresets: typeof exportPresets;
+  preflight: typeof preflight;
   roleMix: typeof useRoleMix;
   roleMixLib: typeof roleMixLib;
   previewGain: () => number;
@@ -145,6 +147,7 @@ export function installDevBridge() {
     lexicon,
     roles,
     exportPresets,
+    preflight,
     roleMix: useRoleMix,
     roleMixLib,
     previewGain: currentGain,

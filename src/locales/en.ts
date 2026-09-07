@@ -1057,6 +1057,19 @@ const en: Catalog = {
   "串流平台會自己正規化到 −14；逐段平衡關掉，音樂的動態要留著。": "Streaming platforms normalise to −14 themselves; levelling is off so the music keeps its dynamics.",
   "電台與電視的交件規範。用 wav 是因為交件通常不收失真壓縮。": "The delivery spec for radio and TV. wav because deliveries usually do not accept lossy files.",
   "人聲一軌、每個角色各一軌，讓影片端自己決定音樂多大聲。": "Voice in one file and each role in its own, so the video side decides how loud the music sits.",
+  "輸出前檢查": "Pre-export check",
+  "{w} 個警告 · {n} 個提醒": "{w} warnings · {n} notes",
+  "成品長度是 0": "The output would be 0 long",
+  "所有東西都被剪掉了。先還原一些決策再輸出。": "Everything has been cut. Undo some decisions before exporting.",
+  "兩個 agent 對這幾刀看法不同，所以留給你裁決。輸出的話會照剪輯那邊走。": "The two agents disagree on these cuts, so they were left to you. Exporting now follows the editor agent.",
+  "沒決定的一律**不剪**。這通常是對的，但如果你以為它們會被剪掉就不是。": "Undecided candidates are never cut. That is usually right — but not if you assumed they would be.",
+  "你自己標記的「這裡要處理」。": "The “fix this” markers you left yourself.",
+  "勾了分軌但這一集沒有配樂 / 音效": "Stems are ticked but this episode has no music or SFX",
+  "分軌會只輸出完整混音，沒有東西可以拆。": "Stem export would only produce the full mix — there is nothing to split.",
+  "整段固定音量的話，講話時音樂會一直頂著。右鍵配樂可以自動算閃避。": "At a fixed level the music pushes against the speech the whole time. Right-click the music to compute ducking.",
+  "沒有章節": "No chapters",
+  "章節會寫進 mp3 / m4a，Apple Podcasts 與 Spotify 讀得到。節目筆記可以一鍵產。": "Chapters are written into mp3 / m4a and read by Apple Podcasts and Spotify. Show notes can generate them in one click.",
+  "只是告訴你數字。粗剪剪掉三成很正常，但如果你沒預期到就值得先聽一遍。": "Just the number. Cutting 30% in a rough cut is normal — but worth a listen if you did not expect it.",
 };
 
 

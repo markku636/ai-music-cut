@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { BadgeCheck, FileMusic, FolderOpen } from "lucide-react";
+import { BadgeCheck, ClipboardCheck, FileMusic, FolderOpen } from "lucide-react";
 import { api, errMessage, type RenderDone, type RenderProgress } from "../api";
 import { KIND_LABEL, type CandidateKind } from "../analysis/types";
 import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
@@ -19,7 +19,10 @@ import {
   saveUserPreset,
   type ExportPreset,
 } from "../analysis/exportPresets";
+import { hasBlocker, preflight, summarize } from "../analysis/preflight";
 import type { Overlay } from "../analysis/overlays";
+import type { Candidate, DecisionMap, Marker } from "../analysis/types";
+import { useTranscript } from "../store/transcript";
 import { useProject } from "../store/project";
 import { useVerify } from "../store/verify";
 import { useSettings } from "../store/settings";
@@ -27,6 +30,9 @@ import { formatMs } from "../time";
 
 // 空陣列常數：selector 每次回傳新的 [] 會讓 zustand 每次都判定變了
 const EMPTY_OVERLAYS: Overlay[] = [];
+const EMPTY_DECISIONS: DecisionMap = {};
+const EMPTY_CANDIDATES: Candidate[] = [];
+const EMPTY_MARKERS: Marker[] = [];
 
 /** 前端的形狀 → 設定檔的形狀（Rust 端是 snake_case）。 */
 function toStored(p: ExportPreset) {
@@ -97,6 +103,31 @@ export default function RenderDialog({
     () => (media ? buildRenderPlan(mediaId, { format, outPath, leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null, reelBedMediaId: reelBed ?? null }) : null),
     [media, mediaId, format, outPath, leveling, target, range, reel, reelBed],
   );
+
+  // 輸出前檢查：驗收都在輸出之後，但有些問題按下輸出前就看得出來
+  const decisions = useDecisions((s2) => s2.decisions[mediaId] ?? EMPTY_DECISIONS);
+  const candidates = useDecisions((s2) => s2.candidates[mediaId] ?? EMPTY_CANDIDATES);
+  const markers = useDecisions((s2) => s2.markers[mediaId] ?? EMPTY_MARKERS);
+  const hasTranscript = useTranscript((s2) => !!s2.byMedia[mediaId]);
+  const findings = useMemo(
+    () =>
+      preflight({
+        pending: candidates.reduce((n, c) => n + ((decisions[c.id]?.state ?? "pending") === "pending" ? 1 : 0), 0),
+        conflicts: candidates.reduce((n, c) => n + (decisions[c.id]?.conflict ? 1 : 0), 0),
+        openTodos: markers.reduce((n, mk) => n + (mk.kind === "todo" && !mk.done ? 1 : 0), 0),
+        chapters: markers.reduce((n, mk) => n + (mk.kind === "chapter" ? 1 : 0), 0),
+        srcMs: built ? built.edl.stats.keptMs + built.edl.stats.removedMs : 0,
+        outMs: built?.expectedOutMs ?? 0,
+        overlays: overlays.length,
+        musicWithoutDuck: overlays.filter((o) => o.lane === "music" && !(o.points?.length ?? 0)).length,
+        stems: stems && hasOverlays,
+        hasTranscript,
+      }),
+    [candidates, decisions, markers, built, overlays, stems, hasOverlays, hasTranscript],
+  );
+  const blocked = hasBlocker(findings);
+  const counts = summarize(findings);
+
   const stats = built?.edl.stats;
   const gainRange = useMemo(() => {
     if (!built?.gains.length) return null;
@@ -192,6 +223,31 @@ export default function RenderDialog({
                 {t("響度平衡：{n} 段，增益 {a} ~ {b} dB", { n: built!.units, a: gainRange[0].toFixed(1), b: gainRange[1].toFixed(1) })}
               </div>
             )}
+          </div>
+        )}
+        {findings.length > 0 && (
+          <div className="rounded-md border border-fg/10 px-3 py-2 space-y-1.5">
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <ClipboardCheck size={12} className={blocked ? "text-danger" : counts.warnings ? "text-warning" : "text-fg/45"} />
+              <span className="text-fg/70">{t("輸出前檢查")}</span>
+              <span className="text-fg/40">
+                {t("{w} 個警告 · {n} 個提醒", { w: counts.blockers + counts.warnings, n: counts.notes })}
+              </span>
+            </div>
+            {findings.map((f) => (
+              <div key={f.id} className="flex items-start gap-1.5 text-[11px] leading-snug">
+                <span
+                  aria-hidden
+                  className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+                    f.severity === "blocker" ? "bg-danger" : f.severity === "warning" ? "bg-warning" : "bg-fg/25"
+                  }`}
+                />
+                <span className="min-w-0">
+                  <span className={f.severity === "note" ? "text-fg/60" : "text-fg/85"}>{t(f.title)}</span>
+                  {f.detail && <span className="block text-fg/40">{t(f.detail)}</span>}
+                </span>
+              </div>
+            ))}
           </div>
         )}
         <Field

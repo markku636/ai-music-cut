@@ -20,6 +20,7 @@ import {
   type ExportPreset,
 } from "../analysis/exportPresets";
 import { hasBlocker, preflight, summarize } from "../analysis/preflight";
+import { qcFor } from "../pipeline/audioQc";
 import type { Overlay } from "../analysis/overlays";
 import type { Candidate, DecisionMap, Marker } from "../analysis/types";
 import { useTranscript } from "../store/transcript";
@@ -27,6 +28,7 @@ import { useProject } from "../store/project";
 import { useVerify } from "../store/verify";
 import { useSettings } from "../store/settings";
 import { checkCompliance, explainMiss } from "../analysis/loudness/compliance";
+import { usePlayback } from "../store/playback";
 import { formatMs } from "../time";
 
 // 空陣列常數：selector 每次回傳新的 [] 會讓 zustand 每次都判定變了
@@ -108,7 +110,10 @@ export default function RenderDialog({
     [media, mediaId, format, outPath, leveling, target, range, reel, reelBed],
   );
 
+  const seek = usePlayback((st) => st.seek);
   // 輸出前檢查：驗收都在輸出之後，但有些問題按下輸出前就看得出來
+  // 聲音體檢（削波 / 音量突變 / 直流偏移 / 長空白）也在這裡一起報 —— 那些逐字稿看不出來
+  const qc = useMemo(() => qcFor(mediaId), [mediaId, built]); // eslint-disable-line react-hooks/exhaustive-deps
   const decisions = useDecisions((s2) => s2.decisions[mediaId] ?? EMPTY_DECISIONS);
   const candidates = useDecisions((s2) => s2.candidates[mediaId] ?? EMPTY_CANDIDATES);
   const markers = useDecisions((s2) => s2.markers[mediaId] ?? EMPTY_MARKERS);
@@ -126,8 +131,10 @@ export default function RenderDialog({
         musicWithoutDuck: overlays.filter((o) => o.lane === "music" && !(o.points?.length ?? 0)).length,
         stems: stems && hasOverlays,
         hasTranscript,
+        qc: qc?.summary,
+        qcAt: qc?.at,
       }),
-    [candidates, decisions, markers, built, overlays, stems, hasOverlays, hasTranscript],
+    [candidates, decisions, markers, built, overlays, stems, hasOverlays, hasTranscript, qc],
   );
   const blocked = hasBlocker(findings);
   const counts = summarize(findings);
@@ -267,6 +274,22 @@ export default function RenderDialog({
                 />
                 <span className="min-w-0">
                   <span className={f.severity === "note" ? "text-fg/60" : "text-fg/85"}>{t(f.title)}</span>
+                  {/*
+                    聲音的問題光看文字沒有用 —— 「3 處波形打到滿刻度」要能直接跳過去聽，
+                    不然使用者只能關掉對話框、自己在波形上找。
+                  */}
+                  {f.action === "listen" && f.atMs != null && (
+                    <button
+                      type="button"
+                      className="ml-1.5 mono text-[10px] text-accent hover:underline tabular-nums"
+                      onClick={() => {
+                        seek(Math.max(0, f.atMs! - 500));
+                        onClose();
+                      }}
+                    >
+                      {t("去聽 {at}", { at: formatMs(f.atMs, { millis: false }) })}
+                    </button>
+                  )}
                   {f.detail && <span className="block text-fg/40">{t(f.detail)}</span>}
                 </span>
               </div>

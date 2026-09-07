@@ -7,6 +7,7 @@ import { buildCues, renderCaptions, type CaptionFormat } from "../analysis/capti
 import { buildChapters } from "../analysis/chapters";
 import { planBundle, bundleStem, renderChapterList, renderManifest, type BundleItem } from "../analysis/bundle";
 import { hasBlocker, preflight } from "../analysis/preflight";
+import { qcFor } from "./audioQc";
 import { checkCompliance, explainMiss } from "../analysis/loudness/compliance";
 import { assignWords, speakerStats } from "../analysis/speakers";
 import { toMarkdown as notesToMarkdown } from "../analysis/shownotes";
@@ -147,6 +148,7 @@ export async function buildBundle(mediaId: string, opts: BundleOptions, onStep?:
   const decisions = d.decisions[mediaId] ?? {};
   const candidates = d.candidates[mediaId] ?? [];
   const overlays = d.overlays[mediaId] ?? [];
+  const bundleQc = qcFor(mediaId);
   const findings = preflight({
     pending: candidates.reduce((n, c) => n + ((decisions[c.id]?.state ?? "pending") === "pending" ? 1 : 0), 0),
     conflicts: candidates.reduce((n, c) => n + (decisions[c.id]?.conflict ? 1 : 0), 0),
@@ -158,6 +160,8 @@ export async function buildBundle(mediaId: string, opts: BundleOptions, onStep?:
     musicWithoutDuck: overlays.filter((o) => o.lane === "music" && !(o.points?.length ?? 0)).length,
     stems: false,
     hasTranscript: !!tr,
+    qc: bundleQc?.summary,
+    qcAt: bundleQc?.at,
   });
   // 產不出來的也算「沒帶到」，清單要看得出來
   const finalItems = items.map((i) => {

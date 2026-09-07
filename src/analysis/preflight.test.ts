@@ -135,3 +135,71 @@ describe("邊界", () => {
     expect(ids({ srcMs: 1000, outMs: 1500 })).not.toContain("cut-ratio");
   });
 });
+
+const CLEAN_QC = { clipping: 0, clippingMs: 0, levelJumps: 0, maxJumpLu: 0, dcPercent: 0, deadAir: 0, longestDeadAirMs: 0 };
+
+describe("聲音體檢（逐字稿看不出來的）", () => {
+  it("沒有本機分析 → 一條都不報（「沒檢查」不等於「很乾淨」）", () => {
+    expect(ids({ qc: undefined })).toEqual([]);
+  });
+
+  it("掃過而且很乾淨 → 也是一條都不報", () => {
+    expect(ids({ qc: CLEAN_QC })).toEqual([]);
+  });
+
+  it("削波是警告，不是提醒", () => {
+    const f = preflight(ctx({ qc: { ...CLEAN_QC, clipping: 3, clippingMs: 240 } }));
+    const clip = f.find((x) => x.id === "qc-clipping")!;
+    expect(clip.severity).toBe("warning");
+    expect(clip.title).toContain("3");
+    expect(clip.title).toContain("240");
+  });
+
+  it("音量突變會帶上最大幅度", () => {
+    const f = preflight(ctx({ qc: { ...CLEAN_QC, levelJumps: 2, maxJumpLu: 11.53 } }));
+    const jump = f.find((x) => x.id === "qc-jump")!;
+    expect(jump.severity).toBe("warning");
+    expect(jump.title).toContain("11.5");
+  });
+
+  it("直流偏移只是提醒（聽不出來，但值得知道）", () => {
+    const f = preflight(ctx({ qc: { ...CLEAN_QC, dcPercent: -4.2 } }));
+    const dc = f.find((x) => x.id === "qc-dc")!;
+    expect(dc.severity).toBe("note");
+    // 負偏移也要顯示成正的百分比（方向對使用者沒有意義）
+    expect(dc.title).toContain("4.2");
+  });
+
+  it("長空白是提醒，帶上最長那一段的秒數", () => {
+    const f = preflight(ctx({ qc: { ...CLEAN_QC, deadAir: 2, longestDeadAirMs: 6400 } }));
+    const dead = f.find((x) => x.id === "qc-dead-air")!;
+    expect(dead.severity).toBe("note");
+    expect(dead.title).toContain("6.4");
+  });
+
+  it("聲音的問題要能點過去聽", () => {
+    const f = preflight(ctx({
+      qc: { ...CLEAN_QC, clipping: 1, clippingMs: 40, levelJumps: 1, maxJumpLu: 9, deadAir: 1, longestDeadAirMs: 5000 },
+      qcAt: { clipping: 12_000, levelJump: 34_000, deadAir: 56_000 },
+    }));
+    expect(f.find((x) => x.id === "qc-clipping")!.atMs).toBe(12_000);
+    expect(f.find((x) => x.id === "qc-jump")!.atMs).toBe(34_000);
+    expect(f.find((x) => x.id === "qc-dead-air")!.atMs).toBe(56_000);
+    for (const id of ["qc-clipping", "qc-jump", "qc-dead-air"]) {
+      expect(f.find((x) => x.id === id)!.action).toBe("listen");
+    }
+  });
+
+  it("聲音的毛病不會擋住輸出（剪的人常常就是要先輸出來聽）", () => {
+    const f = preflight(ctx({ qc: { ...CLEAN_QC, clipping: 99, clippingMs: 99_000 } }));
+    expect(hasBlocker(f)).toBe(false);
+  });
+
+  it("警告排在提醒前面", () => {
+    const f = preflight(ctx({
+      qc: { ...CLEAN_QC, clipping: 1, clippingMs: 40, dcPercent: 5, deadAir: 1, longestDeadAirMs: 5000 },
+    }));
+    const sev = f.map((x) => x.severity);
+    expect(sev.indexOf("warning")).toBeLessThan(sev.indexOf("note"));
+  });
+});

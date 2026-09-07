@@ -1235,6 +1235,11 @@ const en: Catalog = {
   "設成永不剪": "Never cut it",
   "略過": "Skip",
   "還有 {n} 個建議": "{n} more suggestions",
+  "前級或錄音介面開太大時會這樣，聽起來是破音。修聲救不回來，通常要請對方重錄那一段或接受它。": "Usually a preamp or interface driven too hot; it sounds like distortion. Cleanup cannot undo it — you normally re-record that part or live with it.",
+  "麥克風被撞到、有人換了位置，或某一段被單獨調過。輸出的響度正規化是整集一個增益，救不了段落之間的落差。": "A bumped mic, someone shifting position, or a section that was adjusted on its own. Loudness normalisation applies one gain to the whole episode, so it cannot fix differences between sections.",
+  "波形的中線不在零。聽不出來，但會吃掉動態餘裕、讓剪接點容易爆音。修聲的高通濾波（去隆隆聲）順便會把它處理掉。": "The waveform is not centred on zero. You cannot hear it, but it eats headroom and makes edit points pop. The cleanup high-pass (rumble removal) takes care of it.",
+  "剪完之後還留著的無聲段落。有時候是刻意的停頓，有時候是漏剪。": "Silent stretches still present after the cut. Sometimes a deliberate pause, sometimes something you missed.",
+  "去聽 {at}": "Listen at {at}",
 };
 
 

@@ -26,6 +26,7 @@ import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutpu
 import { analyzeMicSync, combineMics } from "../pipeline/syncMics";
 import type { EffectKind } from "../analysis/effects";
 import { edlFor, runRulesFor } from "../pipeline/rules";
+import { qcFor } from "../pipeline/audioQc";
 import { useTimeline } from "../store/timeline";
 import { addEffectOnSelection } from "../timeline/selectionActions";
 import { bladeAt, liftSelection, seamsOfEdl, setSeamPause, trimSeam } from "../timeline/trimActions";
@@ -873,6 +874,7 @@ export const TOOLS: ToolSpec[] = [
       const markers = m.d.markers[m.media.id] ?? [];
       const overlays = m.d.overlays[m.media.id] ?? [];
       const hasTranscript = !!useTranscript.getState().byMedia[m.media.id];
+      const qc = qcFor(m.media.id);
       const findings = preflight({
         pending: candidates.reduce((n, c) => n + ((decisions[c.id]?.state ?? "pending") === "pending" ? 1 : 0), 0),
         conflicts: candidates.reduce((n, c) => n + (decisions[c.id]?.conflict ? 1 : 0), 0),
@@ -884,11 +886,15 @@ export const TOOLS: ToolSpec[] = [
         musicWithoutDuck: overlays.filter((o) => o.lane === "music" && !(o.points?.length ?? 0)).length,
         stems: false,
         hasTranscript,
+        qc: qc?.summary,
+        qcAt: qc?.at,
       });
       return {
         ready: !hasBlocker(findings),
         counts: summarize(findings),
-        findings: findings.map((f) => ({ severity: f.severity, title: f.title, detail: f.detail, action: f.action })),
+        findings: findings.map((f) => ({ severity: f.severity, title: f.title, detail: f.detail, action: f.action, atMs: f.atMs })),
+        // null = **沒檢查**（這一集還沒做本機分析），不是「檢查過很乾淨」
+        audioQc: qc ? { ...qc.summary, spots: qc.findings.map((f) => ({ kind: f.kind, atMs: f.startMs, value: f.value })) } : null,
       };
     },
   },

@@ -5,6 +5,7 @@ import { useT } from "../i18n";
 import { usePlayback } from "../store/playback";
 import { useTimeline, type TimelineTool } from "../store/timeline";
 import { formatMs } from "../time";
+import LoudnessMeter from "./LoudnessMeter";
 import RoleMixMenu from "./RoleMixMenu";
 import SnapMenu from "./SnapMenu";
 import { nextShuttle, shuttleLabel, SHUTTLE_STOPPED } from "./shuttle";
@@ -105,6 +106,7 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
       />
       <SnapMenu hasGrid={!!beatGrid} />
       <RoleMixMenu />
+      <LoudnessMeter />
       <IconButton
         icon={Ear}
         label={skim ? t("滑過就聽得到（開，Shift+S）") : t("滑過波形就聽得到（Shift+S）")}

@@ -1087,6 +1087,10 @@ const en: Catalog = {
   "順便加進領域詞，下一次辨識器就認得了": "Added to domain words too — the recogniser will know it next time",
   "修正這個字…": "Correct this word…",
   "整份都改掉（{n} 處）…": "Change all ({n} places)…",
+  "接近目標": "Near target",
+  "偏小聲": "Quiet",
+  "偏大聲": "Loud",
+  "來源響度（短期 3 秒 / 瞬間 400 毫秒）。目標 {tgt} LUFS。這是監看不是驗收 —— 成品還會經過逐段平衡與響度正規化。": "Source loudness (short-term 3 s / momentary 400 ms). Target {tgt} LUFS. This is monitoring, not verification — the export still goes through per-segment levelling and loudness normalisation.",
 };
 
 

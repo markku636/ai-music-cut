@@ -52,6 +52,14 @@ export interface HotkeyHandlers {
   selectAll?: () => void;
   /** Ctrl+F：在逐字稿裡找字（找到之後可以整集一次剪掉）。 */
   findText?: () => void;
+  /** Ctrl+X：把選取剪下到剪貼簿。 */
+  cutToClipboard?: () => void;
+  /** Ctrl+C：複製選取（不動剪輯）。 */
+  copyToClipboard?: () => void;
+  /** Ctrl+V：貼到播放線。 */
+  pasteAtPlayhead?: () => void;
+  /** Ctrl+Shift+V：把選取搬到播放線（剪下 + 貼上）。 */
+  moveToPlayhead?: () => void;
 }
 
 /** 中文輸入法開著時 keydown 的 key 是 "Process"，改由實體鍵 code 推回字元，讓字母快捷鍵照常運作。 */
@@ -140,6 +148,19 @@ export function installHotkeys(h: HotkeyHandlers): () => void {
         case "f":
           e.preventDefault();
           h.findText?.();
+          return;
+        case "x":
+          e.preventDefault();
+          h.cutToClipboard?.();
+          return;
+        case "c":
+          e.preventDefault();
+          h.copyToClipboard?.();
+          return;
+        case "v":
+          e.preventDefault();
+          if (e.shiftKey) h.moveToPlayhead?.();
+          else h.pasteAtPlayhead?.();
           return;
         default:
           return;

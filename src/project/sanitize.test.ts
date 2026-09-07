@@ -3,18 +3,9 @@
 // 每一條都對應一種「進了 store 才會發作、而且發作的地方離原因很遠」的資料：
 // NaN 的時間會讓 EDL 算出 NaN、非陣列會讓 .filter 當場丟例外、指不到候選的決策會讓
 // 「還有幾筆待決」永遠算不對。
+import { MIN_PASTE_MS } from "../analysis/edl/arrange";
 import { describe, expect, it } from "vitest";
-import {
-  emptyReport,
-  sanitizeCandidates,
-  sanitizeCleanup,
-  sanitizeDecisions,
-  sanitizeEffects,
-  sanitizeMarkers,
-  sanitizeOverlays,
-  sanitizeSpeakers,
-  sanitizeSplits,
-} from "./sanitize";
+import { emptyReport, sanitizeCandidates, sanitizeCleanup, sanitizeDecisions, sanitizeEffects, sanitizeMarkers, sanitizeOverlays, sanitizePastes, sanitizeSpeakers, sanitizeSplits } from "./sanitize";
 
 const cand = (id: string, s: number, e: number) => ({ id, kind: "filler", startMs: s, endMs: e, wordIds: [1], reason: "", score: 0.9, source: "rule", sentenceId: 0 });
 
@@ -193,5 +184,41 @@ describe("報告", () => {
     sanitizeSplits([{ id: "s", ms: "x" }], r);
     expect(r.dropped).toEqual({ candidates: 1, splits: 1 });
     expect(r.total).toBe(2);
+  });
+});
+
+describe("sanitizePastes", () => {
+  const rep = emptyReport;
+
+  it("正常的貼上留下來", () => {
+    const r = rep();
+    const out = sanitizePastes([{ id: "p1", srcStartMs: 1000, srcEndMs: 2000, atMs: 500 }], r);
+    expect(out).toEqual([{ id: "p1", srcStartMs: 1000, srcEndMs: 2000, atMs: 500 }]);
+  });
+
+  it("不是陣列就當空的", () => {
+    expect(sanitizePastes(null, rep())).toEqual([]);
+    expect(sanitizePastes("x", rep())).toEqual([]);
+  });
+
+  it("壞掉的那幾筆丟掉，其餘照留", () => {
+    const r = rep();
+    const out = sanitizePastes(
+      [
+        { id: "ok", srcStartMs: 1000, srcEndMs: 2000, atMs: 0 },
+        { srcStartMs: 1, srcEndMs: 2, atMs: 0 }, // 沒有 id
+        { id: "nan", srcStartMs: "abc", srcEndMs: 2000, atMs: 0 },
+        { id: "neg", srcStartMs: -5, srcEndMs: 2000, atMs: 0 },
+        { id: "negAt", srcStartMs: 0, srcEndMs: 2000, atMs: -1 },
+        { id: "backwards", srcStartMs: 2000, srcEndMs: 1000, atMs: 0 },
+      ],
+      r,
+    );
+    expect(out.map((x) => x.id)).toEqual(["ok"]);
+  });
+
+  it("太短的丟掉（長度為負或幾乎為零的區間會讓剪接器讀不到）", () => {
+    expect(sanitizePastes([{ id: "tiny", srcStartMs: 100, srcEndMs: 100 + MIN_PASTE_MS - 1, atMs: 0 }], rep())).toEqual([]);
+    expect(sanitizePastes([{ id: "ok", srcStartMs: 100, srcEndMs: 100 + MIN_PASTE_MS, atMs: 0 }], rep())).toHaveLength(1);
   });
 });

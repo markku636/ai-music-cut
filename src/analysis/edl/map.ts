@@ -6,6 +6,15 @@
 // 依據是 EDL 的 keeps 已經帶了 outStartMs / outEndMs（R3 之後那是含接點帳的真值），
 // 所以這裡只做查表與線性內插，不再自己算一次長度。
 import type { Edl, Join, KeepSegment } from "./build";
+import { srcToOutArranged, type ArrangedKeep } from "./arrange";
+
+/** keeps 有沒有離開「依來源時間遞增」的排列（貼上 / 搬移會打破它）。 */
+export function isRearrangedKeeps(keeps: readonly KeepSegment[]): boolean {
+  for (let i = 1; i < keeps.length; i++) {
+    if (keeps[i].srcStartMs < keeps[i - 1].srcStartMs) return true;
+  }
+  return (keeps as readonly ArrangedKeep[]).some((k) => k.pasteId != null);
+}
 
 /** 落在剪除區時要往哪邊靠。 */
 export type SnapDirection = "next" | "prev";
@@ -16,6 +25,12 @@ export type SnapDirection = "next" | "prev";
  */
 export function mapSrcToOut(keeps: KeepSegment[], srcMs: number, snap: SnapDirection = "next"): number {
   if (!keeps.length) return 0;
+  // 重排過的 EDL（有貼上 / 搬移）不能用下面這條「依來源順序掃、回第一個命中」的捷徑 ——
+  // 它會安靜地回錯的位置，而字幕、章節、節目筆記全都吃這一支。
+  //
+  // 在這裡分流而不是改每一個呼叫端的簽章：呼叫端有十幾處，漏掉一處就是一個
+  // 「錯得很安靜」的 bug，而且測試不一定抓得到。沒有重排時走原本的路徑，逐位元相同。
+  if (isRearrangedKeeps(keeps)) return srcToOutArranged(keeps, srcMs, snap);
   if (srcMs <= keeps[0].srcStartMs) return keeps[0].outStartMs;
   const last = keeps[keeps.length - 1];
   if (srcMs >= last.srcEndMs) return last.outEndMs;

@@ -1267,6 +1267,20 @@ const en: Catalog = {
   "試聽這一次": "Audition this take",
   "建議": "Suggested",
   "留這次": "Keep this",
+  "先在波形上拖一段": "Drag a range on the waveform first",
+  "已剪下（Ctrl+V 貼到播放線）": "Cut (Ctrl+V pastes it at the playhead)",
+  "已複製（Ctrl+V 貼到播放線）": "Copied (Ctrl+V pastes it at the playhead)",
+  "剪貼簿是空的": "The clipboard is empty",
+  "貼不上去（剪貼簿是別的音檔，或那一段太短）": "Cannot paste: the clipboard holds a different file, or the range is too short",
+  "已貼上": "Pasted",
+  "搬不過去（沒有選取，或播放線就在選取範圍裡）": "Cannot move: nothing is selected, or the playhead is inside the selection",
+  "已搬移": "Moved",
+  "貼上": "Paste",
+  "移除貼上": "Remove paste",
+  "剪下選取（放進剪貼簿並剪掉）": "Cut the selection (to the clipboard, and remove it)",
+  "複製選取（不動剪輯）": "Copy the selection (edits untouched)",
+  "貼到播放線": "Paste at the playhead",
+  "把選取搬到播放線（剪下 + 貼上）": "Move the selection to the playhead (cut + paste)",
 };
 
 

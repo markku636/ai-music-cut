@@ -1179,6 +1179,23 @@ const en: Catalog = {
   "狀態": "Status",
   "共 {n} 段 · 成品合計 {ms}": "{n} parts · {ms} of output in total",
   "依章節分割輸出（一次錄多集）": "Split export by chapters (several episodes in one recording)",
+  // ---- 發布包 ----
+  "{n} 個檔案產生失敗，詳情看清單": "{n} file(s) failed to generate — see the manifest",
+  "發布包完成：{n} 個檔案": "Bundle done: {n} files",
+  "發布包": "Publish bundle",
+  "還沒有開啟音檔": "No audio file open yet",
+  "先開啟一個音檔。": "Open an audio file first.",
+  "一次把上架要用的東西產齊，用同一個名字放進同一個資料夾：音檔、字幕、逐字稿、節目筆記、章節清單，外加一份說明這一包有什麼、少了什麼、能不能上架的清單。": "Produce everything you need to publish in one go, under one name in one folder: audio, captions, transcript, show notes and a chapter list, plus a manifest saying what the bundle contains, what is missing and whether it is ready to publish.",
+  "檔名前綴": "File name prefix",
+  "音檔": "Audio",
+  "字幕": "Captions",
+  "有 {n} 項這一集還沒有，會照樣產出其他的，並且寫進清單裡（不會安靜地少檔案）。": "{n} item(s) do not exist for this episode. The rest is produced anyway and the gaps are written into the manifest, so nothing goes missing quietly.",
+  "寫出 {w} 個檔案": "{w} files written",
+  "略過 {s} 個": "{s} skipped",
+  "輸出後量到 {l} LUFS": "measured {l} LUFS after export",
+  "交付前檢查有擋下項目，看清單": "pre-delivery check has blockers — see the manifest",
+  "產生失敗：{e}": "failed to generate: {e}",
+  "發布包（音檔＋字幕＋筆記＋章節）": "Publish bundle (audio + captions + notes + chapters)",
 };
 
 

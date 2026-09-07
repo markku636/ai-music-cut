@@ -48,3 +48,21 @@ describe("previewGain", () => {
     expect(el.volume).toBeCloseTo(0.5, 6);
   });
 });
+
+describe("每個來源都要進乘積", () => {
+  it("新增的來源真的會影響音量（漏掉的話值存進去卻沒作用）", () => {
+    __resetGains();
+    setGainSource("roles", 0);
+    expect(currentGain()).toBe(0);
+    releaseGainSource("roles");
+    expect(currentGain()).toBe(1);
+  });
+
+  it("所有來源相乘", () => {
+    __resetGains();
+    setGainSource("effect", 0.5);
+    setGainSource("roles", 0.5);
+    expect(currentGain()).toBeCloseTo(0.25);
+    __resetGains();
+  });
+});

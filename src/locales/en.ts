@@ -1032,6 +1032,13 @@ const en: Catalog = {
   "片尾曲": "Outro",
   "廣告口播": "Ad read",
   "環境音": "Ambience",
+  "角色監聽：{s}": "Role monitoring: {s}",
+  "角色監聽（獨奏 / 靜音，只影響試聽）": "Role monitoring (solo / mute — affects listening only)",
+  "角色監聽": "Role monitoring",
+  "獨奏": "Solo",
+  "只影響試聽，輸出不受影響。": "Listening only — the export is unaffected.",
+  "全部恢復": "Reset all",
+  "全部靜音": "Everything muted",
 };
 
 

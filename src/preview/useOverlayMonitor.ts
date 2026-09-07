@@ -10,14 +10,32 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Edl } from "../analysis/edl/build";
 import { mapSrcToOut } from "../analysis/edl/map";
 import type { Overlay } from "../analysis/overlays";
+import { rolesInUse } from "../analysis/roles";
 import { usePlayback } from "../store/playback";
 import { useProject } from "../store/project";
+import { useRoleMix } from "../store/roleMix";
+import { mainGainFactor } from "./roleMix";
+import { releaseGainSource, setGainSource } from "./previewGain";
 import { setOverlaySrcResolver, stopAllOverlays, tickOverlays } from "./overlayMonitor";
 import { getPlayer } from "./playerRef";
 import { subscribeTick, TICK_PRIORITY } from "./ticker";
 
 export function useOverlayMonitor(overlays: Overlay[], edl: Edl | null) {
   const playing = usePlayback((s) => s.playing);
+  const mix = useRoleMix((s) => s.mix);
+
+  // 角色被刪光時清掉殘留的獨奏 —— 不然畫面上什麼都沒獨奏卻整個安靜
+  useEffect(() => {
+    useRoleMix.getState().prune(rolesInUse(overlays));
+  }, [overlays]);
+
+  // 主聲軌的靜音走共用的增益層，跟效果 / A-B 比較同一條路
+  useEffect(() => {
+    const f = mainGainFactor(mix);
+    if (f === 1) releaseGainSource("roles");
+    else setGainSource("roles", f);
+    return () => releaseGainSource("roles");
+  }, [mix]);
 
   useEffect(() => {
     setOverlaySrcResolver((mediaId) => {
@@ -39,7 +57,7 @@ export function useOverlayMonitor(overlays: Overlay[], edl: Edl | null) {
       if (!el) return;
       const srcMs = el.currentTime * 1000;
       const outMs = keeps.length ? mapSrcToOut(keeps, srcMs) : srcMs;
-      tickOverlays(overlays, { outMs, playing: !el.paused, rate: el.playbackRate || 1 });
+      tickOverlays(overlays, { outMs, playing: !el.paused, rate: el.playbackRate || 1, mix: useRoleMix.getState().mix });
     }, TICK_PRIORITY.effects + 1);
     return () => {
       un();

@@ -1,10 +1,13 @@
-// `<audio>.volume` 只有一個，但有三個東西想控制它：效果預聽（靜音 / 淡入淡出）、
-// 範圍播放的收尾斜坡、之後的 A-B 切換等功率淡接。以前各寫各的、互相蓋掉 ——
+// `<audio>.volume` 只有一個，但有好幾個東西想控制它：效果預聽（靜音 / 淡入淡出）、
+// 範圍播放的收尾斜坡、A-B 切換的等功率淡接、角色監聽的靜音。以前各寫各的、互相蓋掉 ——
 // 淡出到一半切走，音量就永遠停在 0.3。這裡讓每個來源各自登記係數，最終音量取乘積。
+//
+// **新增來源時要同時改 `currentGain()` 的乘積**：只加進 GainSource 與 gains 是不夠的，
+// 值會存進去卻永遠不影響音量（角色監聽第一版就是這樣，靜音按了沒反應）。
 
-export type GainSource = "effect" | "range" | "ab";
+export type GainSource = "effect" | "range" | "ab" | "roles";
 
-const gains: Record<GainSource, number> = { effect: 1, range: 1, ab: 1 };
+const gains: Record<GainSource, number> = { effect: 1, range: 1, ab: 1, roles: 1 };
 let target: HTMLAudioElement | null = null;
 let applied = -1;
 
@@ -12,9 +15,10 @@ function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
-/** 三個來源相乘後的最終音量。 */
+/** 所有來源相乘後的最終音量。 */
 export function currentGain(): number {
-  return clamp01(gains.effect * gains.range * gains.ab);
+  // Object.values 而不是列舉欄位：漏掉一個來源不會有型別錯誤，只會安靜地沒作用
+  return clamp01(Object.values(gains).reduce((a, b) => a * b, 1));
 }
 
 function apply() {
@@ -51,5 +55,6 @@ export function __resetGains() {
   gains.effect = 1;
   gains.range = 1;
   gains.ab = 1;
+  gains.roles = 1;
   applied = -1;
 }

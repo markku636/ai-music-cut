@@ -12,6 +12,8 @@
 // 3. **這是監聽，不是成品。** 兩個 `<audio>` 不可能對到樣本；成品的精準混音在
 //    Rust 那一趟（mix.rs）。這裡對到幾十毫秒就夠判斷「音樂進得太早 / 壓得不夠」。
 import { envelopeGain, type Overlay } from "../analysis/overlays";
+import { overlayRole } from "../analysis/roles";
+import { EMPTY_MIX, isAudible, type RoleMix } from "./roleMix";
 
 /** 偏移超過這麼多才校正。太小會一直 seek（卡頓），太大聽起來會鬆。 */
 const DRIFT_MS = 90;
@@ -64,6 +66,8 @@ export interface MonitorState {
   playing: boolean;
   /** 主聲軌的播放速率（轉盤 / 變速時要跟著）。 */
   rate: number;
+  /** 角色的獨奏 / 靜音（只影響監聽，不影響輸出）。 */
+  mix?: RoleMix;
 }
 
 /**
@@ -84,7 +88,10 @@ export function tickOverlays(overlays: Overlay[], st: MonitorState): number {
     const v = ensureVoice(o);
     if (!v) continue;
 
-    const gain = rel < 0 ? 0 : envelopeGain(o, rel, len);
+    // 被靜音 / 沒被獨奏的角色直接壓成 0；片段本身照樣對時，
+    // 這樣切回來的當下就是對的位置，不會要等下一次校正
+    const roleOn = isAudible(overlayRole(o), st.mix ?? EMPTY_MIX);
+    const gain = rel < 0 || !roleOn ? 0 : envelopeGain(o, rel, len);
     v.el.volume = Math.min(1, Math.max(0, gain));
     if (gain > 0.0005) audible++;
 

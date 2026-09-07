@@ -1148,6 +1148,13 @@ const en: Catalog = {
   "網頁播放器 / HTML5": "Web players / HTML5",
   "部落格 / 節目筆記": "Blog / show notes",
   "只有內容": "Content only",
+  // ---- 依講者篩選 ----
+  "這個講者沒有贅字候選": "No filler candidates for this speaker",
+  "換一個講者，或按「全部人」看整集。": "Pick another speaker, or choose Everyone to see the whole episode.",
+  "只看": "Show only",
+  "全部人": "Everyone",
+  "整群操作只會動到這個人的那幾筆": "Bulk actions only touch this speaker's instances",
+  "（只是換一個看法，沒有動到剪輯）": "(just a different view — nothing is edited)",
 };
 
 

@@ -5,6 +5,7 @@
 // 「然後」四百次、「就是」兩百次、「對」一百次。以詞為單位一次決定一整群，
 // 才是這件事真正的操作粒度。
 import { fillerRuleFor, isBuiltinFiller, type FillerMode } from "./lexicon";
+import { dominantSpeaker, type SpeakerTurn } from "./speakers";
 import { isActiveState, type Candidate, type DecisionMap, type Word } from "./types";
 
 export interface FillerGroup {
@@ -42,14 +43,35 @@ function textOf(c: Candidate, words: Word[]): { norm: string; text: string } {
   };
 }
 
+export interface GroupFillersOptions {
+  /** 講者段落（有講者標籤時）。 */
+  turns?: SpeakerTurn[];
+  /**
+   * 只算這個講者的贅字。null / undefined = 全部人。
+   *
+   * 「來賓的口頭禪剪掉、主持人的留著」是真實需求 —— 主持人的「對」多半是在
+   * 給回饋（剪掉會讓對話變得冷淡），來賓的「就是」才是要清的。
+   */
+  only?: string | null;
+}
+
 /**
  * 依詞歸類贅字候選，次數多的排前面。
  * 只收 kind==="filler" 的；口吃、停頓那些有自己的規則，混在一起管會誤導。
  */
-export function groupFillers(candidates: Candidate[], decisions: DecisionMap, words: Word[]): FillerGroup[] {
+export function groupFillers(
+  candidates: Candidate[],
+  decisions: DecisionMap,
+  words: Word[],
+  opts: GroupFillersOptions = {},
+): FillerGroup[] {
   const by = new Map<string, FillerGroup>();
+  const turns = opts.turns ?? [];
   for (const c of candidates) {
     if (c.kind !== "filler") continue;
+    // 判不出講者的候選（兩個人同時講）在篩選時排除 —— 那些不確定是誰的，
+    // 不該因為「篩了主持人」就被整群剪掉
+    if (opts.only && dominantSpeaker(turns, c.startMs, c.endMs) !== opts.only) continue;
     const { norm, text } = textOf(c, words);
     if (!norm) continue;
     let g = by.get(norm);

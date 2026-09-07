@@ -109,3 +109,34 @@ describe("顯示用文字", () => {
     expect(g[0].text).toBe("so,ok");
   });
 });
+
+describe("groupFillers：依講者篩選", () => {
+  // 主持人講 0–1000，來賓講 1500–2500
+  const turns = [
+    { startMs: 0, endMs: 1000, speakerId: "host" },
+    { startMs: 1500, endMs: 2500, speakerId: "guest" },
+  ];
+  const cands = [cand("a", [0], 0, 300), cand("c", [2], 900, 1200), cand("d", [3], 2000, 2400)];
+
+  it("只算指定講者的那幾筆", () => {
+    const g = groupFillers(cands, {}, words, { turns, only: "guest" });
+    expect(g).toHaveLength(1);
+    expect(g[0].ids).toEqual(["d"]);
+  });
+
+  it("跨在換人邊界上的候選歸給重疊最久的那個人", () => {
+    // "c" 是 900–1200：主持人段落佔 100ms、來賓段落佔 0 → 算主持人
+    expect(groupFillers(cands, {}, words, { turns, only: "host" }).flatMap((g) => g.ids).sort()).toEqual(["a", "c"]);
+  });
+
+  it("判不出講者的候選在篩選時排除（不確定是誰的不該被整群剪掉）", () => {
+    const orphan = [cand("z", [4], 5000, 5400)];
+    expect(groupFillers(orphan, {}, words, { turns, only: "host" })).toEqual([]);
+  });
+
+  it("only 沒給就是全部人（跟沒有講者標籤時一樣）", () => {
+    const all = groupFillers(cands, {}, words, { turns });
+    expect(all.flatMap((g) => g.ids).sort()).toEqual(["a", "c", "d"]);
+    expect(all).toEqual(groupFillers(cands, {}, words));
+  });
+});

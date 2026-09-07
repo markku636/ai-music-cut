@@ -28,6 +28,8 @@ export interface TranscriptEditorProps {
   /** 句子 id → 講者 id（沒有講者標籤時不傳）。 */
   sentenceSpeaker?: Map<number, string>;
   speakers?: Speaker[];
+  /** 只顯示這個講者說的句子（null = 全部）。 */
+  onlySpeaker?: string | null;
 }
 
 /**
@@ -47,6 +49,7 @@ export default function TranscriptEditor({
   activeHitWordIds,
   sentenceSpeaker,
   speakers,
+  onlySpeaker = null,
 }: TranscriptEditorProps) {
   const currentMs = usePlayback((s) => s.currentMs);
   const follow = usePlayback((s) => s.followMode !== "off");
@@ -116,9 +119,16 @@ export default function TranscriptEditor({
   }, [sentenceSpeaker, transcript]);
 
   if (!transcript) return null;
+
+  // 「只看主持人講的話」：留著的句子時間戳還是原本的，點下去仍然跳到那句話在音檔裡的
+  // 位置 —— 篩選只影響看得到什麼，**不影響剪輯**（不會因為篩掉就變成剪掉）。
+  const rows = onlySpeaker && sentenceSpeaker ? transcript.sentences.filter((s) => sentenceSpeaker.get(s.id) === onlySpeaker) : transcript.sentences;
   return (
     <div ref={listRef} className="flex-1 min-h-0 overflow-auto px-4 py-3 text-[15px] leading-7 select-none">
-      {transcript.sentences.map((s) => (
+      {onlySpeaker && rows.length === 0 && (
+        <div className="px-2 py-6 text-center text-[12px] text-fg/40">{"—"}</div>
+      )}
+      {rows.map((s) => (
         <SentenceRow
           key={s.id}
           sentence={s}

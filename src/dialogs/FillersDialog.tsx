@@ -3,6 +3,7 @@ import { MessageSquareOff, Plus, RotateCw, Trash2 } from "lucide-react";
 import { fillerTotals, groupFillers, type FillerGroup } from "../analysis/fillerStats";
 import { EN_PURE_FILLERS, EN_SOFT_FILLERS, ZH_PURE_FILLERS, ZH_SOFT_FILLERS, type FillerMode } from "../analysis/lexicon";
 import { normText } from "../analysis/normalize";
+import { speakerColor } from "../analysis/speakers";
 import { runRulesFor } from "../pipeline/rules";
 import { Button, EmptyState, Input, Modal, Select } from "../ui/index";
 import { toast } from "../ui";
@@ -49,16 +50,20 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
   const decisions = useDecisions((s) => (mediaId ? s.decisions[mediaId] : undefined));
   const decide = useDecisions((s) => s.decide);
   const words = useTranscript((s) => (mediaId ? s.byMedia[mediaId]?.words : undefined));
+  const speakers = useDecisions((s) => (mediaId ? s.speakers[mediaId] : undefined));
   const [tab, setTab] = useState<"episode" | "lexicon">("episode");
   const [draft, setDraft] = useState("");
   const [draftMode, setDraftMode] = useState<FillerMode>("always");
   const [showBuiltin, setShowBuiltin] = useState(false);
+  // 只處理某個講者的贅字。主持人的「對」多半是在給回饋（剪掉會讓對話變冷淡），
+  // 來賓的「就是」才是要清的 —— 這兩件事不該用同一個決定。
+  const [onlySpeaker, setOnlySpeaker] = useState<string | null>(null);
   // 詞表一改，畫面上的統計就跟候選對不上了 —— 標出來並給一顆重跑
   const [stale, setStale] = useState(false);
 
   const groups = useMemo(
-    () => (candidates && words ? groupFillers(candidates, decisions ?? {}, words) : []),
-    [candidates, decisions, words],
+    () => (candidates && words ? groupFillers(candidates, decisions ?? {}, words, { turns: speakers?.turns, only: onlySpeaker }) : []),
+    [candidates, decisions, words, speakers, onlySpeaker],
   );
   const totals = useMemo(() => fillerTotals(groups), [groups]);
 
@@ -142,11 +147,47 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
           </div>
         )}
 
+        {/*
+          講者篩選列放在**空狀態外面**：篩到一個沒有贅字的人時，如果連篩選列也跟著
+          消失，使用者就被困在空畫面裡回不去「全部人」了。
+        */}
+        {tab === "episode" && mediaId && words && (speakers?.list.length ?? 0) > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-fg/45">{t("只看")}</span>
+            <button
+              type="button"
+              onClick={() => setOnlySpeaker(null)}
+              className={`rounded-full border px-2 py-0.5 text-[11px] ${onlySpeaker === null ? "border-accent bg-accent/12 text-accent" : "border-fg/15 text-fg/55 hover:bg-fg/5"}`}
+            >
+              {t("全部人")}
+            </button>
+            {speakers?.list.map((sp) => {
+              const on = onlySpeaker === sp.id;
+              return (
+                <button
+                  key={sp.id}
+                  type="button"
+                  onClick={() => setOnlySpeaker(on ? null : sp.id)}
+                  className={`rounded-full border px-2 py-0.5 text-[11px] ${on ? "" : "border-fg/15 text-fg/55 hover:bg-fg/5"}`}
+                  style={on ? { borderColor: speakerColor(sp.colorIndex), color: speakerColor(sp.colorIndex), background: `${speakerColor(sp.colorIndex)}1f` } : undefined}
+                >
+                  {sp.label}
+                </button>
+              );
+            })}
+            {onlySpeaker && <span className="text-[11px] text-fg/35">{t("整群操作只會動到這個人的那幾筆")}</span>}
+          </div>
+        )}
+
         {tab === "episode" ? (
           !mediaId || !words ? (
             <EmptyState icon={MessageSquareOff} title={t("還沒有逐字稿")} hint={t("先分析一個音檔，這裡才會列出贅字統計。")} />
           ) : groups.length === 0 ? (
-            <EmptyState icon={MessageSquareOff} title={t("這一集沒有贅字候選")} hint={t("可以到「我的詞表」加自己的口頭禪，再重跑規則。")} />
+            <EmptyState
+              icon={MessageSquareOff}
+              title={onlySpeaker ? t("這個講者沒有贅字候選") : t("這一集沒有贅字候選")}
+              hint={onlySpeaker ? t("換一個講者，或按「全部人」看整集。") : t("可以到「我的詞表」加自己的口頭禪，再重跑規則。")}
+            />
           ) : (
             <>
               <div className="rounded-md border border-fg/10 px-3 py-2 text-[11px] text-fg/60 leading-relaxed">

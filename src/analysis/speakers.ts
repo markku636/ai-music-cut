@@ -277,6 +277,33 @@ export function speakerStats(turns: SpeakerTurn[], list: Speaker[]): SpeakerStat
 }
 
 /**
+ * 一段時間主要是誰在講：跟這個範圍**重疊最久**的那個人。
+ *
+ * 給的是「一段」而不是「一個時間點」，因為要問這個問題的東西幾乎都是範圍 ——
+ * 一個贅字候選、一段選取、一句話。用起點判斷的話，剛好跨在換人邊界上的候選
+ * 會被判給前一個人，而那正是最需要判對的位置。
+ */
+export function dominantSpeaker(turns: SpeakerTurn[], startMs: number, endMs: number): string | null {
+  if (endMs <= startMs) return speakerAtMs(turns, startMs);
+  const by = new Map<string, number>();
+  for (const t of turns) {
+    if (t.endMs <= startMs) continue;
+    if (t.startMs >= endMs) break;
+    const ov = Math.min(endMs, t.endMs) - Math.max(startMs, t.startMs);
+    if (ov > 0) by.set(t.speakerId, (by.get(t.speakerId) ?? 0) + ov);
+  }
+  let best: string | null = null;
+  let bestMs = 0;
+  for (const [id, ms] of by) {
+    if (ms > bestMs) {
+      bestMs = ms;
+      best = id;
+    }
+  }
+  return best;
+}
+
+/**
  * 手動把一段時間指派給某個人（單軌素材唯一的路，也是自動指派錯掉時的補救）。
  *
  * 做法是**先在既有段落上挖掉這個範圍**再放進去，不是疊上去 —— 段落重疊的話

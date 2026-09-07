@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assignRange,
   assignWords,
+  dominantSpeaker,
   attributeTurns,
   DEFAULT_ATTRIBUTE,
   micFramesDb,
@@ -237,6 +238,35 @@ describe("sentenceSpeakers", () => {
 
   it("整句都沒有講者就不給", () => {
     expect(sentenceSpeakers(sentences, words, new Map()).size).toBe(0);
+  });
+});
+
+describe("dominantSpeaker", () => {
+  const turns: SpeakerTurn[] = [
+    { startMs: 0, endMs: 1000, speakerId: "a" },
+    { startMs: 1000, endMs: 5000, speakerId: "b" },
+  ];
+
+  it("取重疊最久的那個人，不是起點落在哪一段", () => {
+    // 900–2000：a 只佔 100ms，b 佔 1000ms
+    expect(dominantSpeaker(turns, 900, 2000)).toBe("b");
+  });
+
+  it("完全落在一段內就是那個人", () => {
+    expect(dominantSpeaker(turns, 200, 300)).toBe("a");
+  });
+
+  it("零長度的範圍退回單點查詢", () => {
+    expect(dominantSpeaker(turns, 500, 500)).toBe("a");
+    expect(dominantSpeaker(turns, 8000, 8000)).toBeNull();
+  });
+
+  it("完全沒有覆蓋到就回 null（不要硬塞一個人）", () => {
+    expect(dominantSpeaker(turns, 6000, 7000)).toBeNull();
+  });
+
+  it("沒有段落時回 null", () => {
+    expect(dominantSpeaker([], 0, 1000)).toBeNull();
   });
 });
 

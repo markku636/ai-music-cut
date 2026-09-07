@@ -25,7 +25,7 @@ import PrecisionTrim from "../preview/PrecisionTrim";
 import { useSkipPlayback } from "../preview/useSkipPlayback";
 import { useShuttle } from "../preview/useShuttle";
 import { useOverlayMonitor } from "../preview/useOverlayMonitor";
-import { assignWords, sentenceSpeakers, type SpeakerState } from "../analysis/speakers";
+import { assignWords, sentenceSpeakers, speakerColor, type SpeakerState } from "../analysis/speakers";
 import { useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
 import { selectActiveMedia, useProject } from "../store/project";
@@ -82,6 +82,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   const aggressiveness = useProject((s) => s.aggressiveness);
   const select = useDecisions((s) => s.select);
   const removeCandidate = useDecisions((s) => s.removeCandidate);
+  const [onlySpeaker, setOnlySpeaker] = useState<string | null>(null);
   const [menu, setMenu] = useState<WaveMenuInfo | null>(null);
   const [styleFor, setStyleFor] = useState<{ startMs: number; endMs: number } | null>(null);
   const reviewing = useDecisions((s) => s.reviewing);
@@ -496,6 +497,33 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
           {transcript && searchOpen && mediaId && (
             <TranscriptSearch mediaId={mediaId} transcript={transcript} onHits={onSearchHits} onClose={() => setSearchOpen(false)} />
           )}
+          {transcript && speakers.list.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-fg/8 px-4 py-1.5">
+              <span className="text-[11px] text-fg/40">{t("只看")}</span>
+              <button
+                type="button"
+                onClick={() => setOnlySpeaker(null)}
+                className={`rounded-full border px-2 py-0.5 text-[11px] ${onlySpeaker === null ? "border-accent bg-accent/12 text-accent" : "border-fg/15 text-fg/50 hover:bg-fg/5"}`}
+              >
+                {t("全部人")}
+              </button>
+              {speakers.list.map((sp) => {
+                const on = onlySpeaker === sp.id;
+                return (
+                  <button
+                    key={sp.id}
+                    type="button"
+                    onClick={() => setOnlySpeaker(on ? null : sp.id)}
+                    className={`rounded-full border px-2 py-0.5 text-[11px] ${on ? "" : "border-fg/15 text-fg/50 hover:bg-fg/5"}`}
+                    style={on ? { borderColor: speakerColor(sp.colorIndex), color: speakerColor(sp.colorIndex), background: `${speakerColor(sp.colorIndex)}1f` } : undefined}
+                  >
+                    {sp.label}
+                  </button>
+                );
+              })}
+              {onlySpeaker && <span className="text-[11px] text-fg/35">{t("（只是換一個看法，沒有動到剪輯）")}</span>}
+            </div>
+          )}
           {transcript ? (
             <TranscriptEditor
               onWordMenu={(id, x, y) => setWordMenu({ id, x, y })}
@@ -527,6 +555,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
               activeHitWordIds={activeHitWordIds}
               sentenceSpeaker={sentenceSpeaker}
               speakers={speakers.list}
+              onlySpeaker={onlySpeaker}
             />
           ) : (
             <TranscriptPlaceholder mediaId={mediaId} onAnalyze={onAnalyze} onOpenSettings={onOpenSettings} />

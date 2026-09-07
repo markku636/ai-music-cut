@@ -232,7 +232,25 @@
    實測：成品 8000 ms 的章節 → 來源 12254 ms（正確落在 5–9 秒的剪除區之後）→ 換回來還是 8000 ms，
    寫進檔案的那一份也一致。
 
-6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
+6. **EDL**（`analysis/edl/build.ts`）：字邊界 pad → 貼低能量點 → 合併 → 單句剪除比守門 → 補集為保留段 → 刀片切點 → **貼上排列**（`edl/arrange.ts`）→ 呼吸回填 / room tone gap → src↔out 映射（剪後時鐘、跳播）。
+
+   > **v0.97 打破了一個維持很久的不變式，這件事值得單獨記一段。**
+   >
+   > 在此之前 `keeps` 是「剪除區間的補集」，因此天生保證三件事：依 `srcStartMs` 遞增、彼此不重疊、
+   > 每一段來源最多出現一次。整個下游（接點、輸出時間帳、字幕、章節、跳播、驗收）都直接或間接靠著它。
+   >
+   > 剪下貼上與搬移把這三件事全部打破：keeps 現在是**成品順序**，來源起點可能忽大忽小（搬移），
+   > 同一段來源可能出現兩次（複製），而 `keeps[i].srcStartMs` 與 `keeps[i-1].srcEndMs` 之間**沒有任何關係**。
+   >
+   > 撐得住的部分是刻意確認過的：`RenderSeg` 本來就只是一串照順序接起來的來源區間（Rust 完全不用改），
+   > 而步驟 7 的接點與輸出時間帳是照**陣列順序**累加的，並沒有假設來源順序。
+   >
+   > 撐不住的是查表：`mapSrcToOut` 原本依來源順序掃、回第一個命中。所以它現在會先用 `isRearrangedKeeps`
+   > 偵測重排，改走 `arrange.ts` 的 `srcToOutArranged`（規則：一段來源出現兩次時回**成品裡最早**的那一次）。
+   > 在單一入口分流而不是改十幾個呼叫端的簽章 —— 漏掉一處就是一個不會報錯的 bug：
+   > 字幕整份慢慢飄掉、章節跳到不對的地方。
+   >
+   > **之後動到 keeps 的人請先問一句：這段程式碼有沒有假設來源順序？**
 7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
 7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。
 7. **去人聲**（`pipeline/separate.ts` → `ttls::separate`）：上傳原檔到 `/v1/separate`（demucs htdemucs，同步、各軌 base64）→ 寫 `<來源>_vocals` / `_accompaniment` → 加入媒體清單。

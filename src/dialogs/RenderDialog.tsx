@@ -26,6 +26,7 @@ import { useTranscript } from "../store/transcript";
 import { useProject } from "../store/project";
 import { useVerify } from "../store/verify";
 import { useSettings } from "../store/settings";
+import { checkCompliance, explainMiss } from "../analysis/loudness/compliance";
 import { formatMs } from "../time";
 
 // 空陣列常數：selector 每次回傳新的 [] 會讓 zustand 每次都判定變了
@@ -162,6 +163,15 @@ export default function RenderDialog({
       setStemStep(null);
     }
   };
+
+  const compliance = useMemo(
+    () => (done?.ok ? checkCompliance({ outputLufs: done.output_lufs, outputTp: done.output_tp, targetLufs: target }) : null),
+    [done, target],
+  );
+  const miss = useMemo(
+    () => (done?.ok ? explainMiss({ outputLufs: done.output_lufs, outputTp: done.output_tp, targetLufs: target }) : null),
+    [done, target],
+  );
 
   const STAGE: Record<RenderProgress["stage"], string> = { cut: t("剪接"), measure: t("量測響度"), encode: t("響度正規化 + 編碼") };
 
@@ -387,6 +397,32 @@ export default function RenderDialog({
                   s: (done.elapsed_ms / 1000).toFixed(1),
                 })
               : done.error}
+          </div>
+        )}
+        {/*
+          輸出完成之後**要講清楚有沒有打到目標**。原本只印一個數字，差了 1.3 LU 也
+          長得跟達標一模一樣 —— 而最常見的沒打到又不是 bug，是來源太小聲、峰值太尖，
+          被真實峰值上限擋住。不解釋的話使用者只會去改一個改不動的設定。
+        */}
+        {done?.ok && compliance && (
+          <div
+            className={`rounded-md border p-3 text-[11px] leading-relaxed ${
+              compliance.level === "ok" ? "border-success/30 text-success/90" : compliance.level === "warn" ? "border-warning/30 text-warning/90" : "border-danger/40 text-danger"
+            }`}
+          >
+            <div className="font-medium">{t(compliance.summary)}</div>
+            <ul className="mt-1 space-y-0.5 text-fg/55">
+              {compliance.checks.map((c) => (
+                <li key={c.label}>
+                  {c.level === "ok" ? "・" : c.level === "warn" ? "！" : "×"} {t(c.label)}：{c.detail}
+                </li>
+              ))}
+            </ul>
+            {miss && (
+              <div className="mt-1.5 text-fg/70">
+                <b>{t(miss.title)}</b>　{t(miss.detail)}
+              </div>
+            )}
           </div>
         )}
       </div>

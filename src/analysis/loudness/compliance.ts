@@ -73,3 +73,56 @@ export function checkCompliance(i: ComplianceInput): ComplianceReport {
         : `未達標：${checks.filter((c) => c.level === "fail").map((c) => c.label).join("、")}`;
   return { level, checks, summary };
 }
+
+/** 沒打到目標時，真正的原因。 */
+export type MissCause = "headroom" | "too_loud" | "quiet" | null;
+
+export interface MissExplanation {
+  cause: MissCause;
+  /** 差了幾 LU（負數＝偏小聲）。 */
+  deltaLu: number;
+  title: string;
+  detail: string;
+}
+
+/** 峰值離上限這麼近就算「被上限擋住了」。 */
+const AT_CEILING_DB = 0.3;
+
+/**
+ * 為什麼沒打到目標。
+ *
+ * 這件事一定要講出來，因為**最常見的原因不是 bug，是物理限制**：來源很小聲但峰值很尖
+ * 的時候，要拉到目標響度就會超過真實峰值上限，loudnorm 只好少拉一點。這時候顯示
+ * 「−17.3 LUFS」而不解釋，使用者會以為工具壞了，然後去改一個改不動的設定。
+ *
+ * 分得出來的依據：**輸出偏小聲、而且峰值就貼在上限上** → 是上限擋住的，不是沒拉。
+ */
+export function explainMiss(i: ComplianceInput): MissExplanation | null {
+  if (i.outputLufs == null) return null;
+  const ceiling = i.truePeakDbtp ?? -1.5;
+  const delta = i.outputLufs - i.targetLufs;
+  if (Math.abs(delta) <= LUFS_OK) return null;
+
+  if (delta < 0 && i.outputTp != null && i.outputTp >= ceiling - AT_CEILING_DB) {
+    return {
+      cause: "headroom",
+      deltaLu: delta,
+      title: "被真實峰值上限擋住了，不是沒拉上去",
+      detail: `再往上拉就會超過 ${ceiling} dBTP（目前 ${i.outputTp.toFixed(1)}）。這通常代表來源整體很小聲但有幾個很尖的峰 —— 下次錄音時把輸入增益調高、離麥近一點會比在後製硬拉好。也可以先修聲把突發雜音壓掉，峰值降下來就拉得動了。`,
+    };
+  }
+  if (delta > 0) {
+    return {
+      cause: "too_loud",
+      deltaLu: delta,
+      title: "比目標大聲",
+      detail: `平台會自動調降，聽感上不會更大聲，但動態會被壓掉一些。檢查一下配樂是不是太大聲。`,
+    };
+  }
+  return {
+    cause: "quiet",
+    deltaLu: delta,
+    title: "比目標小聲",
+    detail: `峰值還有空間（${i.outputTp == null ? "沒量到" : `${i.outputTp.toFixed(1)} dBTP，上限 ${ceiling}`}），所以不是上限擋住的。可能是這一集大部分時間都很安靜，或逐段平衡被關掉了。`,
+  };
+}

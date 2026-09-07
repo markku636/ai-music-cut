@@ -1196,6 +1196,11 @@ const en: Catalog = {
   "交付前檢查有擋下項目，看清單": "pre-delivery check has blockers — see the manifest",
   "產生失敗：{e}": "failed to generate: {e}",
   "發布包（音檔＋字幕＋筆記＋章節）": "Publish bundle (audio + captions + notes + chapters)",
+  // ---- 響度驗收 ----
+  "被真實峰值上限擋住了，不是沒拉上去": "Held back by the true-peak ceiling, not by a failure to raise it",
+  "比目標大聲": "Louder than target",
+  "比目標小聲": "Quieter than target",
+  "沒量到": "not measured",
 };
 
 

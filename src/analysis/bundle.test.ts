@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { bundleStem, includedItems, planBundle, renderChapterList, renderManifest } from "./bundle";
 import type { PreflightFinding } from "./preflight";
+import { checkCompliance, explainMiss } from "./loudness/compliance";
 
 const BASE = {
   mediaName: "ep12.wav",
@@ -141,5 +142,46 @@ describe("renderChapterList", () => {
 
   it("沒有章節時回空字串而不是一行 0:00", () => {
     expect(renderChapterList([])).toBe("\n");
+  });
+});
+
+describe("renderManifest：響度驗收", () => {
+  const base = {
+    stem: "ep12",
+    mediaName: "ep12.wav",
+    items: planBundle(BASE),
+    outMs: 1_845_000,
+    srcMs: 2_100_000,
+    targetLufs: -16,
+    chapters: [],
+    speakers: [],
+    findings: [] as PreflightFinding[],
+    generatedAt: new Date("2026-09-07T03:00:00Z"),
+  };
+
+  it("達標時寫「都達標」", () => {
+    const md = renderManifest({
+      ...base,
+      measuredLufs: -16.1,
+      compliance: checkCompliance({ outputLufs: -16.1, outputTp: -1.6, targetLufs: -16 }),
+      miss: explainMiss({ outputLufs: -16.1, outputTp: -1.6, targetLufs: -16 }),
+    });
+    expect(md).toContain("## 響度驗收");
+    expect(md).toContain("都達標");
+  });
+
+  it("**沒打到目標時把原因寫進去**（只留一個數字，三個月後看不出那是不是問題）", () => {
+    const md = renderManifest({
+      ...base,
+      measuredLufs: -17.3,
+      compliance: checkCompliance({ outputLufs: -17.3, outputTp: -1.5, targetLufs: -16 }),
+      miss: explainMiss({ outputLufs: -17.3, outputTp: -1.5, targetLufs: -16 }),
+    });
+    expect(md).toContain("被真實峰值上限擋住了");
+    expect(md).toContain("-17.3 LUFS");
+  });
+
+  it("沒量到響度時整段不出現（不要留一個空標題）", () => {
+    expect(renderManifest({ ...base, measuredLufs: null, compliance: null, miss: null })).not.toContain("## 響度驗收");
   });
 });

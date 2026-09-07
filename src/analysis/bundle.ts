@@ -9,6 +9,7 @@
 // 但一定要寫在清單上，不能安靜地少一個檔案。
 
 import type { PreflightFinding } from "./preflight";
+import type { ComplianceReport, MissExplanation } from "./loudness/compliance";
 import { CAPTION_EXT, type CaptionFormat } from "./captions";
 import { safeFileName } from "./splitExport";
 
@@ -88,6 +89,10 @@ export interface ManifestInput {
   targetLufs: number;
   /** 輸出後量到的整體響度；沒有就 null。 */
   measuredLufs?: number | null;
+  /** 輸出後的合規判定；沒輸出成功就 null。 */
+  compliance?: ComplianceReport | null;
+  /** 沒打到目標時的原因。 */
+  miss?: MissExplanation | null;
   chapters: { outMs: number; title: string }[];
   speakers: { label: string; share: number }[];
   findings: PreflightFinding[];
@@ -137,6 +142,15 @@ export function renderManifest(i: ManifestInput): string {
   if (i.chapters.length) {
     L.push("## 章節", "");
     for (const c of i.chapters) L.push(`- \`${hhmmss(c.outMs)}\`　${c.title}`);
+    L.push("");
+  }
+
+  if (i.compliance) {
+    L.push("## 響度驗收", "");
+    L.push(`- ${i.compliance.summary}`);
+    for (const c of i.compliance.checks) L.push(`- ${c.label}：${c.detail}`);
+    // 沒打到目標時，原因寫下來 —— 只留一個數字，三個月後看不出那是不是問題
+    if (i.miss) L.push("", `**${i.miss.title}**　${i.miss.detail}`);
     L.push("");
   }
 

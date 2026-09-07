@@ -7,6 +7,7 @@ import { buildCues, renderCaptions, type CaptionFormat } from "../analysis/capti
 import { buildChapters } from "../analysis/chapters";
 import { planBundle, bundleStem, renderChapterList, renderManifest, type BundleItem } from "../analysis/bundle";
 import { hasBlocker, preflight } from "../analysis/preflight";
+import { checkCompliance, explainMiss } from "../analysis/loudness/compliance";
 import { assignWords, speakerStats } from "../analysis/speakers";
 import { toMarkdown as notesToMarkdown } from "../analysis/shownotes";
 import { api } from "../api";
@@ -94,9 +95,11 @@ export async function buildBundle(mediaId: string, opts: BundleOptions, onStep?:
   const audioPath = join(opts.dir, audio.fileName);
   const built = buildRenderPlan(mediaId, { format: opts.audioFormat, outPath: audioPath, leveling: true, targetLufs: opts.targetLufs });
   let measuredLufs: number | null = null;
+  let measuredTp: number | null = null;
   try {
     const r = await runRender(mediaId, { format: opts.audioFormat, outPath: audioPath, leveling: true, targetLufs: opts.targetLufs }, onProgress);
     measuredLufs = typeof r.output_lufs === "number" && Number.isFinite(r.output_lufs) ? r.output_lufs : null;
+    measuredTp = typeof r.output_tp === "number" && Number.isFinite(r.output_tp) ? r.output_tp : null;
     written.push(audio);
   } catch (e) {
     failed.push({ fileName: audio.fileName, error: e instanceof Error ? e.message : String(e) });
@@ -169,6 +172,8 @@ export async function buildBundle(mediaId: string, opts: BundleOptions, onStep?:
       srcMs: built ? built.edl.stats.keptMs + built.edl.stats.removedMs : (media.probe?.duration_ms ?? 0),
       targetLufs: opts.targetLufs,
       measuredLufs,
+      compliance: measuredLufs == null ? null : checkCompliance({ outputLufs: measuredLufs, outputTp: measuredTp, targetLufs: opts.targetLufs }),
+      miss: measuredLufs == null ? null : explainMiss({ outputLufs: measuredLufs, outputTp: measuredTp, targetLufs: opts.targetLufs }),
       chapters: chapters.map((c) => ({ outMs: c.startMs, title: c.title })),
       speakers: speakers?.list.length
         ? speakerStats(speakers.turns, speakers.list).map((s) => ({

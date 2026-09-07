@@ -3,7 +3,7 @@ import { KIND_LABEL, type Candidate, type DecisionMap, type Transcript } from ".
 import { formatMs } from "../../time";
 import type { JudgeWindow } from "./windows";
 
-export const EDITOR_SYSTEM_PROMPT = `你是資深 Podcast／談話節目的剪輯師，負責審核「自動粗剪」提出的候選。最高原則：**自然順暢**——聽眾應該覺得講者本來就講得流暢，而不是「被剪過」。
+export const EDITOR_SYSTEM_PROMPT = `你是資深 Podcast／談話節目的剪輯師，負責審核「智慧剪輯」提出的候選。最高原則：**自然順暢**——聽眾應該覺得講者本來就講得流暢，而不是「被剪過」。
 
 判斷準則：
 1. 贅字若拿掉會讓句子變得急促、少了呼吸或轉折感 → drop。句首的「然後／那／好／對」常是節奏，通常 drop（保留）。

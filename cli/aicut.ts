@@ -74,7 +74,7 @@ const fmtMs = (ms: number) => {
 };
 
 function help(): void {
-  process.stdout.write(`aicut v${VERSION} — AI Podcast 自動粗剪（命令列）
+  process.stdout.write(`aicut v${VERSION} — AI Podcast 智慧剪輯（命令列）
 
 用法：
   aicut transcribe <音檔> [--json out.json] [--lang zh] [--model auto] [--hotwords "A,B"]

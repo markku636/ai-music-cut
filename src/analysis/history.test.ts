@@ -12,8 +12,8 @@ describe("historyRows", () => {
   });
 
   it("past 依序排在後面，最後一筆是目前狀態", () => {
-    const rows = historyRows([step("剪除字"), step("接受"), step("一鍵粗剪")], []);
-    expect(rows.map((r) => r.label)).toEqual(["", "剪除字", "接受", "一鍵粗剪"]);
+    const rows = historyRows([step("剪除字"), step("接受"), step("一鍵智慧剪輯")], []);
+    expect(rows.map((r) => r.label)).toEqual(["", "剪除字", "接受", "一鍵智慧剪輯"]);
     expect(rows.find((r) => r.current)!.index).toBe(3);
   });
 

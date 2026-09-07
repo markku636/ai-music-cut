@@ -65,7 +65,7 @@ export default function Toolbar(p: ToolbarProps) {
     { icon: <Icon icon={FolderOpen} size={20} />, label: t("開啟音檔"), onClick: p.onOpen, disabled: false, hint: t("Ctrl+O") },
     { icon: <Icon icon={WandSparkles} size={20} />, label: t("分析"), onClick: p.onAnalyze, disabled: !p.canAnalyze, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={FileMusic} size={20} />, label: t("輸出"), onClick: p.onRender, disabled: !p.canRender, hint: t("先開啟一個音檔") },
-    { icon: <Icon icon={Zap} size={20} />, label: t("一鍵粗剪"), onClick: p.onAutoCut, disabled: !p.canAutoCut, hint: t("先開啟一個音檔") },
+    { icon: <Icon icon={Zap} size={20} />, label: t("一鍵智慧剪輯"), onClick: p.onAutoCut, disabled: !p.canAutoCut, hint: t("先開啟一個音檔") },
     { icon: <Icon icon={Save} size={20} />, label: t("儲存專案"), onClick: p.onSave, disabled: false, badge: p.dirty, hint: t("Ctrl+S") },
   ];
   const aiTools: (Tool | { group: string })[] = [

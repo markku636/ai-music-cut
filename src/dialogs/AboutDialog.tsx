@@ -74,7 +74,7 @@ export default function AboutDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
         <p className="text-sm text-fg/60 mt-1 leading-relaxed">
-          {t("AI Podcast 粗剪：剪贅字與口吃（以自然順暢為原則）、修聲、音量平衡、章節與節目筆記；含糊段落只給建議由你決定。")}
+          {t("AI Podcast 智慧剪輯：剪贅字與口吃（以自然順暢為原則）、修聲、音量平衡、章節與節目筆記；含糊段落只給建議由你決定。")}
         </p>
 
         <div className="mt-3 flex flex-col items-center gap-2 min-h-[52px]">

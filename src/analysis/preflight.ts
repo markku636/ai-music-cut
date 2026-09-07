@@ -196,7 +196,7 @@ export function preflight(ctx: PreflightContext): PreflightFinding[] {
       id: "cut-ratio",
       severity: "note",
       title: `剪掉了 ${Math.round(ratio * 100)}%`,
-      detail: "只是告訴你數字。粗剪剪掉三成很正常，但如果你沒預期到就值得先聽一遍。",
+      detail: "只是告訴你數字。智慧剪輯剪掉三成很正常，但如果你沒預期到就值得先聽一遍。",
       action: "review",
     });
   }

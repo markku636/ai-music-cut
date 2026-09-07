@@ -39,7 +39,7 @@ describe("planForMedia", () => {
     expect(a.skipNote).toBeUndefined();
   });
 
-  it("順序固定：分析 → 粗剪 → 判讀 → 輸出", () => {
+  it("順序固定：分析 → 智慧剪輯 → 判讀 → 輸出", () => {
     const p = planForMedia(all, { hasTranscript: false, forceTranscribe: false });
     expect(p.map((x) => x.key)).toEqual(["analyze", "autoCut", "judge", "render"]);
   });

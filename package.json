@@ -1,10 +1,10 @@
 {
   "name": "ai-music-cut",
   "private": true,
-  "version": "0.93.0",
+  "version": "0.94.0",
   "type": "module",
   "license": "MIT",
-  "description": "AI podcast rough-cut desktop tool — filler/stutter removal, loudness leveling, AI review suggestions",
+  "description": "Smart podcast editing desktop tool — filler/stutter removal, loudness leveling, AI review suggestions",
   "scripts": {
     "dev": "vite",
     "build": "tsc && eslint src && vite build",

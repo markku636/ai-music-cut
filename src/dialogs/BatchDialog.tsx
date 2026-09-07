@@ -30,7 +30,7 @@ import { useTranscript } from "../store/transcript";
 
 const STEP_ROWS: { key: BatchStepKey; label: string; hint: string }[] = [
   { key: "analyze", label: "分析（轉寫 + 規則）", hint: "已經有逐字稿的會自動跳過 —— 這是整條路上最慢也最花錢的一步" },
-  { key: "autoCut", label: "一鍵粗剪", hint: "只做規則層有把握的部分；含糊、離題、重講一律留著問人" },
+  { key: "autoCut", label: "一鍵智慧剪輯", hint: "只做規則層有把握的部分；含糊、離題、重講一律留著問人" },
   { key: "judge", label: "AI 判讀（剪輯＋審核）", hint: "慢，而且每一集都要花模型的錢。預設關。" },
   { key: "render", label: "輸出成品", hint: "檔名是「原檔名_cut」，放在設定的輸出資料夾或來源旁邊" },
 ];

@@ -9,7 +9,7 @@ import { AutoCutCancelled, runAutoCut, type AutoCutProgress } from "../pipeline/
 import { useTranscript } from "../store/transcript";
 
 /**
- * 一鍵粗剪。
+ * 一鍵智慧剪輯。
  *
  * 刻意**不做成黑盒子**：跑之前列出會做哪幾件事（可以逐項關掉），
  * 跑完列出每一步各省了多少，而且每一步都是獨立的 undo 單位。
@@ -56,7 +56,7 @@ export default function AutoCutDialog({ mediaId, onClose }: { mediaId: string; o
     <Modal
       open
       onClose={busy ? () => {} : onClose}
-      title={t("一鍵粗剪")}
+      title={t("一鍵智慧剪輯")}
       icon={Zap}
       size="md"
       footer={

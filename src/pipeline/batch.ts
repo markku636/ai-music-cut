@@ -27,7 +27,7 @@ import { useTranscript } from "../store/transcript";
 export interface BatchSteps {
   /** 轉寫 + 規則層。已經分析過的會跳過（除非 forceTranscribe）。 */
   analyze: boolean;
-  /** 一鍵粗剪。 */
+  /** 一鍵智慧剪輯。 */
   autoCut: boolean;
   /** AI 判讀（慢、要錢）—— 預設關。 */
   judge: boolean;
@@ -240,7 +240,7 @@ export async function runBatch(mediaIds: string[], opts: BatchOptions = {}): Pro
         }
       }
 
-      // 沒跑粗剪但跑了輸出時，長度資訊還是要有 —— 報告上「省了多少」是使用者唯一在意的數字
+      // 沒跑智慧剪輯但跑了輸出時，長度資訊還是要有 —— 報告上「省了多少」是使用者唯一在意的數字
       if (!item.srcMs) {
         const edl = edlFor(mediaId);
         // EdlStats 沒有 srcMs（它只記剪掉多少、留下多少），來源長度要從 keeps + removed 湊

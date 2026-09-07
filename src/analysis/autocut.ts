@@ -2,7 +2,7 @@ import type { CandidateKind, Transcript } from "./types";
 import { fillerCandidates, findText, totalMs, type TextHit } from "./textSearch";
 
 /**
- * 一鍵粗剪要做哪些事 —— **判斷的部分**（純函式，這裡是唯一會出錯的地方）。
+ * 一鍵智慧剪輯要做哪些事 —— **判斷的部分**（純函式，這裡是唯一會出錯的地方）。
  * 真正去做的流程在 `pipeline/autocut.ts`。
  *
  * 實測一集 57 分鐘的真實 podcast（10730 字、1651 個候選）：
@@ -12,7 +12,7 @@ import { fillerCandidates, findText, totalMs, type TextHit } from "./textSearch"
  *
  * 但**真正的時間都花在別的地方**：那一集有 1445 筆候選是「待決」的，
  * 其中 1011 筆是 unclear（低信心字）。一筆一筆審完要好幾個小時，
- * 遠遠超過剪掉的 6 分鐘。所以一鍵粗剪的價值不只是「剪得快」，
+ * 遠遠超過剪掉的 6 分鐘。所以一鍵智慧剪輯的價值不只是「剪得快」，
  * 是**讓人不用面對那 1445 筆**：能自動決定的自動決定，剩下的才問人。
  */
 

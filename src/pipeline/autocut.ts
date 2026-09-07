@@ -21,7 +21,7 @@ import { generateShowNotes } from "./shownotes";
 import { ensureLocalAnalysis } from "./waveform";
 
 /**
- * 一鍵粗剪：把「開檔之後每次都要做一遍」的那幾件事串起來。
+ * 一鍵智慧剪輯：把「開檔之後每次都要做一遍」的那幾件事串起來。
  *
  * 這不是要取代人的判斷 —— 它只做**規則層有把握**的部分，
  * unclear / 離題 / 重講那些一律留著問人（`SUGGEST_ONLY_KINDS`）。
@@ -93,14 +93,14 @@ export async function runAutoCut(mediaId: string, opts: AutoCutOptions = {}): Pr
     check();
   }
   const tr = useTranscript.getState().byMedia[mediaId] ?? null;
-  if (!tr) throw new Error(t("沒有逐字稿，無法自動粗剪"));
+  if (!tr) throw new Error(t("沒有逐字稿，無法進行智慧剪輯"));
   report.lines.push(t("逐字稿 {n} 字").replace("{n}", String(tr.words.length)));
 
   // 3) 規則層（沒有候選才跑；已經有就沿用，不要蓋掉使用者已經做過的決定）
   const d = () => useDecisions.getState();
   if (!(d().candidates[mediaId] ?? []).length) {
     say(0.35, t("找出可以剪的段落…"));
-    const n = runRulesFor(mediaId, { label: t("一鍵粗剪：規則層"), record: true });
+    const n = runRulesFor(mediaId, { label: t("一鍵智慧剪輯：規則層"), record: true });
     report.lines.push(t("規則層提出 {n} 個候選").replace("{n}", String(n)));
     check();
   }
@@ -109,7 +109,7 @@ export async function runAutoCut(mediaId: string, opts: AutoCutOptions = {}): Pr
   if (steps.reliable) {
     say(0.45, t("接受有把握的剪點…"));
     await step(t("接受有把握的剪點"), () => {
-      const n = d().bulk(mediaId, (c) => RELIABLE_KINDS.includes(c.kind), "accepted", t("一鍵粗剪：接受可靠類別"));
+      const n = d().bulk(mediaId, (c) => RELIABLE_KINDS.includes(c.kind), "accepted", t("一鍵智慧剪輯：接受可靠類別"));
       report.acceptedCount = n;
       report.lines.push(t("自動接受 {n} 個贅字 / 口吃 / 長停頓 / 重講").replace("{n}", String(n)));
     });
@@ -126,7 +126,7 @@ export async function runAutoCut(mediaId: string, opts: AutoCutOptions = {}): Pr
         d().addManualCuts(
           mediaId,
           item.hits.map((h) => ({ startMs: h.startMs, endMs: h.endMs, wordIds: h.wordIds, sentenceId: h.sentenceId })),
-          t("一鍵粗剪：口頭禪「{q}」").replace("{q}", item.query),
+          t("一鍵智慧剪輯：口頭禪「{q}」").replace("{q}", item.query),
           t("剪掉「{q}」×{n}").replace("{q}", item.query).replace("{n}", String(item.hits.length)),
         );
         cut += item.hits.length;

@@ -512,8 +512,14 @@ pub fn local_asr_install_command() -> Vec<String> {
 
 /// 可以選的模型與大小估計（給設定畫面畫下拉用）。
 #[tauri::command]
-pub fn local_asr_models() -> Vec<(String, String)> {
-    crate::local_asr::MODELS.iter().map(|(m, s)| (m.to_string(), s.to_string())).collect()
+pub fn local_asr_models() -> Vec<crate::local_asr::ModelSpec> {
+    crate::local_asr::MODELS.to_vec()
+}
+
+/// 這台機器的顯示卡與顯存，讓安裝面板可以說「這個模型你跑不跑得動」。
+#[tauri::command]
+pub fn local_asr_hardware() -> crate::local_asr::AsrHardware {
+    crate::local_asr::detect_hardware()
 }
 
 /// 用本機 faster-whisper 轉寫；回傳與 ttls 相同形狀的逐字稿文件。

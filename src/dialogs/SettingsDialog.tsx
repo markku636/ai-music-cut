@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BookMarked, Cog, ScrollText } from "lucide-react";
-import { api, errMessage, type AppSettings } from "../api";
+import { api, errMessage, type AppSettings, type AsrModelSpec } from "../api";
 import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
 import { pickDirectory, pickOpenFile, toast } from "../ui";
 import { useT } from "../i18n";
@@ -8,6 +8,7 @@ import { ffmpegSourceLabel } from "../ffmpegSource";
 import { useUi, type Density } from "../store/ui";
 import { useSettings } from "../store/settings";
 import { parseHotwords } from "../analysis/hotwords";
+import { formatMb, formatSpeed } from "../analysis/asrFit";
 import HotwordsDialog from "./HotwordsDialog";
 import LocalAsrSetup from "./LocalAsrSetup";
 
@@ -67,6 +68,10 @@ export default function SettingsDialog({
   const [draft, setDraft] = useState<AppSettings>(s);
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [asrModels, setAsrModels] = useState<AsrModelSpec[]>([]);
+  useEffect(() => {
+    void api.localAsrModels().then(setAsrModels).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (open) setDraft(s);
@@ -203,11 +208,33 @@ export default function SettingsDialog({
                 <option value="auto">auto</option>
               </Select>
             </Field>
-            <Field label={t("辨識模型")}>
+            {/*
+              本機與 ttls 的模型清單**不一樣**：ttls 那邊是伺服器自己挑，本機這邊是把名字
+              直接餵給 faster-whisper。所以切到本機時要列本機真的有的那幾個，並標出顯存 ——
+              下載大小跟跑不跑得動是兩回事。
+            */}
+            <Field
+              label={t("辨識模型")}
+              hint={
+                (draft.asr_source || "ttls") === "local"
+                  ? t("顯存是 int8 的估計值（這個 App 就是用 int8 跑的）。auto 會依你的顯示卡自己挑。")
+                  : undefined
+              }
+            >
               <Select value={draft.asr_model} onChange={(e) => void commit({ asr_model: e.target.value })}>
                 <option value="auto">auto（依 VRAM 選）</option>
-                <option value="large-v3">large-v3（最準）</option>
-                <option value="large-v3-turbo">large-v3-turbo（快）</option>
+                {(draft.asr_source || "ttls") === "local" ? (
+                  asrModels.map((m) => (
+                    <option key={m.name} value={m.name}>
+                      {m.name}（{t("顯存")} {formatMb(m.vram_int8_mb)}{"，"}{formatSpeed(m.speed_x)}）
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="large-v3">large-v3（最準）</option>
+                    <option value="large-v3-turbo">large-v3-turbo（快）</option>
+                  </>
+                )}
               </Select>
             </Field>
           </FormGrid>

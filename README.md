@@ -209,6 +209,15 @@ codex 走 `codex exec --output-schema`，模型在 codex 自己的 `$CODEX_HOME/
 - **預設就是本機辨識**（設定 → 逐字稿來源）：同一個 large-v3 跑在自己機器上，不上傳、不需要金鑰。
   App 會偵測 python 與套件是否就緒，沒裝的話**選好模型按一顆鈕就裝**（套件 + 模型一起抓，輸出逐行顯示）。
   按之前會先給你看實際會執行的指令 —— 這一步會動到你的 Python 環境。
+  **選模型時會直接告訴你規格與顯存夠不夠**：每個模型列出參數量、顯存（int8）、沒有顯示卡時要多少記憶體、相對速度，
+  再拿 `nvidia-smi` 讀到的實際顯示卡去比，寫成「你的 RTX 4060（8.0 GB）跑得動」／「只有 4 GB，還差 1.1 GB」。
+  > 顯存標的是 **int8** 的數字，因為這個 App 就是用 int8 跑的（`compute_type="int8"`）。
+  > 拿 fp16 的數字來標會害人多買一張卡：large-v3 fp16 要 4.7 GB，int8 只要 3.1 GB。
+  > **顯存不夠不會自動改用 CPU**，是直接失敗 —— 所以不夠的時候寫的是「會失敗，請改選小一點的」，不是「會比較慢」。
+  > 數字是估計值（錨在 faster-whisper 自己的 benchmark：large-v2 GPU int8 ≈ 3091 MB，其餘依參數量往下推），畫面上照實說明。
+  > 順帶修掉一個會踩到的預設值：辨識模型的預設是 `auto`，那是 ttls 伺服器的概念；本機這條路會把字串直接當模型名餵給
+  > faster-whisper，於是「把來源切到本機、其他都不動」的人會拿到「去下載一個叫 auto 的模型」然後失敗。
+  > 現在 `auto` 在本機是有意義的：**依你的顯存自己挑**一個跑得動的。
   輸出格式與 ttls 相同，所以規則層拿到的訊號一模一樣（字級時間戳、no_speech、avg_logprob、compression_ratio）。
 - 選用：[Claude Code](https://claude.com/claude-code) CLI 已登入（AI 判讀 / AI 助手；預設模型 sonnet，可在設定改）
 

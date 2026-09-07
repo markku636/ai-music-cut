@@ -180,16 +180,130 @@ pub fn install_args() -> Vec<String> {
     .collect()
 }
 
-/// 使用者可以挑的模型。名字直接餵給 faster-whisper，大小是給人判斷用的估計值。
-pub const MODELS: &[(&str, &str)] = &[
-    ("small", "~0.5 GB"),
-    ("medium", "~1.5 GB"),
-    ("large-v3-turbo", "~1.6 GB"),
-    ("large-v3", "~3 GB"),
+/// 使用者可以挑的模型與它們的規格。
+///
+/// **顯存的數字是 int8 的**，因為這個 App 實際就是用 int8 跑的
+/// （`WhisperModel(model, device="auto", compute_type="int8")`）。
+/// 拿 fp16 的數字來標會害人多買一張卡：large-v3 fp16 要 4.7 GB，int8 只要 3.1 GB。
+///
+/// 錨點是 faster-whisper 自己的 benchmark（large-v2 GPU int8 ≈ 3091 MB），
+/// 其餘依參數量往下推 —— 權重約 1 byte/參數，再加上大致固定的 CUDA context 與
+/// 活化記憶體。**所以這些是估計值，不是保證值**，實際還會受 beam size、
+/// 音檔長度與驅動版本影響，UI 上要照實說。
+#[derive(Serialize, Clone)]
+pub struct ModelSpec {
+    /// 直接餵給 faster-whisper 的名字。
+    pub name: &'static str,
+    /// 下載大小（估計）。
+    pub download: &'static str,
+    /// 參數量（百萬）。這一欄是事實，不是估計。
+    pub params_m: u32,
+    /// 用 int8 跑在 GPU 上大約要多少顯存（MB，估計）。
+    pub vram_int8_mb: u32,
+    /// 沒有顯示卡、退回 CPU 時大約要多少記憶體（MB，估計）。
+    pub ram_int8_mb: u32,
+    /// 相對速度，以 large-v3 為 1（粗估，只用來排序與比較）。
+    pub speed_x: f32,
+}
+
+pub const MODELS: &[ModelSpec] = &[
+    ModelSpec { name: "small", download: "~0.5 GB", params_m: 244, vram_int8_mb: 900, ram_int8_mb: 1500, speed_x: 6.0 },
+    ModelSpec { name: "medium", download: "~1.5 GB", params_m: 769, vram_int8_mb: 1700, ram_int8_mb: 2600, speed_x: 2.5 },
+    // turbo 的參數量跟 medium 差不多，但解碼層只有 4 層，所以快得多、準度接近 large-v3
+    ModelSpec { name: "large-v3-turbo", download: "~1.6 GB", params_m: 809, vram_int8_mb: 1900, ram_int8_mb: 2800, speed_x: 4.0 },
+    ModelSpec { name: "large-v3", download: "~3 GB", params_m: 1550, vram_int8_mb: 3100, ram_int8_mb: 4400, speed_x: 1.0 },
 ];
 
 pub fn is_known_model(name: &str) -> bool {
-    MODELS.iter().any(|(m, _)| *m == name)
+    MODELS.iter().any(|m| m.name == name)
+}
+
+/// 這台機器的顯示卡與顯存。
+///
+/// **只問 nvidia-smi**：faster-whisper 走 CUDA，AMD / Intel 的卡它用不到，
+/// 報出來只會讓人以為跑得動。問不到就是 `nvidia = false`，UI 要講的是
+/// 「會用 CPU 跑」，而不是「你沒有顯示卡」—— 那是兩件事（可能只是沒裝驅動）。
+#[derive(Serialize, Clone, Default)]
+pub struct AsrHardware {
+    pub nvidia: bool,
+    pub gpus: Vec<GpuInfo>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct GpuInfo {
+    pub name: String,
+    pub vram_mb: u32,
+}
+
+/// 解析 `nvidia-smi --query-gpu=name,memory.total --format=csv,noheader,nounits` 的輸出。
+/// 抽出來才測得到 —— CI 與開發機不一定有 NVIDIA 卡。
+pub fn parse_nvidia_smi(out: &str) -> Vec<GpuInfo> {
+    out.lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            // 顯示卡名字本身不會有逗號，但保險起見用**最後一個**逗號切
+            let idx = line.rfind(',')?;
+            let name = line[..idx].trim();
+            let mb: u32 = line[idx + 1..].trim().parse().ok()?;
+            if name.is_empty() || mb == 0 {
+                return None;
+            }
+            Some(GpuInfo { name: name.to_string(), vram_mb: mb })
+        })
+        .collect()
+}
+
+/// 顯存要留多少餘裕才敢挑這個模型。跟前端 `analysis/asrFit.ts` 的 HEADROOM 是同一個值 ——
+/// 兩邊各有一份實作（前端要同步顯示、後端要真的挑），所以兩邊都有測試釘住同一組答案。
+pub const VRAM_HEADROOM: f32 = 1.25;
+
+/// 依顯存挑一個跑得動的模型（挑得動的裡面最準的）。
+/// `None` = 沒有 NVIDIA 卡 → 會用 CPU 跑，挑最小的才不會等到天荒地老。
+pub fn pick_for_vram(vram_mb: Option<u32>) -> &'static str {
+    let Some(vram) = vram_mb else {
+        return MODELS[0].name;
+    };
+    let mut best = MODELS[0].name;
+    for m in MODELS {
+        if vram as f32 >= m.vram_int8_mb as f32 * VRAM_HEADROOM {
+            best = m.name;
+        }
+    }
+    best
+}
+
+/// 把設定裡的模型字串換成**真的餵得進 faster-whisper** 的名字。
+///
+/// 設定頁的「auto（依 VRAM 選）」原本是給 ttls 伺服器用的概念 —— 伺服器自己會挑。
+/// 但本機這條路是把字串直接當模型名餵下去的，所以 `auto` 會變成
+/// 「去 HuggingFace 下載一個叫 auto 的模型」然後失敗。而 `auto` 正是預設值，
+/// 也就是「把辨識來源切到本機、其他都不動」的人一定會踩到。
+///
+/// 現在 auto 在本機是有意義的：依這台機器的顯存挑一個跑得動的。
+pub fn resolve_model(requested: &str) -> &'static str {
+    let r = requested.trim();
+    if let Some(m) = MODELS.iter().find(|m| m.name == r) {
+        return m.name;
+    }
+    let vram = detect_hardware().gpus.iter().map(|g| g.vram_mb).max();
+    pick_for_vram(vram)
+}
+
+pub fn detect_hardware() -> AsrHardware {
+    let out = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+        .stdin(Stdio::null())
+        .output();
+    match out {
+        Ok(o) if o.status.success() => {
+            let gpus = parse_nvidia_smi(&String::from_utf8_lossy(&o.stdout));
+            AsrHardware { nvidia: !gpus.is_empty(), gpus }
+        }
+        _ => AsrHardware::default(),
+    }
 }
 
 /// 先下載模型的那一步。用 faster-whisper 自己的 `download_model`，
@@ -318,7 +432,7 @@ pub async fn transcribe(app: AppHandle, job_id: String, audio_path: String, mode
     let mut cmd = proc::cmd(&py);
     cmd.arg(&script)
         .arg(&audio_path)
-        .arg(if model.trim().is_empty() { "large-v3" } else { model.trim() })
+        .arg(resolve_model(&model))
         .arg(&language)
         .arg(&out)
         .stdout(Stdio::piped())
@@ -404,9 +518,86 @@ mod tests {
     #[test]
     fn model_list_is_ordered_small_to_large() {
         // 畫面上要讓人一眼看出「越下面越大越準」
-        let names: Vec<&str> = MODELS.iter().map(|(m, _)| *m).collect();
+        let names: Vec<&str> = MODELS.iter().map(|m| m.name).collect();
         assert_eq!(names, vec!["small", "medium", "large-v3-turbo", "large-v3"]);
-        assert!(MODELS.iter().all(|(_, size)| size.contains("GB")));
+        assert!(MODELS.iter().all(|m| m.download.contains("GB")));
+    }
+
+    #[test]
+    fn every_model_carries_a_spec() {
+        // 規格欄位空白的話，UI 會顯示「需要 0 GB 顯存」—— 比不顯示還糟
+        for m in MODELS {
+            assert!(m.params_m > 0, "{} 少了參數量", m.name);
+            assert!(m.vram_int8_mb > 0, "{} 少了顯存估計", m.name);
+            assert!(m.ram_int8_mb > 0, "{} 少了記憶體估計", m.name);
+            assert!(m.speed_x > 0.0, "{} 少了速度", m.name);
+            // CPU 記憶體一定比顯存高（沒有專用記憶體，活化都在 RAM 上）
+            assert!(m.ram_int8_mb > m.vram_int8_mb, "{}", m.name);
+        }
+    }
+
+    #[test]
+    fn bigger_model_needs_more_vram() {
+        let v: Vec<u32> = MODELS.iter().map(|m| m.vram_int8_mb).collect();
+        assert!(v.windows(2).all(|w| w[0] < w[1]), "顯存要隨模型變大而遞增：{v:?}");
+    }
+
+    #[test]
+    fn picks_the_best_model_that_fits() {
+        // 這一組答案要跟前端 analysis/asrFit.test.ts 的 recommendModel 完全一致
+        assert_eq!(pick_for_vram(Some(16303)), "large-v3");
+        assert_eq!(pick_for_vram(Some(4096)), "large-v3");
+        assert_eq!(pick_for_vram(Some(3000)), "large-v3-turbo");
+        assert_eq!(pick_for_vram(Some(2200)), "medium");
+        assert_eq!(pick_for_vram(Some(1200)), "small");
+        // 一張都跑不動 → 最小的（讓它去用 CPU，而不是挑一個一定失敗的）
+        assert_eq!(pick_for_vram(Some(256)), "small");
+        assert_eq!(pick_for_vram(None), "small");
+    }
+
+    #[test]
+    fn auto_is_not_passed_through_to_faster_whisper() {
+        // 「auto」是 ttls 的概念，而且是**預設值** —— 直接餵下去會去找一個叫 auto 的模型
+        assert!(is_known_model(resolve_model("auto")));
+        assert!(is_known_model(resolve_model("")));
+        assert!(is_known_model(resolve_model("  ")));
+        assert!(is_known_model(resolve_model("這個模型不存在")));
+    }
+
+    #[test]
+    fn known_models_are_passed_through_unchanged() {
+        for m in MODELS {
+            assert_eq!(resolve_model(m.name), m.name);
+        }
+        assert_eq!(resolve_model("  large-v3  "), "large-v3");
+    }
+
+    #[test]
+    fn parses_nvidia_smi() {
+        let g = parse_nvidia_smi("NVIDIA GeForce RTX 5070 Ti, 16303
+");
+        assert_eq!(g.len(), 1);
+        assert_eq!(g[0].name, "NVIDIA GeForce RTX 5070 Ti");
+        assert_eq!(g[0].vram_mb, 16303);
+    }
+
+    #[test]
+    fn parses_multiple_gpus() {
+        let g = parse_nvidia_smi("NVIDIA RTX A4000, 16376
+NVIDIA GeForce RTX 3060, 12288
+");
+        assert_eq!(g.len(), 2);
+        assert_eq!(g[1].vram_mb, 12288);
+    }
+
+    #[test]
+    fn ignores_junk_from_nvidia_smi() {
+        // 沒有驅動時 nvidia-smi 會印錯誤訊息而不是 CSV
+        assert!(parse_nvidia_smi("NVIDIA-SMI has failed because it couldn't communicate").is_empty());
+        assert!(parse_nvidia_smi("").is_empty());
+        assert!(parse_nvidia_smi("some gpu, notanumber").is_empty());
+        assert!(parse_nvidia_smi(", 8192").is_empty());
+        assert!(parse_nvidia_smi("no vram gpu, 0").is_empty());
     }
 
     #[test]

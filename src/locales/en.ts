@@ -1240,6 +1240,20 @@ const en: Catalog = {
   "波形的中線不在零。聽不出來，但會吃掉動態餘裕、讓剪接點容易爆音。修聲的高通濾波（去隆隆聲）順便會把它處理掉。": "The waveform is not centred on zero. You cannot hear it, but it eats headroom and makes edit points pop. The cleanup high-pass (rumble removal) takes care of it.",
   "剪完之後還留著的無聲段落。有時候是刻意的停頓，有時候是漏剪。": "Silent stretches still present after the cut. Sometimes a deliberate pause, sometimes something you missed.",
   "去聽 {at}": "Listen at {at}",
+  "找不到 NVIDIA 顯示卡（或沒裝驅動）：會用 CPU 跑，慢很多，而且要 {ram} 記憶體。": "No NVIDIA GPU found (or no driver): it will run on the CPU — much slower, and it needs {ram} of RAM.",
+  "你的 {gpu}（{vram}）跑得動。": "Your {gpu} ({vram}) can run this.",
+  "你的 {gpu} 只有 {vram}，剛好夠但沒有餘裕 —— 同時開別的吃顯存的程式就會失敗。": "Your {gpu} has only {vram} — just enough, with no headroom. Running anything else on the GPU at the same time will make it fail.",
+  "你的 {gpu} 只有 {vram}，還差 {short}。顯存不夠**不會自動改用 CPU**，會直接失敗 —— 請改選小一點的模型。": "Your {gpu} has only {vram}, {short} short. Running out of VRAM does not fall back to the CPU — it just fails. Pick a smaller model.",
+  "沒有 NVIDIA 顯示卡": "no NVIDIA GPU",
+  "顯存": "VRAM",
+  "改用建議的 {m}": "Use the suggested {m}",
+  "參數量": "Parameters",
+  "顯存（int8）": "VRAM (int8)",
+  "沒有顯示卡時的記憶體": "RAM without a GPU",
+  "速度": "Speed",
+  "不先下載的話，第一次分析時才會抓 —— 那時你正等著看結果，卻卡在一個沒有進度的下載上。越大越準也越慢。": "If you skip this, the model downloads during your first analysis — while you are waiting for a result, stuck on a download with no progress bar. Bigger is more accurate and slower.",
+  "顯存與記憶體是**估計值**：實際還會受音檔長度與其他程式佔用影響。": "VRAM and RAM figures are estimates: actual use also depends on audio length and what else is running.",
+  "顯存是 int8 的估計值（這個 App 就是用 int8 跑的）。auto 會依你的顯示卡自己挑。": "VRAM figures are int8 estimates (int8 is what this app runs). auto picks a model based on your GPU.",
 };
 
 

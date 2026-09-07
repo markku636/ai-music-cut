@@ -112,6 +112,7 @@ pub fn run() {
             commands::local_asr_install,
             commands::local_asr_install_command,
             commands::local_asr_models,
+            commands::local_asr_hardware,
             commands::local_asr_transcribe,
             agent::claude_send,
             agent::claude_cancel,

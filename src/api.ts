@@ -222,6 +222,32 @@ export interface LocalAsrInstallEvent {
   code?: number;
 }
 
+/** 一個本機辨識模型的規格（Rust 的 local_asr::ModelSpec）。 */
+export interface AsrModelSpec {
+  name: string;
+  /** 下載大小（估計），例如 "~3 GB"。 */
+  download: string;
+  /** 參數量（百萬）。 */
+  params_m: number;
+  /** int8 跑在 GPU 上大約要多少顯存（MB，估計）。App 就是用 int8 跑的。 */
+  vram_int8_mb: number;
+  /** 退回 CPU 時大約要多少記憶體（MB，估計）。 */
+  ram_int8_mb: number;
+  /** 相對速度，以 large-v3 為 1（粗估）。 */
+  speed_x: number;
+}
+
+export interface AsrGpuInfo {
+  name: string;
+  vram_mb: number;
+}
+
+/** 這台機器的顯示卡。只問 nvidia-smi —— faster-whisper 走 CUDA。 */
+export interface AsrHardware {
+  nvidia: boolean;
+  gpus: AsrGpuInfo[];
+}
+
 export interface LocalAsrStatus {
   python: boolean;
   python_version: string | null;
@@ -426,8 +452,10 @@ export const api = {
   claudeDetect: () => invoke<ClaudeStatus>("claude_detect"),
   codexDetect: () => invoke<ClaudeStatus>("codex_detect"),
   localAsrDetect: () => invoke<LocalAsrStatus>("local_asr_detect"),
-  /** 可以選的模型與大小估計：[名稱, "~3 GB"]。 */
-  localAsrModels: () => invoke<[string, string][]>("local_asr_models"),
+  /** 可以選的模型與規格（下載大小、參數量、顯存 / 記憶體估計、相對速度）。 */
+  localAsrModels: () => invoke<AsrModelSpec[]>("local_asr_models"),
+  /** 這台機器的顯示卡與顯存（沒有 NVIDIA 卡時 nvidia = false）。 */
+  localAsrHardware: () => invoke<AsrHardware>("local_asr_hardware"),
   /** 安裝套件那一步實際會執行的參數（畫面上先給人看過再按）。 */
   localAsrInstallCommand: () => invoke<string[]>("local_asr_install_command"),
   /** 依使用者勾的項目安裝；輸出走 `local-asr-install` 事件。 */

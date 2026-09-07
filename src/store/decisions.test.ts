@@ -11,7 +11,7 @@ function c(kind: Candidate["kind"], s: number, e: number, score: number, source:
 }
 
 describe("decisions store", () => {
-  beforeEach(() => useDecisions.setState({ candidates: {}, decisions: {}, overlays: {}, past: [], future: [], selectedIds: [] }));
+  beforeEach(() => useDecisions.setState({ candidates: {}, decisions: {}, overlays: {}, speakers: {}, past: [], future: [], selectedIds: [] }));
 
   it("default states: suggest-only kinds are pending, high-score fillers auto", () => {
     expect(defaultStateFor(c("filler", 0, 100, 0.9), 50)).toBe("auto");
@@ -194,6 +194,30 @@ describe("addManualCuts（逐字稿批次剪除）", () => {
 
   it("addOverlays 空陣列不留下一筆什麼都沒做的 undo", () => {
     useDecisions.getState().addOverlays("m", [], "套用範本");
+    expect(useDecisions.getState().past).toHaveLength(0);
+  });
+
+  it("重跑講者指派**留著使用者改好的名字**（不然改完名再跑一次就打回檔名）", () => {
+    const st = useDecisions.getState();
+    st.setSpeakers("m", { list: [{ id: "sp0", label: "_mark_raw", colorIndex: 0 }], turns: [] }, "指派");
+    st.renameSpeaker("m", "sp0", "Mark");
+    st.setSpeakers("m", { list: [{ id: "sp0", label: "_mark_raw", colorIndex: 0 }], turns: [{ startMs: 0, endMs: 100, speakerId: "sp0" }] }, "重跑");
+    const now = useDecisions.getState().speakers.m;
+    expect(now.list[0].label).toBe("Mark");
+    expect(now.turns).toHaveLength(1);
+  });
+
+  it("講者跟決策共用 undo（指派錯了要能 Ctrl+Z）", () => {
+    const st = useDecisions.getState();
+    st.setSpeakers("m", { list: [{ id: "sp0", label: "A", colorIndex: 0 }], turns: [{ startMs: 0, endMs: 1000, speakerId: "sp0" }] }, "指派");
+    st.assignSpeaker("m", 200, 400, null, "清掉");
+    expect(useDecisions.getState().speakers.m.turns).toHaveLength(2);
+    useDecisions.getState().undo();
+    expect(useDecisions.getState().speakers.m.turns).toHaveLength(1);
+  });
+
+  it("改一個不存在的講者不留下空的 undo 步", () => {
+    useDecisions.getState().renameSpeaker("m", "ghost", "X");
     expect(useDecisions.getState().past).toHaveLength(0);
   });
 });

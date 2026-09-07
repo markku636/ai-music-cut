@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef } from "react";
 import { isActiveState, type Candidate, type DecisionMap, type Sentence, type Transcript, type Word } from "../analysis/types";
+import { speakerColor, type Speaker } from "../analysis/speakers";
 import { usePlayback } from "../store/playback";
 import { wordIndexAt } from "../store/transcript";
 import { formatMs } from "../time";
@@ -24,6 +25,9 @@ export interface TranscriptEditorProps {
   /** 搜尋命中的字（畫底色）；目前跳到的那一筆另外標起來。 */
   hitWordIds?: Set<number>;
   activeHitWordIds?: Set<number>;
+  /** 句子 id → 講者 id（沒有講者標籤時不傳）。 */
+  sentenceSpeaker?: Map<number, string>;
+  speakers?: Speaker[];
 }
 
 /**
@@ -41,6 +45,8 @@ export default function TranscriptEditor({
   onSentenceSelect,
   hitWordIds,
   activeHitWordIds,
+  sentenceSpeaker,
+  speakers,
 }: TranscriptEditorProps) {
   const currentMs = usePlayback((s) => s.currentMs);
   const follow = usePlayback((s) => s.followMode !== "off");
@@ -94,6 +100,21 @@ export default function TranscriptEditor({
     el?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [follow, activeSentence]);
 
+  // 講者只在**換人的那一句**寫出名字。每一列都掛一次「Mark：」是雜訊，
+  // 真正要一眼看出來的是「這裡換人了」。沒換人的列只留左邊的色條。
+  const speakerById = useMemo(() => new Map((speakers ?? []).map((x) => [x.id, x])), [speakers]);
+  const showName = useMemo(() => {
+    const out = new Set<number>();
+    if (!sentenceSpeaker || !transcript) return out;
+    let prev: string | null = null;
+    for (const s of transcript.sentences) {
+      const id = sentenceSpeaker.get(s.id) ?? null;
+      if (id && id !== prev) out.add(s.id);
+      prev = id;
+    }
+    return out;
+  }, [sentenceSpeaker, transcript]);
+
   if (!transcript) return null;
   return (
     <div ref={listRef} className="flex-1 min-h-0 overflow-auto px-4 py-3 text-[15px] leading-7 select-none">
@@ -114,6 +135,8 @@ export default function TranscriptEditor({
           onSentenceSelect={onSentenceSelect}
           hitWordIds={hitWordIds}
           activeHitWordIds={activeHitWordIds}
+          speaker={sentenceSpeaker ? (speakerById.get(sentenceSpeaker.get(s.id) ?? "") ?? null) : null}
+          showSpeakerName={showName.has(s.id)}
         />
       ))}
     </div>
@@ -135,6 +158,8 @@ const SentenceRow = memo(function SentenceRow({
   onSentenceSelect,
   hitWordIds,
   activeHitWordIds,
+  speaker,
+  showSpeakerName,
 }: {
   sentence: Sentence;
   words: Word[];
@@ -150,9 +175,16 @@ const SentenceRow = memo(function SentenceRow({
   onSentenceSelect?: (s: Sentence) => void;
   hitWordIds?: Set<number>;
   activeHitWordIds?: Set<number>;
+  speaker?: Speaker | null;
+  showSpeakerName?: boolean;
 }) {
   return (
-    <div data-sid={sentence.id} className={`flex gap-3 rounded-md px-2 py-1 ${isActive ? "bg-accent/8" : ""}`}>
+    <div
+      data-sid={sentence.id}
+      data-speaker={speaker?.id}
+      className={`flex gap-3 rounded-md px-2 py-1 ${isActive ? "bg-accent/8" : ""}`}
+      style={speaker ? { borderLeft: `2px solid ${speakerColor(speaker.colorIndex)}`, paddingLeft: 6 } : undefined}
+    >
       <button
         type="button"
         onClick={() => onSeek(sentence.startMs)}
@@ -165,6 +197,15 @@ const SentenceRow = memo(function SentenceRow({
       >
         {formatMs(sentence.startMs, { millis: false })}
       </button>
+      {speaker && showSpeakerName && (
+        <span
+          className="mono shrink-0 self-start rounded px-1 pt-0.5 text-[11px] font-medium"
+          style={{ color: speakerColor(speaker.colorIndex), background: `${speakerColor(speaker.colorIndex)}1f` }}
+          title={speaker.label}
+        >
+          {speaker.label}
+        </span>
+      )}
       <div className="min-w-0 flex-1 flex flex-wrap">
         {sentence.wordIds.map((id) => {
           const w = words[id];

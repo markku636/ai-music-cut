@@ -8,8 +8,10 @@
 // 對齊本身不碰音訊：只比對能量包絡（見 analysis/sync.ts）。
 import { estimateGate, gateSpec, worthGating, type GateEstimate, type GateSpec } from "../analysis/gate";
 import { estimateOffset, delaysFromOffsets, DEFAULT_SYNC, type SyncOptions } from "../analysis/sync";
+import { attributeTurns, speakerLabelFromName, type MicTrack, type Speaker, type SpeakerState } from "../analysis/speakers";
 import { api, type RenderGate } from "../api";
 import { t } from "../i18n";
+import { useDecisions } from "../store/decisions";
 import { useProject } from "../store/project";
 import { useTranscript } from "../store/transcript";
 import { ensureLocalAnalysis } from "./waveform";
@@ -62,6 +64,10 @@ export async function analyzeMicSync(mediaIds: string[], opts: SyncOptions = DEF
  *
  * `crosstalkDb` 給值就開串音衰減（只對「值得處理」的軌套用）：一人一軌時每支麥都收得到
  * 別人的聲音，合起來同一句話會聽到兩次 —— 一次清楚、一次糊的。
+ *
+ * **順便產出講者標籤。** 合併是最後一個「每支麥還分得開」的時刻：合完之後就只剩一軌，
+ * 誰講的資訊永遠拿不回來了。而在這裡它是**確定性的不是猜的** —— 每支麥都收得到別人，
+ * 但自己的麥一定最大聲。這一步不做，之後就只能靠聲紋模型去猜（見 analysis/speakers.ts）。
  */
 export async function combineMics(rows: MicSyncRow[], crosstalkDb?: number): Promise<string> {
   const proj = useProject.getState();
@@ -83,7 +89,33 @@ export async function combineMics(rows: MicSyncRow[], crosstalkDb?: number): Pro
   );
   const id = await useProject.getState().openMedia(outPath);
   useProject.getState().setActive(id);
+  const sp = speakersFrom(rows);
+  if (sp) useDecisions.getState().setSpeakers(id, sp, t("多麥克風講者指派"));
   return outPath;
+}
+
+/**
+ * 從各軌的能量與延遲算出講者標籤。
+ *
+ * 講者名字預設用**檔名**（`mark_20260907.wav` → `mark`）—— 一人一軌的素材幾乎都是
+ * 用人名存檔的，這個預設多半直接就是對的，剩下的在講者面板改。
+ *
+ * 分析不在手上就回 null（不要把「沒資料」變成「大家都沒講話」的空標籤）。
+ */
+function speakersFrom(rows: MicSyncRow[]): SpeakerState | null {
+  const local = useTranscript.getState().local;
+  const list: Speaker[] = [];
+  const tracks: MicTrack[] = [];
+  rows.forEach((r, i) => {
+    const a = local[r.mediaId];
+    if (!a) return;
+    const id = `sp${i}`;
+    list.push({ id, label: speakerLabelFromName(r.name), colorIndex: i });
+    tracks.push({ speakerId: id, analysis: a, delayMs: Math.max(0, Math.round(r.delayMs)) });
+  });
+  if (tracks.length < 2) return null;
+  const turns = attributeTurns(tracks);
+  return turns.length ? { list, turns } : null;
 }
 
 function toRenderGate(g: GateSpec): RenderGate {

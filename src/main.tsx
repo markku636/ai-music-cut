@@ -65,14 +65,31 @@ class ErrorBoundary extends React.Component<
   }
 }
 
-const render = () =>
-  ReactDOM.createRoot(document.getElementById("root")!).render(
+/**
+ * React root 綁在 `globalThis` 上重用，**不是每次都 createRoot**。
+ *
+ * 熱更新時 Vite 會把整個 `main.tsx` 重跑一遍（只要失效傳播到進入點就會）。原本每跑一次
+ * 就對同一個 `#root` 建一個新的 root —— React 不會取代舊的那棵，而是**再掛一棵上去**。
+ * 於是改幾次程式碼之後畫面上其實疊了四份 App：四份 keydown listener（按一次鍵觸發四次）、
+ * 四個 <audio>、四份 ticker 訂閱。看起來只是「怪怪的」，查起來會查很久。
+ *
+ * 正式打包只跑一次，所以這純粹是開發期的坑 —— 但它會讓開發期量到的每一個數字都是四倍。
+ */
+declare global {
+  var __aicutRoot: ReactDOM.Root | undefined;
+}
+
+const render = () => {
+  const el = document.getElementById("root")!;
+  globalThis.__aicutRoot ??= ReactDOM.createRoot(el);
+  globalThis.__aicutRoot.render(
     <React.StrictMode>
       <ErrorBoundary>
         <App />
       </ErrorBoundary>
     </React.StrictMode>
   );
+};
 
 // 語言啟動：zh-TW 是原文，catalog 恆空 → 同步渲染，不多付一個 tick、也不會先閃一次中文。
 // 其餘語言必須先把譯文表載進來（vite dynamic import chunk）才首次繪製，否則會看到中文閃一下。

@@ -25,6 +25,7 @@ import PrecisionTrim from "../preview/PrecisionTrim";
 import { useSkipPlayback } from "../preview/useSkipPlayback";
 import { useShuttle } from "../preview/useShuttle";
 import { useOverlayMonitor } from "../preview/useOverlayMonitor";
+import { assignWords, sentenceSpeakers, type SpeakerState } from "../analysis/speakers";
 import { useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
 import { selectActiveMedia, useProject } from "../store/project";
@@ -50,6 +51,7 @@ import { useResizable } from "./useResizable";
 const EMPTY_C: Candidate[] = [];
 const EMPTY_D: DecisionMap = {};
 const EMPTY_E: AudioEffect[] = [];
+const EMPTY_SPK: SpeakerState = { list: [], turns: [] };
 const EMPTY_S: SplitPoint[] = [];
 const EMPTY_MK: Marker[] = [];
 const EMPTY_OV: Overlay[] = [];
@@ -75,6 +77,7 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   const decisions = useDecisions((s) => (mediaId ? s.decisions[mediaId] ?? EMPTY_D : EMPTY_D));
   const effects = useDecisions((s) => (mediaId ? s.effects[mediaId] ?? EMPTY_E : EMPTY_E));
   const splits = useDecisions((s) => (mediaId ? s.splits[mediaId] ?? EMPTY_S : EMPTY_S));
+  const speakers = useDecisions((s) => (mediaId ? s.speakers[mediaId] ?? EMPTY_SPK : EMPTY_SPK));
   const selectedIds = useDecisions((s) => s.selectedIds);
   const aggressiveness = useProject((s) => s.aggressiveness);
   const select = useDecisions((s) => s.select);
@@ -99,6 +102,13 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   const [searchHits, setSearchHits] = useState<{ hits: TextHit[]; at: number }>({ hits: [], at: 0 });
   const hitWordIds = useMemo(() => new Set(searchHits.hits.flatMap((h) => h.wordIds)), [searchHits]);
   const activeHitWordIds = useMemo(() => new Set(searchHits.hits[searchHits.at]?.wordIds ?? []), [searchHits]);
+
+  // 講者標籤：段落 → 字 → 句。一句一個講者（換人的接縫上少數幾個字被串音判錯是常態，
+  // 句層的多數決正好把它吸收掉），沒有標籤時整條路都不算。
+  const sentenceSpeaker = useMemo(() => {
+    if (!transcript || !speakers.turns.length) return undefined;
+    return sentenceSpeakers(transcript.sentences, transcript.words, assignWords(transcript.words, speakers.turns));
+  }, [transcript, speakers.turns]);
   const onSearchHits = useCallback((hits: TextHit[], at: number) => setSearchHits({ hits, at }), []);
   const timeline = useResizable({ storageKey: "aicut:timelineH", initial: 220, min: 140, max: () => window.innerHeight * 0.6, axis: "y" });
 
@@ -515,6 +525,8 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
               onSentenceSelect={(s) => setSelection({ startMs: s.startMs, endMs: s.endMs })}
               hitWordIds={hitWordIds}
               activeHitWordIds={activeHitWordIds}
+              sentenceSpeaker={sentenceSpeaker}
+              speakers={speakers.list}
             />
           ) : (
             <TranscriptPlaceholder mediaId={mediaId} onAnalyze={onAnalyze} onOpenSettings={onOpenSettings} />

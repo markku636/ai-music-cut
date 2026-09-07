@@ -10,6 +10,7 @@ import AutoCutDialog from "./dialogs/AutoCutDialog";
 import BatchDialog from "./dialogs/BatchDialog";
 import FillersDialog from "./dialogs/FillersDialog";
 import TemplateDialog from "./dialogs/TemplateDialog";
+import SpeakersDialog from "./dialogs/SpeakersDialog";
 import PromptsDialog from "./dialogs/PromptsDialog";
 import type { ReelRange } from "./analysis/reel";
 import { useHighlights } from "./store/highlights";
@@ -198,6 +199,7 @@ export default function App() {
   const [promptsOpen, setPromptsOpen] = useState(false);
   const [fillersOpen, setFillersOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [speakersOpen, setSpeakersOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
@@ -509,6 +511,7 @@ export default function App() {
         onPrompts={() => setPromptsOpen(true)}
         onFillers={() => setFillersOpen(true)}
         onTemplates={() => setTemplatesOpen(true)}
+        onSpeakers={() => setSpeakersOpen(true)}
         onBatch={() => setBatchOpen(true)}
         canBatch={mediaCount > 0}
         canCleanup={!!active}
@@ -579,6 +582,7 @@ export default function App() {
       {promptsOpen && <PromptsDialog onClose={() => setPromptsOpen(false)} />}
       {fillersOpen && <FillersDialog mediaId={active?.id ?? null} onClose={() => setFillersOpen(false)} />}
       {templatesOpen && <TemplateDialog mediaId={active?.id ?? null} onClose={() => setTemplatesOpen(false)} />}
+      {speakersOpen && <SpeakersDialog mediaId={active?.id ?? null} onClose={() => setSpeakersOpen(false)} />}
       {batchOpen && <BatchDialog onClose={() => setBatchOpen(false)} />}
       {autoCutOpen && active && <AutoCutDialog mediaId={active.id} onClose={() => setAutoCutOpen(false)} />}
       {notesOpen && active && <ShowNotesDialog mediaId={active.id} onClose={() => setNotesOpen(false)} />}

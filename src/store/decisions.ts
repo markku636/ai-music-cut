@@ -5,6 +5,7 @@ import { revertSubset } from "../analysis/stepDiff";
 import { thresholdsFor } from "../analysis/thresholds";
 import { SUGGEST_ONLY_KINDS, candidateId, isActiveState, markerId, splitPointId, type Candidate, type CandidateKind, type Decision, type DecisionMap, type DecisionState, type Marker, type MarkerKind, type Opinion, type SplitPoint } from "../analysis/types";
 import { overlayId, type Overlay } from "../analysis/overlays";
+import { assignRange, type Speaker, type SpeakerState } from "../analysis/speakers";
 import { resolveOpinions } from "../analysis/llm/resolve";
 import { useProject } from "./project";
 
@@ -16,6 +17,7 @@ interface Snapshot {
   splits: SplitPoint[];
   markers: Marker[];
   overlays: Overlay[];
+  speakers: SpeakerState;
 }
 
 export interface Patch {
@@ -29,6 +31,9 @@ export interface Patch {
 
 const MAX_HISTORY = 200;
 
+/** 共用的空值 —— 每次現做一個新物件會讓「沒改過」的快照比較失敗。 */
+const EMPTY_SPEAKERS: SpeakerState = { list: [], turns: [] };
+
 export interface DecisionFilter {
   kinds: CandidateKind[] | null;
   states: DecisionState[] | null;
@@ -41,6 +46,11 @@ interface DecisionsStore {
   effects: Record<string, AudioEffect[]>;
   /** 刀片切點，同樣共用 undo 歷史。 */
   splits: Record<string, SplitPoint[]>;
+  /**
+   * 講者標籤（誰在什麼時候講）。改講者是編輯動作 —— 指派錯了要能 Ctrl+Z，
+   * 所以跟決策共用同一份 undo 歷史而不是自己一個 store。
+   */
+  speakers: Record<string, SpeakerState>;
   /** 標記 / 章節 / 待辦，同樣共用 undo 歷史。 */
   markers: Record<string, Marker[]>;
   /** 墊樂 / 音效軌（位置是成品時間），同樣共用 undo 歷史。 */
@@ -101,6 +111,15 @@ interface DecisionsStore {
    * 套一個範本進來卻要按五次 Ctrl+Z 才收得回去，那是不合理的。
    */
   addOverlays: (mediaId: string, list: Overlay[], label: string) => void;
+  /**
+   * 整份講者標籤換掉（多麥克風自動指派的結果）。
+   * 已經在用的講者名字**留著** —— 重跑一次指派不該把使用者改好的名字打回檔名。
+   */
+  setSpeakers: (mediaId: string, state: SpeakerState, label: string) => void;
+  renameSpeaker: (mediaId: string, speakerId: string, label: string) => void;
+  /** 手動把一段時間指派給某個人；`null` 代表清掉這一段。 */
+  assignSpeaker: (mediaId: string, startMs: number, endMs: number, speakerId: string | null, label: string) => void;
+  addSpeaker: (mediaId: string, label: string) => string;
   updateOverlay: (mediaId: string, id: string, patch: Partial<Omit<Overlay, "id">>, label?: string) => void;
   removeOverlay: (mediaId: string, id: string) => void;
   addEffect: (mediaId: string, e: AudioEffect) => void;
@@ -130,7 +149,7 @@ interface DecisionsStore {
   revertPart: (stepIndex: number, ids: string[]) => void;
   clear: (mediaId: string) => void;
   /** 專案載入：直接放入（不記 undo）。 */
-  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[], splits?: SplitPoint[], markers?: Marker[], overlays?: Overlay[]) => void;
+  load: (mediaId: string, candidates: Candidate[], decisions: DecisionMap, effects?: AudioEffect[], splits?: SplitPoint[], markers?: Marker[], overlays?: Overlay[], speakers?: SpeakerState) => void;
 }
 
 function now(): string {
@@ -153,8 +172,9 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     splits: get().splits[mediaId] ?? [],
     markers: get().markers[mediaId] ?? [],
     overlays: get().overlays[mediaId] ?? [],
+    speakers: get().speakers[mediaId] ?? EMPTY_SPEAKERS,
   });
-  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[]; splits?: SplitPoint[]; markers?: Marker[]; overlays?: Overlay[] }, record = true) => {
+  const commit = (mediaId: string, label: string, next: { candidates?: Candidate[]; decisions?: DecisionMap; effects?: AudioEffect[]; splits?: SplitPoint[]; markers?: Marker[]; overlays?: Overlay[]; speakers?: SpeakerState }, record = true) => {
     const before = snapshot(mediaId);
     const after: Snapshot = {
       candidates: next.candidates ?? before.candidates,
@@ -163,6 +183,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       splits: next.splits ?? before.splits,
       markers: next.markers ?? before.markers,
       overlays: next.overlays ?? before.overlays,
+      speakers: next.speakers ?? before.speakers,
     };
     set((s) => ({
       candidates: { ...s.candidates, [mediaId]: after.candidates },
@@ -171,6 +192,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       splits: { ...s.splits, [mediaId]: after.splits },
       markers: { ...s.markers, [mediaId]: after.markers },
       overlays: { ...s.overlays, [mediaId]: after.overlays },
+      speakers: { ...s.speakers, [mediaId]: after.speakers },
       past: record ? [...s.past.slice(-(MAX_HISTORY - 1)), { label, mediaId, at: Date.now(), before, after }] : s.past,
       future: record ? [] : s.future,
     }));
@@ -184,6 +206,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     splits: {},
     markers: {},
     overlays: {},
+    speakers: {},
     selectedIds: [],
     filter: { kinds: null, states: null },
     reviewing: false,
@@ -409,6 +432,33 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       const cur = get().overlays[mediaId] ?? [];
       commit(mediaId, label, { overlays: [...cur, ...list].sort((a, b) => a.outStartMs - b.outStartMs) });
     },
+    setSpeakers: (mediaId, state, label) => {
+      const old = get().speakers[mediaId]?.list ?? [];
+      const kept = new Map(old.map((x) => [x.id, x.label]));
+      commit(mediaId, label, {
+        speakers: { ...state, list: state.list.map((x) => ({ ...x, label: kept.get(x.id) ?? x.label })) },
+      });
+    },
+    renameSpeaker: (mediaId, speakerId, label) => {
+      const cur = get().speakers[mediaId] ?? EMPTY_SPEAKERS;
+      if (!cur.list.some((x) => x.id === speakerId)) return;
+      commit(mediaId, label, {
+        speakers: { ...cur, list: cur.list.map((x) => (x.id === speakerId ? { ...x, label } : x)) },
+      });
+    },
+    assignSpeaker: (mediaId, startMs, endMs, speakerId, label) => {
+      const cur = get().speakers[mediaId] ?? EMPTY_SPEAKERS;
+      const turns = assignRange(cur.turns, startMs, endMs, speakerId);
+      if (turns === cur.turns) return;
+      commit(mediaId, label, { speakers: { ...cur, turns } });
+    },
+    addSpeaker: (mediaId, label) => {
+      const cur = get().speakers[mediaId] ?? EMPTY_SPEAKERS;
+      const id = `sp${Date.now().toString(36)}${cur.list.length}`;
+      const sp: Speaker = { id, label, colorIndex: cur.list.length };
+      commit(mediaId, label, { speakers: { ...cur, list: [...cur.list, sp] } });
+      return id;
+    },
     updateOverlay: (mediaId, id, p, label = "調整配樂") => {
       const list = get().overlays[mediaId] ?? [];
       if (!list.some((x) => x.id === id)) return;
@@ -468,6 +518,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         splits: { ...s.splits, [p.mediaId]: p.before.splits ?? [] },
         markers: { ...s.markers, [p.mediaId]: p.before.markers ?? [] },
         overlays: { ...s.overlays, [p.mediaId]: p.before.overlays ?? [] },
+        speakers: { ...s.speakers, [p.mediaId]: p.before.speakers ?? EMPTY_SPEAKERS },
         past: s.past.slice(0, -1),
         future: [...s.future, p],
       }));
@@ -483,6 +534,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         splits: { ...s.splits, [p.mediaId]: p.after.splits ?? [] },
         markers: { ...s.markers, [p.mediaId]: p.after.markers ?? [] },
         overlays: { ...s.overlays, [p.mediaId]: p.after.overlays ?? [] },
+        speakers: { ...s.speakers, [p.mediaId]: p.after.speakers ?? EMPTY_SPEAKERS },
         future: s.future.slice(0, -1),
         past: [...s.past, p],
       }));
@@ -505,7 +557,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       const cur = get().decisions[mediaId] ?? {};
       commit(mediaId, `部分還原：${patch.label}`, { decisions: revertSubset(cur, patch.before.decisions, ids) });
     },
-    load: (mediaId, candidates, decisions, effects = [], splits = [], markers = [], overlays = []) =>
+    load: (mediaId, candidates, decisions, effects = [], splits = [], markers = [], overlays = [], speakers = EMPTY_SPEAKERS) =>
       set((s) => ({
         candidates: { ...s.candidates, [mediaId]: candidates },
         decisions: { ...s.decisions, [mediaId]: decisions },
@@ -513,6 +565,7 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         splits: { ...s.splits, [mediaId]: splits },
         markers: { ...s.markers, [mediaId]: markers },
         overlays: { ...s.overlays, [mediaId]: overlays },
+        speakers: { ...s.speakers, [mediaId]: speakers },
       })),
     clear: (mediaId) =>
       set((s) => {
@@ -522,13 +575,15 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
         const splits = { ...s.splits };
         const markers = { ...s.markers };
         const overlays = { ...s.overlays };
+        const speakers = { ...s.speakers };
         delete candidates[mediaId];
         delete decisions[mediaId];
         delete effects[mediaId];
         delete splits[mediaId];
         delete markers[mediaId];
         delete overlays[mediaId];
-        return { candidates, decisions, effects, splits, markers, overlays, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
+        delete speakers[mediaId];
+        return { candidates, decisions, effects, splits, markers, overlays, speakers, past: s.past.filter((p) => p.mediaId !== mediaId), future: s.future.filter((p) => p.mediaId !== mediaId) };
       }),
   };
 });

@@ -1111,6 +1111,24 @@ const en: Catalog = {
   "結尾 −{t}": "end −{t}",
   "（沒有配樂 / 音效，只帶設定）": "(no music / SFX, settings only)",
   "專案範本（開場 / 片尾 / 目標響度）": "Project templates (intro / outro / loudness target)",
+  // ---- 講者標籤 ----
+  "指派講者": "Assign speaker",
+  "（清除）": "(cleared)",
+  "{from}–{to} 指派給 {who}": "{from}–{to} assigned to {who}",
+  "講者": "Speakers",
+  "這一集還沒有講者標籤": "No speaker labels for this episode yet",
+  "一人一軌的素材用「同步麥克風」合併時會自動指派 —— 每支麥都收得到別人，但自己的麥一定最大聲，所以這是算出來的不是猜的。單軌素材沒辦法自動分辨誰是誰（那要聲紋模型），請在下面新增講者，再選取一段時間指派。": "One-mic-per-person material gets labelled automatically when you merge it with Sync mics: every mic picks up everyone, but a person is always loudest on their own mic, so this is computed rather than guessed. Single-track material cannot be told apart automatically (that needs a voiceprint model), so add speakers below and assign a time range to each.",
+  "佔比是「佔有人在講的時間」，不是佔整集長度 —— 靜音不屬於任何人。兩個人同時講的地方不指派給任何人（沒有答案好過錯誤答案），所以加起來會少於整集。": "The share is of speaking time, not of the whole episode: silence belongs to nobody. Where two people talk at once nothing is assigned (no answer beats a wrong one), so the totals add up to less than the episode length.",
+  "{ms} · {n} 次發言 · 最長一段 {longest}": "{ms} · {n} turns · longest {longest}",
+  "把選取的 {t} 指派給他": "Assign the selected {t} to them",
+  "有人在講的時間共 {ms}": "{ms} of speaking time in total",
+  "清掉選取範圍的講者": "Clear the speaker in the selection",
+  "新增講者": "Add a speaker",
+  "例如：來賓": "e.g. Guest",
+  "新增": "Add",
+  "在波形上拉一段時間選取，這裡就會出現「指派給他」。": "Drag a time range on the waveform and an assign button appears here.",
+  "多麥克風講者指派": "Speaker labels from multi-mic",
+  "講者（誰講了多久 / 改名 / 手動指派）": "Speakers (who talked how long / rename / assign)",
 };
 
 

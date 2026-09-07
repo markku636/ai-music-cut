@@ -107,7 +107,7 @@ Translation keys are the Traditional Chinese source strings, with identity fallb
   - macOS / Linux do not bundle it yet; install [ffmpeg 7+](https://ffmpeg.org/) (the deb / rpm packages declare the dependency).
   - Building from source, the bundled copy comes from `node scripts/fetch-ffmpeg.mjs` (URL and sha256 pinned in `scripts/ffmpeg-manifest.json`); skipping it still works for development, it just falls back to PATH.
 - A ttls API key (Settings → Server; **stored only in the OS keychain, never in any file**) — without a key you can still see the waveform, edit by hand and export
-- Or **no server at all**: Settings → transcript source → "Local faster-whisper" runs the same large-v3 on your own machine.
+- **Local recognition is the default** (Settings → transcript source): the same large-v3 runs on your own machine, nothing uploaded, no key needed.
   The app detects whether Python and the package are ready, and if not you **pick a model and press one button** (package and model fetched together, output streamed line by line).
   You see the exact command before pressing it — this step modifies your Python environment.
   The output format matches ttls exactly, so the rule layer receives identical signals (word timestamps, no_speech, avg_logprob, compression_ratio).

@@ -187,7 +187,7 @@ export default function SettingsDialog({
           <FormGrid>
             <Field
               label={t("逐字稿來源")}
-              hint={t("ttls 是把音檔上傳到伺服器轉寫；本機是用你電腦上的 faster-whisper，不上傳、不需要金鑰，但第一次會下載模型。")}
+              hint={t("預設是本機：用你電腦上的 faster-whisper，不上傳、不需要金鑰，第一次要裝套件與模型（下面一鍵裝）。有 ttls 金鑰的話切過去比較快，而且不佔你的機器。")}
             >
               <Select value={draft.asr_source || "ttls"} onChange={(e) => void commit({ asr_source: e.target.value })}>
                 <option value="ttls">{t("ttls 伺服器（上傳）")}</option>

@@ -1076,6 +1076,7 @@ const en: Catalog = {
   "留下 {n} 句、{len}": "Kept {n} sentences, {len}",
   "只留下含有命中的整個句子，其他全部剪掉（做精華版用）。一次 undo 就能還原。": "Keeps whole sentences that contain a match and cuts everything else (for making a highlight version). One undo restores it.",
   "只保留（{n} 句）": "Keep only ({n})",
+  "預設是本機：用你電腦上的 faster-whisper，不上傳、不需要金鑰，第一次要裝套件與模型（下面一鍵裝）。有 ttls 金鑰的話切過去比較快，而且不佔你的機器。": "Local is the default: faster-whisper on your own machine — nothing uploaded, no key needed, but the package and model install on first use (one click below). With a ttls key, switching over is faster and does not tie up your machine.",
 };
 
 

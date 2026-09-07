@@ -8,7 +8,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ffmpeg_path: null,
   claude_model: "sonnet",
   agent_backend: "claude",
-  asr_source: "ttls",
+  // 新安裝預設走本機辨識：ttls 是作者自架的伺服器，新使用者拿不到金鑰
+  asr_source: "local",
   prompt_overrides: {},
   filler_rules: {},
   export_presets: [],

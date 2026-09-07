@@ -116,7 +116,7 @@ codex 走 `codex exec --output-schema`，模型在 codex 自己的 `$CODEX_HOME/
   - macOS / Linux 目前不內建，需自行安裝 [ffmpeg 7+](https://ffmpeg.org/)（deb / rpm 已宣告套件相依）。
   - 從原始碼建置時，內建版靠 `node scripts/fetch-ffmpeg.mjs`（URL 與 sha256 釘在 `scripts/ffmpeg-manifest.json`）；不跑也能開發，只是會退回 PATH。
 - ttls API key（設定 → 伺服器；**只存 OS 鑰匙圈，不進任何檔案**）——沒有金鑰也能看波形、手動剪、輸出
-- 或者**完全不連伺服器**：設定 → 逐字稿來源改成「本機 faster-whisper」，同一個 large-v3 跑在自己機器上。
+- **預設就是本機辨識**（設定 → 逐字稿來源）：同一個 large-v3 跑在自己機器上，不上傳、不需要金鑰。
   App 會偵測 python 與套件是否就緒，沒裝的話**選好模型按一顆鈕就裝**（套件 + 模型一起抓，輸出逐行顯示）。
   按之前會先給你看實際會執行的指令 —— 這一步會動到你的 Python 環境。
   輸出格式與 ttls 相同，所以規則層拿到的訊號一模一樣（字級時間戳、no_speech、avg_logprob、compression_ratio）。

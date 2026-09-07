@@ -8,7 +8,7 @@ export interface AppSettings {
   claude_model: string;
   /** 結構化產出的 CLI："claude" 或 "codex"。 */
   agent_backend: string;
-  /** 逐字稿來源："ttls"（預設，上傳到伺服器）或 "local"（本機 faster-whisper）。 */
+  /** 逐字稿來源："local"（預設，本機 faster-whisper）或 "ttls"（上傳到伺服器）。 */
   asr_source: string;
   claude_review_model: string;
   /** "editor" | "editor+reviewer" */

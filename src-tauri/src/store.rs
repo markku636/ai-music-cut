@@ -16,8 +16,15 @@ pub const SETTINGS_FILE: &str = "settings.json";
 pub const TTLS_KEY_ACCOUNT: &str = "ttls-api-key";
 
 /// App 全域設定（磁碟格式）。**沒有任何 secret 欄位**——金鑰在 keychain。
+/// 新安裝預設走**本機**辨識。
+///
+/// 為什麼不是 ttls：那是作者自架的伺服器，新使用者手上沒有金鑰，也拿不到 ——
+/// 預設指過去等於一打開就是死路。本機這條路他自己裝得起來（設定裡有一鍵安裝），
+/// 而且不上傳、不需要金鑰。有金鑰的人在設定裡切回 ttls 就好。
+///
+/// 已經有設定檔的使用者不受影響：這個預設只在欄位不存在時才生效。
 fn default_asr_source() -> String {
-    "ttls".to_string()
+    "local".to_string()
 }
 
 fn default_agent_backend() -> String {
@@ -59,7 +66,7 @@ pub struct AppSettings {
     pub output_dir: Option<String>,
     pub lang: String,
     pub judge_enabled: bool,
-    /// 逐字稿來源："ttls"（預設）或 "local"（本機 faster-whisper）。
+    /// 逐字稿來源："local"（預設，本機 faster-whisper）或 "ttls"（上傳到伺服器）。
     #[serde(default = "default_asr_source")]
     pub asr_source: String,
     pub asr_language: String,
@@ -208,6 +215,25 @@ mod tests {
         let d = std::env::temp_dir().join(format!("aicut-store-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[tokio::test]
+    async fn fresh_install_defaults_to_local_asr() {
+        // 新安裝（沒有設定檔）預設走本機辨識：ttls 是作者自架的伺服器，
+        // 新使用者拿不到金鑰，預設指過去等於一打開就是死路。
+        let dir = tmpdir();
+        let s: AppSettings = read_json_in(&dir, SETTINGS_FILE).await.unwrap();
+        assert_eq!(s.asr_source, "local");
+    }
+
+    #[tokio::test]
+    async fn existing_settings_keep_their_asr_source() {
+        // 已經選了 ttls 的使用者升級後不該被改掉
+        let dir = tmpdir();
+        let raw = r#"{"asr_source":"ttls"}"#;
+        tokio::fs::write(dir.join(SETTINGS_FILE), raw).await.unwrap();
+        let s: AppSettings = read_json_in(&dir, SETTINGS_FILE).await.unwrap();
+        assert_eq!(s.asr_source, "ttls");
     }
 
     #[tokio::test]

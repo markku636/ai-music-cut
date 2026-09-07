@@ -84,6 +84,11 @@ export interface EffectSpec {
   /** selection：一定要有選取；file：整檔；either：有選取就選取、沒有就整檔。 */
   scope: "selection" | "file" | "either";
   suggest?: (ctx: EffectContext, range: TimeSelection) => Suggestion | null;
+  /**
+   * 要真的去量（解碼、算頻譜）才給得出的建議：對話框開啟後跑，結果蓋過 suggest。
+   * 沒有 quick 指令會用它（quick 是同步的）；量不到就回 null。
+   */
+  analyze?: (ctx: EffectContext, range: TimeSelection) => Promise<Suggestion | null>;
   /** 回傳錯誤訊息（zh key）；null = 可以套用。 */
   validate?: (v: ParamValues, ctx: EffectContext) => string | null;
   build: (v: ParamValues, range: TimeSelection, ctx: EffectContext) => EffectApplication;

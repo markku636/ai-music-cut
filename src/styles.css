@@ -226,3 +226,13 @@ body {
   background-color: rgb(var(--c-warning) / 0.55);
   box-shadow: inset 0 -2px 0 rgb(var(--c-warning) / 0.95);
 }
+
+/* 頻譜視圖：wavesurfer 的 canvas 在 shadow DOM 裡，用 ::part 壓淡讓底下的頻譜圖露出來 */
+.tl-view-spectrum ::part(canvases),
+.tl-view-spectrum ::part(progress) {
+  opacity: 0.18;
+}
+.tl-view-both ::part(canvases),
+.tl-view-both ::part(progress) {
+  opacity: 0.75;
+}

@@ -480,6 +480,32 @@ pub async fn fx_preview(
     crate::fx::preview(&bins, &path, start_ms, end_ms, &chain, &dir, &safe_key).await
 }
 
+/// 頻譜圖：畫面看哪一段就出哪一段的 PNG（快取在媒體目錄的 spec/）。
+#[tauri::command]
+pub async fn media_spectrogram(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+    fingerprint: String,
+    start_ms: f64,
+    end_ms: f64,
+    w: u32,
+    h: u32,
+    palette: String,
+) -> AppResult<String> {
+    let bins = state.ffmpeg_bins().await?;
+    let dir = media::media_dir(&app, &fingerprint)?.join("spec");
+    let p = crate::spectrum::spectrogram_png(&bins, &path, start_ms, end_ms, w, h, &palette, &dir).await?;
+    Ok(p.to_string_lossy().into_owned())
+}
+
+/// 選取的平均功率譜（嗡聲偵測用）。
+#[tauri::command]
+pub async fn media_spectrum(state: State<'_, AppState>, path: String, start_ms: f64, end_ms: f64, n: Option<u32>) -> AppResult<crate::spectrum::Spectrum> {
+    let bins = state.ffmpeg_bins().await?;
+    crate::spectrum::spectrum_of_range(&bins, &path, start_ms, end_ms, n.unwrap_or(8192).clamp(256, 65536) as usize).await
+}
+
 #[tauri::command]
 pub fn render_cancel(state: State<'_, AppState>, job_id: String) {
     if let Some(f) = state.cancel_flags.lock().get(&job_id) {

@@ -9,6 +9,7 @@ import { gainSpec } from "../effects/specs/gain";
 import { fadesSpec, invertSpec } from "../effects/specs/fades";
 import { matchLoudnessSpec, peakNormalizeSpec } from "../effects/specs/normalize";
 import { REPAIR_SPECS } from "../effects/specs/repair";
+import { TONE_SPECS } from "../effects/specs/tone";
 
 /**
  * 把所有指令登記進註冊表。App 掛載時呼叫一次；熱更新重跑也沒關係（upsert）。
@@ -25,6 +26,8 @@ export function installCommands(): () => void {
     ...registerEffectSpec(invertSpec),
     // 修復類（範圍濾波：降噪 / 去爆音 / 去削波 / 去嗡聲 / DC）—— 輸出時 Rust punch-in
     ...REPAIR_SPECS.flatMap((s) => registerEffectSpec(s)),
+    // 音色 / 動態 / 空間 / 時間（EQ / 壓縮 / 回音 / 殘響 / 反轉 / 變調）
+    ...TONE_SPECS.flatMap((s) => registerEffectSpec(s)),
   ]);
   return installCommandReactivity();
 }

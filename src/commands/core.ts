@@ -1,4 +1,5 @@
 import {
+  AudioLines,
   BookMarked,
   BrainCircuit,
   Captions,
@@ -287,6 +288,17 @@ export const CORE_COMMANDS: Command[] = [
   { id: "view.skim", title: "滑過波形就聽得到（skimming）開關", group: "view", section: "波形", icon: Volume2, shortcuts: ["Shift+S"], checked: () => useTimeline.getState().skim, enabled: () => OK, run: () => useTimeline.getState().toggleSkim() },
   { id: "view.beats", title: "顯示拍線", group: "view", section: "波形", icon: Music, checked: () => useTimeline.getState().showBeats, enabled: () => (useTimeline.getState().beatGrid ? OK : { ok: false, why: "這個檔案沒有偵測到拍子" }), run: () => useTimeline.getState().toggleBeats() },
   { id: "view.loudness", title: "顯示響度表", group: "view", section: "波形", icon: Volume2, checked: () => useTimeline.getState().showLoudness, enabled: () => OK, run: () => useTimeline.getState().toggleLoudness() },
+  {
+    id: "view.spectrogram",
+    title: "波形 / 頻譜 / 疊合",
+    group: "view",
+    section: "波形",
+    icon: AudioLines,
+    keywords: ["spectrogram", "spectrum", "frequency"],
+    checked: () => useTimeline.getState().viewMode !== "wave",
+    enabled: needsMedia,
+    run: () => useTimeline.getState().cycleViewMode(),
+  },
   { id: "view.follow", title: "跟隨播放線：翻頁 / 置中 / 關", group: "view", section: "波形", icon: MoveHorizontal, enabled: () => OK, run: () => usePlayback.getState().cycleFollow() },
   { id: "view.zoomIn", title: "放大", group: "view", section: "縮放", icon: ZoomIn, shortcuts: ["Ctrl+=", "Ctrl+Shift+="], simple: true, enabled: needsMedia, run: () => useTimeline.getState().zoomBy(1.25) },
   { id: "view.zoomOut", title: "縮小", group: "view", section: "縮放", icon: ZoomOut, shortcuts: ["Ctrl+-"], simple: true, enabled: needsMedia, run: () => useTimeline.getState().zoomBy(0.8) },

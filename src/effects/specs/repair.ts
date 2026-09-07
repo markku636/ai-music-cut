@@ -1,6 +1,9 @@
 import { MoveVertical, Radio, Sparkles, Waves, Zap } from "lucide-react";
 import { effectId, type AudioEffect, type RangeEffectKind } from "../../analysis/effects";
 import { suggestDenoise } from "../../analysis/levels";
+import { findHum, suggestedHarmonics } from "../../analysis/spectrum";
+import { api } from "../../api";
+import { useProject } from "../../store/project";
 import { previewRangeEffects } from "../../pipeline/fxPreview";
 import { useCleanup } from "../../store/cleanup";
 import type { TimeSelection } from "../../store/timeline";
@@ -165,6 +168,18 @@ export const humSpec: EffectSpec = {
   ],
   scope: "selection",
   keywords: ["hum", "buzz", "50hz", "60hz", "mains"],
+  // 真的去量頻譜：50 / 60 Hz 與諧波有沒有突出。最多吃 30 秒
+  analyze: async (ctx, range) => {
+    const media = useProject.getState().media.find((m) => m.id === ctx.mediaId);
+    if (!media) return null;
+    const sp = await api.mediaSpectrum(media.path, range.startMs, Math.min(range.endMs, range.startMs + 30_000), 16384);
+    const r = findHum(sp);
+    return {
+      values: r.baseHz ? { baseHz: String(r.baseHz), harmonics: suggestedHarmonics(r) } : {},
+      summary: r.summary,
+      confidence: r.baseHz ? "measured" : "heuristic",
+    };
+  },
   build: humBuild,
   preview: previewOf(humBuild),
 };

@@ -10,6 +10,8 @@ export const MAX_PX_PER_SEC = 500;
 export const MIN_RANGE_MS = 20;
 
 export type TimelineTool = "seek" | "select" | "trim";
+/** 波形 / 頻譜 / 疊合（頻譜是 on-demand 的 PNG，見 timeline/SpectrogramLayer）。 */
+export type TimelineViewMode = "wave" | "spectrum" | "both";
 
 export interface TimeSelection {
   startMs: number;
@@ -22,6 +24,10 @@ interface TimelineStore {
   /** 波形容器寬度（px），縮放到選取用。 */
   viewWidth: number;
   showLoudness: boolean;
+  viewMode: TimelineViewMode;
+  setViewMode: (m: TimelineViewMode) => void;
+  /** wave → spectrum → both → wave */
+  cycleViewMode: () => void;
   /** seek：點擊 / 拖曳定位；select：拖曳選取一段（手動剪輯）；trim：抓接縫做漣漪 / 捲動修剪。 */
   tool: TimelineTool;
   /** 目前的時間選取（select 工具拖出來、或逐字稿 Shift+點）。 */
@@ -137,6 +143,15 @@ function readBool(key: string, fallback: boolean): boolean {
   }
 }
 
+function readViewMode(): TimelineViewMode {
+  try {
+    const v = localStorage.getItem("aicut:viewMode");
+    return v === "spectrum" || v === "both" ? v : "wave";
+  } catch {
+    return "wave";
+  }
+}
+
 function writeBool(key: string, v: boolean) {
   try {
     localStorage.setItem(key, v ? "1" : "0");
@@ -166,6 +181,7 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
   fitPxPerSec: 1,
   viewWidth: 800,
   showLoudness: readBool("aicut:showLoudness", false),
+  viewMode: readViewMode(),
   tool: readTool(),
   selection: null,
   loopSelection: readBool("aicut:loopSelection", false),
@@ -291,6 +307,18 @@ export const useTimeline = create<TimelineStore>((set, get) => ({
       writeBool("aicut:showLoudness", !s.showLoudness);
       return { showLoudness: !s.showLoudness };
     }),
+  setViewMode: (m) => {
+    try {
+      localStorage.setItem("aicut:viewMode", m);
+    } catch {
+      /* ignore */
+    }
+    set({ viewMode: m });
+  },
+  cycleViewMode: () => {
+    const cur = get().viewMode;
+    get().setViewMode(cur === "wave" ? "spectrum" : cur === "spectrum" ? "both" : "wave");
+  },
   setTool: (tool) => {
     try {
       localStorage.setItem("aicut:tool", tool);

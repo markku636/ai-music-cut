@@ -42,7 +42,13 @@ export type RenderRangeFx =
   | { kind: "declick"; threshold: number }
   | { kind: "declip"; threshold: number }
   | { kind: "hum"; base_hz: number; harmonics: number }
-  | { kind: "dc"; shift: number };
+  | { kind: "dc"; shift: number }
+  | { kind: "eq"; low_db: number; mid_db: number; high_db: number }
+  | { kind: "compressor"; threshold_db: number; ratio: number; attack_ms: number; release_ms: number; makeup_db: number }
+  | { kind: "echo"; delay_ms: number; decay: number }
+  | { kind: "reverb"; size: number; mix: number }
+  | { kind: "reverse" }
+  | { kind: "pitch"; semitones: number };
 
 export interface RenderFxRegion {
   out_start_ms: number;
@@ -73,6 +79,18 @@ export function toRenderFx(e: AudioEffect): RenderRangeFx | null {
       return { kind: "hum", base_hz: num(p.baseHz, 60), harmonics: num(p.harmonics, 4) };
     case "dc":
       return { kind: "dc", shift: num(p.shift, 0) };
+    case "eq":
+      return { kind: "eq", low_db: num(p.lowDb, 0), mid_db: num(p.midDb, 0), high_db: num(p.highDb, 0) };
+    case "compressor":
+      return { kind: "compressor", threshold_db: num(p.thresholdDb, -18), ratio: num(p.ratio, 4), attack_ms: num(p.attackMs, 10), release_ms: num(p.releaseMs, 120), makeup_db: num(p.makeupDb, 0) };
+    case "echo":
+      return { kind: "echo", delay_ms: num(p.delayMs, 250), decay: num(p.decay, 0.4) };
+    case "reverb":
+      return { kind: "reverb", size: num(p.size, 1), mix: num(p.mix, 0.6) };
+    case "reverse":
+      return { kind: "reverse" };
+    case "pitch":
+      return { kind: "pitch", semitones: num(p.semitones, 0) };
     default:
       return null;
   }

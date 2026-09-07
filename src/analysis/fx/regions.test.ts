@@ -45,9 +45,12 @@ describe("toRenderFx", () => {
     expect(toRenderFx(fx("hum", 0, 1, { baseHz: 50, harmonics: 6 }))).toEqual({ kind: "hum", base_hz: 50, harmonics: 6 });
     expect(toRenderFx(fx("dc", 0, 1))).toEqual({ kind: "dc", shift: 0 });
   });
-  it("引擎還不支援的種類回 null（增益類不是範圍效果也回 null）", () => {
-    expect(toRenderFx(fx("reverb", 0, 1))).toBeNull();
+  it("增益類不是範圍效果 → null；六種音色 / 動態 / 空間效果都有對應", () => {
     expect(toRenderFx(fx("gain", 0, 1))).toBeNull();
+    expect(toRenderFx(fx("reverb", 0, 1))).toEqual({ kind: "reverb", size: 1, mix: 0.6 });
+    expect(toRenderFx(fx("reverse", 0, 1))).toEqual({ kind: "reverse" });
+    expect(toRenderFx(fx("pitch", 0, 1, { semitones: 3 }))).toEqual({ kind: "pitch", semitones: 3 });
+    expect(toRenderFx(fx("compressor", 0, 1, { thresholdDb: -20 }))).toMatchObject({ kind: "compressor", threshold_db: -20, ratio: 4 });
   });
 });
 
@@ -118,9 +121,16 @@ describe("fxRegionsToOut", () => {
   });
 
   it("引擎不支援的種類列在 unsupported，不默默少掉", () => {
-    const r = fxRegionsToOut([fx("reverb", 1_000, 2_000), fx("denoise", 1_000, 2_000)], segs, xf);
-    expect(r.unsupported.map((e) => e.kind)).toEqual(["reverb"]);
+    const bogus = { ...fx("denoise", 1_000, 2_000), kind: "flanger" as AudioEffect["kind"], id: "bogus" };
+    const r = fxRegionsToOut([bogus, fx("denoise", 1_000, 2_000)], segs, xf);
+    // flanger 不是範圍效果也不是增益效果 → 兩邊都不理；真正的「不支援」要等 RangeEffectKind 多出引擎沒接的種類
+    expect(r.unsupported).toEqual([]);
     expect(r.regions).toHaveLength(1);
+  });
+
+  it("反轉 / 變調的區域標成 correlated=false，混在一起也是", () => {
+    const r = fxRegionsToOut([fx("reverse", 1_000, 2_000), fx("denoise", 1_500, 3_000)], segs, xf);
+    expect(r.regions.map((x) => x.correlated)).toEqual([false, false, true]);
   });
 
   it("增益類效果完全不理", () => {

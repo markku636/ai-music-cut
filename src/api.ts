@@ -453,6 +453,12 @@ export const api = {
   /** 範圍濾波的 A/B 試聽：對來源檔切一段，dry / wet 各一份 mp3（快取在媒體目錄的 fx/）。 */
   fxPreview: (path: string, fingerprint: string, startMs: number, endMs: number, chain: RenderRangeFx[], key: string) =>
     invoke<{ dry: string; wet: string }>("fx_preview", { path, fingerprint, startMs, endMs, chain, key }),
+  /** 頻譜圖 PNG（showspectrumpic），畫面看哪一段要哪一段；回快取路徑。 */
+  mediaSpectrogram: (path: string, fingerprint: string, startMs: number, endMs: number, w: number, h: number, palette: string) =>
+    invoke<string>("media_spectrogram", { path, fingerprint, startMs, endMs, w, h, palette }),
+  /** 一段的平均功率譜（dB / bin）：嗡聲偵測用。 */
+  mediaSpectrum: (path: string, startMs: number, endMs: number, n = 8192) =>
+    invoke<{ sample_rate: number; n: number; db: number[]; frames: number }>("media_spectrum", { path, startMs, endMs, n }),
   renderCancel: (jobId: string) => invoke<void>("render_cancel", { jobId }),
   projectSave: (path: string, doc: unknown) => invoke<void>("project_save", { path, doc }),
   /** 寫純文字檔（節目筆記的 .md）。不加 BOM。 */

@@ -40,6 +40,18 @@ pub enum RangeFx {
     Hum { base_hz: f64, harmonics: u32 },
     /// DC 偏移：shift = 0 → 10 Hz 高通自動去；否則 dcshift 精確平移。
     Dc { shift: f64 },
+    /// 三段 EQ（dB，±12）：低 200 Hz shelf、中 1 kHz peak、高 4 kHz shelf。
+    Eq { low_db: f64, mid_db: f64, high_db: f64 },
+    /// 壓縮：threshold（dBFS）、ratio、attack / release（ms）、makeup（dB）。
+    Compressor { threshold_db: f64, ratio: f64, attack_ms: f64, release_ms: f64, makeup_db: f64 },
+    /// 回音：delay（ms）與衰減 0–1。尾巴在區域結尾截斷。
+    Echo { delay_ms: f64, decay: f64 },
+    /// 殘響：多 tap 回音近似；size 放大 tap 間距、mix 放大 tap 音量。
+    Reverb { size: f64, mix: f64 },
+    /// 反轉（倒著播）。波形跟原本無關 → 等功率交叉、驗收不比相似度。
+    Reverse,
+    /// 變調（半音，±12），保持長度：asetrate + aresample + atempo。
+    Pitch { semitones: f64 },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -76,6 +88,12 @@ fn rank(fx: &RangeFx) -> u8 {
         RangeFx::Declip { .. } => 2,
         RangeFx::Hum { .. } => 3,
         RangeFx::Denoise { .. } => 4,
+        RangeFx::Eq { .. } => 5,
+        RangeFx::Compressor { .. } => 6,
+        RangeFx::Echo { .. } => 7,
+        RangeFx::Reverb { .. } => 8,
+        RangeFx::Pitch { .. } => 9,
+        RangeFx::Reverse => 10,
     }
 }
 
@@ -86,6 +104,12 @@ fn kind_name(fx: &RangeFx) -> &'static str {
         RangeFx::Declip { .. } => "declip",
         RangeFx::Hum { .. } => "hum",
         RangeFx::Dc { .. } => "dc",
+        RangeFx::Eq { .. } => "eq",
+        RangeFx::Compressor { .. } => "compressor",
+        RangeFx::Echo { .. } => "echo",
+        RangeFx::Reverb { .. } => "reverb",
+        RangeFx::Reverse => "reverse",
+        RangeFx::Pitch { .. } => "pitch",
     }
 }
 
@@ -116,6 +140,37 @@ pub fn filter_for(fx: &RangeFx) -> String {
                 format!("dcshift=shift={s:.4}:limitergain=0.02")
             }
         }
+        RangeFx::Eq { low_db, mid_db, high_db } => format!(
+            "bass=g={:.1}:f=200,equalizer=f=1000:t=o:w=1.5:g={:.1},treble=g={:.1}:f=4000",
+            clamp(*low_db, -12.0, 12.0),
+            clamp(*mid_db, -12.0, 12.0),
+            clamp(*high_db, -12.0, 12.0)
+        ),
+        RangeFx::Compressor { threshold_db, ratio, attack_ms, release_ms, makeup_db } => format!(
+            // acompressor 的 threshold / makeup 是線性倍率：dB 在這裡換算，前端只講 dB
+            "acompressor=threshold={:.4}:ratio={:.1}:attack={:.0}:release={:.0}:makeup={:.3}:knee=2.83:detection=rms",
+            10f64.powf(clamp(*threshold_db, -60.0, 0.0) / 20.0),
+            clamp(*ratio, 1.0, 20.0),
+            clamp(*attack_ms, 0.01, 2000.0),
+            clamp(*release_ms, 0.01, 9000.0),
+            10f64.powf(clamp(*makeup_db, 0.0, 36.0) / 20.0)
+        ),
+        RangeFx::Echo { delay_ms, decay } => format!("aecho=in_gain=0.8:out_gain=0.6:delays={:.0}:decays={:.2}", clamp(*delay_ms, 10.0, 2000.0), clamp(*decay, 0.05, 0.9)),
+        RangeFx::Reverb { size, mix } => {
+            // 五個質數間距的 tap（不會互相疊成金屬聲）；size 拉開間距、mix 拉高音量
+            let size = clamp(*size, 0.3, 3.0);
+            let mix = clamp(*mix, 0.1, 1.0);
+            let delays: Vec<String> = [23.0, 47.0, 71.0, 107.0, 157.0].iter().map(|d| format!("{:.0}", d * size)).collect();
+            let decays: Vec<String> = [0.55, 0.45, 0.35, 0.25, 0.15].iter().map(|g| format!("{:.2}", g * mix)).collect();
+            format!("aecho=0.8:0.7:{}:{}", delays.join("|"), decays.join("|"))
+        }
+        RangeFx::Reverse => "areverse".to_string(),
+        RangeFx::Pitch { semitones } => {
+            // 保持長度：先改取樣率（音高 × 時長一起變），重取樣回 48k，再用 atempo 把時長拉回來
+            let st = clamp(*semitones, -12.0, 12.0);
+            let rate = (48000.0 * 2f64.powf(st / 12.0)).round();
+            format!("asetrate={:.0},aresample=48000,atempo={:.5}", rate, 48000.0 / rate)
+        }
     }
 }
 
@@ -136,6 +191,8 @@ pub fn latency_frames(fx: &RangeFx) -> u64 {
         RangeFx::Declick { .. } => LAT_ADECLICK,
         RangeFx::Declip { .. } => LAT_ADECLIP,
         RangeFx::Hum { .. } | RangeFx::Dc { .. } => 0,
+        // IIR / 動態 / 延遲線都不推內容；atempo 對齊 pts（WSOLA 內部抖動不算延遲）；areverse 另有處理
+        RangeFx::Eq { .. } | RangeFx::Compressor { .. } | RangeFx::Echo { .. } | RangeFx::Reverb { .. } | RangeFx::Reverse | RangeFx::Pitch { .. } => 0,
     }
 }
 
@@ -162,10 +219,28 @@ pub fn pre_roll_frames(chain: &[RangeFx]) -> u64 {
 }
 
 /// 濾鏡後的波形跟原本還有沒有相關性（決定交叉用線性還是等功率；也是驗收要不要跳過相似度的依據）。
-/// R4 的五種都是「修」，保留包絡 → true。
+/// 修復類與音色 / 動態 / 空間類都保留包絡 → true；反轉、變調 → false。
 pub fn is_correlated(chain: &[RangeFx]) -> bool {
-    let _ = chain;
-    true
+    !chain.iter().any(|f| matches!(f, RangeFx::Reverse | RangeFx::Pitch { .. }))
+}
+
+pub fn has_reverse(chain: &[RangeFx]) -> bool {
+    chain.iter().any(|f| matches!(f, RangeFx::Reverse))
+}
+
+/// 一段區域要跟 ffmpeg 要多少 pre / post，以及 core 要丟掉幾個 frame 才對得上 dry 的 start。
+///
+/// 一般：pre = 暖機、post = 延遲 + 保險（+ 相接的交叉），丟 pre + 延遲。
+/// **反轉**：ffmpeg 吐回來的是 reverse(pre + 區域 + post)，區域內容會落在串流的 `post..post+len`；
+/// 所以 post 一律 0、pre 拿來當保險（它會反轉到串流**尾巴**，自然被忽略）、什麼都不用丟。
+pub fn roll_plan(chain: &[RangeFx], start: u64, touching_next: bool) -> (u64, u64, u64) {
+    if has_reverse(chain) {
+        return (POST_EXTRA_FRAMES.min(start), 0, 0);
+    }
+    let pre = pre_roll_frames(chain).min(start);
+    let lat = chain_latency_frames(chain);
+    let post = lat + POST_EXTRA_FRAMES + if touching_next { XF_FRAMES } else { 0 };
+    (pre, post, pre + lat)
 }
 
 /// 已換算成 frame、排好序、驗過的區域。
@@ -242,6 +317,14 @@ fn kinds_label(chain: &[RangeFx]) -> String {
     chain.iter().map(kind_name).collect::<Vec<_>>().join("+")
 }
 
+/// 第 i 段與第 i+1 段相接（wet→wet 交叉）？反轉的段沒有 post-roll 可以借，永遠當不相接（淡回 dry）。
+fn touching(regions: &[Region], i: usize) -> bool {
+    match (regions.get(i), regions.get(i + 1)) {
+        (Some(a), Some(b)) => a.end == b.start && !has_reverse(&a.chain) && !has_reverse(&b.chain),
+        _ => false,
+    }
+}
+
 /// punch-in 核心（純帳目，不碰檔案）：dry 逐 frame 進來、regions 決定哪裡換成 wet、sink 逐 frame 收。
 ///
 /// 回傳寫出的 frame 數，**一定等於** `total_frames`。wet 串流提早結束一律報錯，不會退回 dry。
@@ -283,13 +366,11 @@ where
         // 這個 frame 該開始哪一段
         if ri < regions.len() && regions[ri].start == t {
             let r = &regions[ri];
-            let pre = pre_roll_frames(&r.chain).min(t);
-            let lat = chain_latency_frames(&r.chain);
-            let touching_next = regions.get(ri + 1).map(|n| n.start == r.end).unwrap_or(false);
-            let post = lat + POST_EXTRA_FRAMES + if touching_next { XF_FRAMES } else { 0 };
+            let touching_next = touching(regions, ri);
+            let (pre, post, discard) = roll_plan(&r.chain, t, touching_next);
             let mut s = opener.open(r, pre, post, ch).await?;
             // 丟掉 pre-roll 與濾鏡延遲：wet 的第一個有效 frame 才對得上 dry 的 start
-            for _ in 0..(pre + lat) {
+            for _ in 0..discard {
                 if !s.next_frame(&mut wet_frame).await? {
                     return Err(AppError::Ffmpeg(format!("濾鏡回傳的長度不對（{} 第 {} 段：暖機都不夠）", kinds_label(&r.chain), ri + 1)));
                 }
@@ -306,8 +387,8 @@ where
             }
             let din = t - r.start;
             let dout = r.end - 1 - t;
-            let touching_prev = ri > 0 && regions[ri - 1].end == r.start;
-            let touching_next = regions.get(ri + 1).map(|n| n.start == r.end).unwrap_or(false);
+            let touching_prev = ri > 0 && touching(regions, ri - 1);
+            let touching_next = touching(regions, ri);
             let correlated = is_correlated(&r.chain);
             if touching_prev && din < XF_FRAMES {
                 // 頭：從前一段的 wet 交叉過來（不是從 dry），縫上聽不到 dry 漏進來
@@ -507,11 +588,10 @@ pub async fn preview(bins: &FfmpegBins, src: &str, start_ms: f64, end_ms: f64, c
     if !wet.is_file() {
         let mut sorted = chain.to_vec();
         sorted.sort_by_key(rank);
-        let pre = pre_roll_frames(&sorted).min(ms_to_frames(start));
-        let lat = chain_latency_frames(&sorted);
+        let (pre, post, discard) = roll_plan(&sorted, ms_to_frames(start), false);
         let ss = (ms_to_frames(start) - pre) as f64 / SR as f64;
-        let dur = (ms_to_frames(len) + pre + lat + POST_EXTRA_FRAMES) as f64 / SR as f64;
-        let af = format!("aresample=48000,{},atrim=start_sample={}:end_sample={},asetpts=PTS-STARTPTS", chain_filter(&sorted), pre + lat, pre + lat + ms_to_frames(len));
+        let dur = (ms_to_frames(len) + pre + post) as f64 / SR as f64;
+        let af = format!("aresample=48000,{},atrim=start_sample={}:end_sample={},asetpts=PTS-STARTPTS", chain_filter(&sorted), discard, discard + ms_to_frames(len));
         let mut c = proc::cmd(&bins.ffmpeg);
         c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y"]);
         c.args(["-ss", &format!("{ss:.6}"), "-i"]);
@@ -553,6 +633,40 @@ mod tests {
         assert_eq!(filter_for(&RangeFx::Hum { base_hz: 1000.0, harmonics: 99 }).matches("bandreject").count(), 8);
         assert!(filter_for(&RangeFx::Hum { base_hz: 1000.0, harmonics: 1 }).starts_with("bandreject=f=70:"));
         assert_eq!(filter_for(&RangeFx::Dc { shift: f64::NAN }), "highpass=f=10:poles=2");
+    }
+
+    #[test]
+    fn golden_tone_dynamics_space_strings() {
+        assert_eq!(filter_for(&RangeFx::Eq { low_db: -3.0, mid_db: 2.0, high_db: 3.0 }), "bass=g=-3.0:f=200,equalizer=f=1000:t=o:w=1.5:g=2.0,treble=g=3.0:f=4000");
+        assert_eq!(
+            filter_for(&RangeFx::Compressor { threshold_db: -18.0, ratio: 4.0, attack_ms: 10.0, release_ms: 120.0, makeup_db: 6.0 }),
+            "acompressor=threshold=0.1259:ratio=4.0:attack=10:release=120:makeup=1.995:knee=2.83:detection=rms"
+        );
+        assert_eq!(filter_for(&RangeFx::Echo { delay_ms: 250.0, decay: 0.4 }), "aecho=in_gain=0.8:out_gain=0.6:delays=250:decays=0.40");
+        assert_eq!(filter_for(&RangeFx::Reverb { size: 1.0, mix: 1.0 }), "aecho=0.8:0.7:23|47|71|107|157:0.55|0.45|0.35|0.25|0.15");
+        // 0.15 × 0.5 = 0.075 在二進位是 0.07499…，{:.2} 印 0.07（不是四捨五入的 0.08）
+        assert_eq!(filter_for(&RangeFx::Reverb { size: 2.0, mix: 0.5 }), "aecho=0.8:0.7:46|94|142|214|314:0.28|0.23|0.17|0.12|0.07");
+        assert_eq!(filter_for(&RangeFx::Reverse), "areverse");
+        assert_eq!(filter_for(&RangeFx::Pitch { semitones: 12.0 }), "asetrate=96000,aresample=48000,atempo=0.50000");
+        assert_eq!(filter_for(&RangeFx::Pitch { semitones: -12.0 }), "asetrate=24000,aresample=48000,atempo=2.00000");
+        assert_eq!(filter_for(&RangeFx::Pitch { semitones: 3.0 }), "asetrate=57082,aresample=48000,atempo=0.84090");
+        // clamp
+        assert!(filter_for(&RangeFx::Eq { low_db: 99.0, mid_db: -99.0, high_db: 0.0 }).starts_with("bass=g=12.0:"));
+        assert!(filter_for(&RangeFx::Pitch { semitones: 40.0 }).starts_with("asetrate=96000,"));
+        assert!(filter_for(&RangeFx::Compressor { threshold_db: 5.0, ratio: 0.0, attack_ms: -1.0, release_ms: 0.0, makeup_db: 99.0 }).contains("threshold=1.0000:ratio=1.0:"));
+        assert!(!is_correlated(&[RangeFx::Reverse]) && !is_correlated(&[RangeFx::Pitch { semitones: 1.0 }]));
+        assert!(is_correlated(&[RangeFx::Echo { delay_ms: 100.0, decay: 0.3 }, RangeFx::Eq { low_db: 0.0, mid_db: 0.0, high_db: 0.0 }]));
+        let full = chain_filter(&[RangeFx::Reverse, RangeFx::Pitch { semitones: 1.0 }, RangeFx::Eq { low_db: 0.0, mid_db: 0.0, high_db: 0.0 }, RangeFx::Compressor { threshold_db: -20.0, ratio: 2.0, attack_ms: 5.0, release_ms: 50.0, makeup_db: 0.0 }]);
+        let (eq, comp, pitch, rev) = (full.find("bass=").unwrap(), full.find("acompressor").unwrap(), full.find("asetrate").unwrap(), full.find("areverse").unwrap());
+        assert!(eq < comp && comp < pitch && pitch < rev, "{full}");
+    }
+
+    #[test]
+    fn reverse_roll_plan_has_no_post_and_discards_nothing() {
+        assert_eq!(roll_plan(&[RangeFx::Reverse], 48000, true), (POST_EXTRA_FRAMES, 0, 0));
+        assert_eq!(roll_plan(&[RangeFx::Reverse], 100, false), (100, 0, 0));
+        assert_eq!(roll_plan(&[dn(12.0, -50.0)], 48000, false), (48000, LAT_AFFTDN + POST_EXTRA_FRAMES, 48000 + LAT_AFFTDN));
+        assert_eq!(roll_plan(&[RangeFx::Pitch { semitones: 2.0 }], 48000, true), (PAD_FRAMES, POST_EXTRA_FRAMES + XF_FRAMES, PAD_FRAMES));
     }
 
     #[test]
@@ -622,16 +736,26 @@ mod tests {
             self.idx += 1;
             let lat = chain_latency_frames(&region.chain);
             let mut q = VecDeque::new();
-            for _ in 0..(pre + lat) {
-                for _ in 0..ch {
-                    q.push_back(99.0);
+            let junk = |q: &mut VecDeque<f32>| {
+                for _ in 0..(pre + lat) {
+                    for _ in 0..ch {
+                        q.push_back(99.0);
+                    }
                 }
+            };
+            // 反轉：ffmpeg 回的是 reverse(pre + 區域)，pre-roll 反轉到**尾巴**；其他濾鏡 pre-roll 與延遲在頭
+            let rev = has_reverse(&region.chain);
+            if !rev {
+                junk(&mut q);
             }
             let n = (region.end - region.start + post).saturating_sub(self.short_by);
             for _ in 0..n {
                 for c in 0..ch {
                     q.push_back(v + c as f32 * 1000.0);
                 }
+            }
+            if rev {
+                junk(&mut q);
             }
             Ok(FakeStream { q, ch })
         }
@@ -724,6 +848,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reverse_region_is_never_touching_and_uses_equal_power_ramps() {
+        let total = ms_to_frames(3000.0);
+        let mut a = reg(500.0, 1500.0);
+        a.chain = vec![RangeFx::Reverse];
+        let b = reg(1500.0, 2500.0);
+        // 反轉段（wet 0.5）與相接的降噪段（wet 0.5）、dry 0：反轉段不借 post-roll，兩段各自淡回 / 淡出 dry
+        let mut op = FakeOpener { values: vec![0.5, 0.5], calls: vec![], short_by: 0, idx: 0 };
+        let out = run(0.0, total, 1, &[a, b], &mut op).await.unwrap();
+        let m = ms_to_frames(1500.0) as usize;
+        assert_eq!(op.calls[0], (POST_EXTRA_FRAMES, 0), "反轉段：pre 當保險、post 0");
+        assert_eq!(op.calls[1].1, LAT_AFFTDN + POST_EXTRA_FRAMES, "後段不多帶相接的 XF");
+        assert!(out[m - 1] < 0.5 && out[m] < 0.5, "縫上兩邊都淡向 dry（不是 wet→wet）");
+        // 等功率：反轉段開頭第一個 frame 的 wet 權重是 sin(π/2·1/480)，dry 是 cos(...)
+        let a0 = ms_to_frames(500.0) as usize;
+        let w = ((1.0 / XF_FRAMES as f32) * std::f32::consts::FRAC_PI_2).sin();
+        assert!((out[a0] - 0.5 * w).abs() < 1e-6, "{} vs {}", out[a0], 0.5 * w);
+    }
+
+    #[tokio::test]
     async fn stereo_frames_stay_interleaved() {
         let total = ms_to_frames(1000.0);
         let mut op = FakeOpener { values: vec![0.1], calls: vec![], short_by: 0, idx: 0 };
@@ -811,7 +954,18 @@ mod tests {
         }
         let src = dir.join("dry.wav");
         write_wav(&src, &dry, 1);
-        for fx in [dn(12.0, -50.0), RangeFx::Declick { threshold: 2.0 }, RangeFx::Declip { threshold: 10.0 }, RangeFx::Hum { base_hz: 60.0, harmonics: 2 }, RangeFx::Dc { shift: 0.0 }] {
+        for fx in [
+            dn(12.0, -50.0),
+            RangeFx::Declick { threshold: 2.0 },
+            RangeFx::Declip { threshold: 10.0 },
+            RangeFx::Hum { base_hz: 60.0, harmonics: 2 },
+            RangeFx::Dc { shift: 0.0 },
+            RangeFx::Eq { low_db: 3.0, mid_db: -2.0, high_db: 3.0 },
+            RangeFx::Compressor { threshold_db: -18.0, ratio: 4.0, attack_ms: 10.0, release_ms: 120.0, makeup_db: 3.0 },
+            RangeFx::Echo { delay_ms: 250.0, decay: 0.4 },
+            RangeFx::Reverb { size: 1.0, mix: 0.6 },
+            RangeFx::Pitch { semitones: 3.0 },
+        ] {
             let out = dir.join(format!("{}.wav", kind_name(&fx)));
             let mut c = proc::cmd(&bins.ffmpeg);
             c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i"]);

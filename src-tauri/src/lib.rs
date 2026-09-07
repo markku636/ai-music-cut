@@ -12,6 +12,7 @@ mod media;
 mod proc;
 mod project;
 mod render;
+mod spectrum;
 mod store;
 mod ttls;
 
@@ -103,6 +104,8 @@ pub fn run() {
             commands::render_start,
             commands::render_cancel,
             commands::fx_preview,
+            commands::media_spectrogram,
+            commands::media_spectrum,
             commands::project_save,
             commands::write_text_file,
             commands::project_load,

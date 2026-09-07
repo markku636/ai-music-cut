@@ -23,6 +23,7 @@ import MarkerOverlay from "./MarkerOverlay";
 import SpeakerRibbon from "./SpeakerRibbon";
 import SnapIndicator from "./SnapIndicator";
 import OverlayLanes from "./OverlayLanes";
+import SpectrogramLayer from "./SpectrogramLayer";
 import TrimHandles from "./TrimHandles";
 import type { SeamInfo } from "./trimActions";
 import TimelinePlaceholder from "./TimelinePlaceholder";
@@ -205,6 +206,7 @@ export default function Timeline(props: TimelineProps) {
   const skim = useTimeline((s) => s.skim);
   const playing = usePlayback((s) => s.playing);
   const selection = useTimeline((s) => s.selection);
+  const viewMode = useTimeline((s) => s.viewMode);
   const waveH = Math.max(40, height - 16 - RULER_H);
 
   // 建立 wavesurfer（analysis / 時長 / 主題變更時重建；重建時沿用縮放與播放位置）
@@ -525,7 +527,9 @@ export default function Timeline(props: TimelineProps) {
   return (
     <div className="relative h-full px-2 py-2 overflow-hidden" style={{ height }}>
       <div className="relative w-full h-full">
-        <div ref={boxRef} className="w-full h-full" onContextMenu={onContextMenu} onPointerMove={onPointerMove} onPointerLeave={stopSkim} />
+        {/* 頻譜圖在波形底下（DOM 排前面）；spectrum 模式時波形用 CSS ::part 壓淡 */}
+        <SpectrogramLayer ws={wsInstance} mediaId={props.mediaId} top={RULER_H} height={waveH} />
+        <div ref={boxRef} className={`w-full h-full tl-view-${viewMode}`} onContextMenu={onContextMenu} onPointerMove={onPointerMove} onPointerLeave={stopSkim} />
         <BeatGridOverlay ws={wsInstance} height={waveH + RULER_H} />
         <TrimHandles ws={wsInstance} height={waveH + RULER_H} seams={props.seams} onOpenMenu={props.onSeamMenu} />
         <MarkerOverlay ws={wsInstance} markers={props.markers} onMove={props.onMarkerMove} onMenu={props.onMarkerMenu} />

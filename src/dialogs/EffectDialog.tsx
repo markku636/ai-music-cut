@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Sparkles } from "lucide-react";
 import { renderAbPair, abWindow } from "../effects/preview";
 import { applyEffect, effectContext, effectSpec, rangeFor } from "../effects/registry";
-import { advancedParams, mainParams, matchingPreset, resolveValues, type ParamSpec, type ParamValue, type ParamValues } from "../effects/spec";
+import { advancedParams, mainParams, matchingPreset, resolveValues, type ParamSpec, type ParamValue, type ParamValues, type Suggestion } from "../effects/spec";
 import { useT } from "../i18n";
 import { useAbPreview } from "../preview/useAbPreview";
 import { useUi } from "../store/ui";
@@ -33,9 +33,15 @@ export default function EffectDialog({
   // 開對話框當下的範圍就定下來 —— 使用者中途改選取不該讓「套用」跑到別的地方
   const [ctx] = useState(() => effectContext(mediaId));
   const [range] = useState(() => rangeProp ?? (spec ? rangeFor(spec, ctx) : null));
-  const suggestion = useMemo(() => (spec && range ? (spec.suggest?.(ctx, range) ?? null) : null), [spec, ctx, range]);
-  const [values, setValues] = useState<ParamValues>(() => (spec ? resolveValues(spec, null, initial ?? suggestion?.values ?? null) : {}));
+  const syncSuggestion = useMemo(() => (spec && range ? (spec.suggest?.(ctx, range) ?? null) : null), [spec, ctx, range]);
+  // 要真的量過才知道的建議（嗡聲偵測…）：開了對話框才跑，回來後蓋過同步的那份
+  const [asyncSuggestion, setAsyncSuggestion] = useState<Suggestion | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const suggestion = asyncSuggestion ?? syncSuggestion;
+  const [values, setValues] = useState<ParamValues>(() => (spec ? resolveValues(spec, null, initial ?? syncSuggestion?.values ?? null) : {}));
   const [showAdvanced, setShowAdvanced] = useState(false);
+  // 使用者動過參數之後，量測結果就只顯示不覆蓋
+  const touched = useRef(false);
 
   const ab = useAbPreview(() => {
     if (!spec || !range) throw new Error(t("沒有可以試聽的內容"));
@@ -43,6 +49,28 @@ export default function EffectDialog({
     if (spec.preview) return spec.preview(values, range, ctx);
     return renderAbPair(mediaId, range, spec.build(values, range, ctx));
   });
+
+  useEffect(() => {
+    if (!spec?.analyze || !range || initial) return;
+    let alive = true;
+    setAnalyzing(true);
+    spec
+      .analyze(ctx, range)
+      .then((s) => {
+        if (!alive || !s) return;
+        setAsyncSuggestion(s);
+        if (!touched.current) {
+          setValues(resolveValues(spec, null, s.values));
+          ab.invalidate();
+        }
+      })
+      .catch(() => {})
+      .finally(() => alive && setAnalyzing(false));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec, range]);
 
   if (!spec) return null;
   if (!range) {
@@ -54,10 +82,12 @@ export default function EffectDialog({
   }
 
   const set = (id: string, v: ParamValue) => {
+    touched.current = true;
     setValues((cur) => resolveValues(spec, null, { ...cur, [id]: v }));
     ab.invalidate();
   };
   const applyPreset = (p: (typeof spec.presets)[number]) => {
+    touched.current = true;
     setValues(resolveValues(spec, p, null));
     ab.invalidate();
   };
@@ -133,7 +163,17 @@ export default function EffectDialog({
         <div className="mono text-[11px] text-fg/45 tabular-nums">
           {formatMs(range.startMs, { millis: false })} – {formatMs(range.endMs, { millis: false })} · {((range.endMs - range.startMs) / 1000).toFixed(1)}s
         </div>
-        {suggestion && <div className="rounded-md border border-fg/10 px-3 py-2 text-xs text-fg/70">{suggestion.summary}</div>}
+        {analyzing && !asyncSuggestion && (
+          <div className="flex items-center gap-2 text-xs text-fg/55">
+            <Spinner size={12} />
+            {t("量測中…")}
+          </div>
+        )}
+        {suggestion && (
+          <div className="rounded-md border border-fg/10 px-3 py-2 text-xs text-fg/70" data-testid="effect-suggestion">
+            {suggestion.summary}
+          </div>
+        )}
 
         {main.map(renderParam)}
 

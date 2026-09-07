@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
-import { MessageSquareOff, Plus, RotateCw, Trash2 } from "lucide-react";
+import { Check, Lightbulb, MessageSquareOff, Plus, RotateCw, Trash2, X } from "lucide-react";
 import { fillerTotals, groupFillers, type FillerGroup } from "../analysis/fillerStats";
 import { EN_PURE_FILLERS, EN_SOFT_FILLERS, ZH_PURE_FILLERS, ZH_SOFT_FILLERS, type FillerMode } from "../analysis/lexicon";
 import { normText } from "../analysis/normalize";
+import { hasSignal, observeEpisode, parseObservations, putObservation, serializeObservations, suggestRules, totalsOf } from "../analysis/fillerLearn";
+import { useProject } from "../store/project";
 import { speakerColor } from "../analysis/speakers";
 import { runRulesFor } from "../pipeline/rules";
 import { Button, EmptyState, Input, Modal, Select } from "../ui/index";
@@ -35,6 +37,8 @@ const MODES: { value: FillerMode; label: string; hint: string }[] = [
   { value: "never", label: "永不剪", hint: "完全不提這個詞，內建規則也不算數" },
 ];
 
+const MODE_LABEL: Record<FillerMode, string> = { always: "一定剪", context: "看語境", never: "永不剪" };
+
 function secs(ms: number): string {
   if (ms < 1000) return `${Math.round(ms)} ms`;
   const s = ms / 1000;
@@ -60,6 +64,37 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
   const [onlySpeaker, setOnlySpeaker] = useState<string | null>(null);
   // 詞表一改，畫面上的統計就跟候選對不上了 —— 標出來並給一顆重跑
   const [stale, setStale] = useState(false);
+  // 建議：從**你親手做過的判斷**長出來的詞表提案（fillerLearn.ts）
+  const observationsRaw = useSettings((s) => s.s.filler_observations);
+  const media = useProject((s) => s.media.find((m) => m.id === mediaId) ?? null);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const observations = useMemo(() => parseObservations(observationsRaw), [observationsRaw]);
+  const suggestions = useMemo(
+    () => suggestRules(totalsOf(observations), rules).filter((x) => !dismissed.has(x.norm)),
+    [observations, rules, dismissed],
+  );
+  // 這一集還沒被記起來的判斷（按鈕上要顯示數量，不然使用者不知道按了會發生什麼）
+  const pendingObs = useMemo(() => {
+    if (!mediaId || !candidates || !words) return null;
+    const obs = observeEpisode(candidates, decisions ?? {}, words, { episode: mediaId, name: media?.name ?? "" });
+    return hasSignal(obs) ? obs : null;
+  }, [mediaId, candidates, decisions, words, media]);
+  const pendingCount = pendingObs ? Object.values(pendingObs.words).reduce((n, [a, b]) => n + a + b, 0) : 0;
+
+  const learn = async () => {
+    if (!pendingObs) return;
+    const next = putObservation(observations, pendingObs);
+    await save({ filler_observations: serializeObservations(next) });
+    setDismissed(new Set());
+    toast.success(t("記住了這一集的 {n} 個判斷", { n: pendingCount }));
+  };
+
+  const applySuggestion = async (norm: string, mode: FillerMode) => {
+    await setRule(norm, mode);
+    setDismissed(new Set([...dismissed, norm]));
+  };
+
 
   const groups = useMemo(
     () => (candidates && words ? groupFillers(candidates, decisions ?? {}, words, { turns: speakers?.turns, only: onlySpeaker }) : []),
@@ -110,6 +145,16 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
       size="lg"
       footer={
         <>
+          {/*
+            這一集你親手做的判斷，記起來之後才會變成「我的詞表」的建議。
+            刻意是一顆按鈕而不是自動寫入：開個對話框就偷偷改設定不是好事，
+            而且使用者要看得到「記了幾筆」才知道這件事在做什麼。
+          */}
+          {pendingCount > 0 && (
+            <Button variant="ghost" icon={Lightbulb} onClick={() => void learn()} title={t("記起來之後，「我的詞表」分頁會依你的做法提出建議")}>
+              {t("記住我這一集的 {n} 個判斷", { n: pendingCount })}
+            </Button>
+          )}
           {stale && mediaId && (
             <Button variant="primary" icon={RotateCw} onClick={rerun}>
               {t("套用到本集（重跑規則）")}
@@ -137,6 +182,9 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
             >
               {label}
               {k === "lexicon" && custom.length > 0 && <span className="ml-1 text-[10px] text-fg/40">{custom.length}</span>}
+              {k === "lexicon" && suggestions.length > 0 && (
+                <span className="ml-1 rounded-full bg-accent/20 px-1.5 text-[10px] text-accent">{suggestions.length}</span>
+              )}
             </button>
           ))}
         </div>
@@ -144,6 +192,44 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
         {stale && (
           <div className="rounded-md border border-warning/30 bg-warning/8 px-3 py-2 text-[11px] text-warning/90">
             {t("詞表改過了。候選是分析當下算出來的，要按「套用到本集」重跑規則才會反映；下一次分析會自動吃到。")}
+          </div>
+        )}
+
+        {/*
+          建議來自**你親手做過的判斷**，不是 AI 的意見，也不是這一集的候選長相。
+          按了才會改詞表，而且詞表只影響「下一次分析要不要提出這個詞」——
+          不會動到任何已經做好的剪輯決策。
+        */}
+        {tab === "lexicon" && suggestions.length > 0 && (
+          <div className="rounded-md border border-accent/25 bg-accent/6 px-3 py-2 space-y-2">
+            <div className="flex items-center gap-1.5 text-[11px] text-accent">
+              <Lightbulb size={12} />
+              {t("依你最近 {n} 集的做法建議", { n: observations.length })}
+            </div>
+            {suggestions.slice(0, 6).map((x) => (
+              <div key={x.norm} className="flex items-center gap-2 text-[12px]">
+                <span className="font-medium">{x.text}</span>
+                <span className="text-[11px] text-fg/50">
+                  {t("剪 {c} · 留 {k}", { c: x.cut, k: x.kept })}
+                  {x.kind === "change" && x.current
+                    ? t("（目前設成{cur}）", { cur: t(MODE_LABEL[x.current]) })
+                    : x.builtin
+                      ? t("（內建詞表會剪）")
+                      : ""}
+                </span>
+                <span className="ml-auto shrink-0 flex items-center gap-1">
+                  <Button size="sm" variant="primary" icon={Check} onClick={() => void applySuggestion(x.norm, x.mode)}>
+                    {x.mode === "always" ? t("設成一律剪") : t("設成永不剪")}
+                  </Button>
+                  <Button size="sm" variant="ghost" icon={X} onClick={() => setDismissed(new Set([...dismissed, x.norm]))}>
+                    {t("略過")}
+                  </Button>
+                </span>
+              </div>
+            ))}
+            {suggestions.length > 6 && (
+              <div className="text-[11px] text-fg/40">{t("還有 {n} 個建議", { n: suggestions.length - 6 })}</div>
+            )}
           </div>
         )}
 

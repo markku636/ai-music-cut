@@ -15,6 +15,8 @@ import { normalizeRanges, reelSourceMs } from "../analysis/reel";
 import { assignWords, speakerStats, type Speaker } from "../analysis/speakers";
 import { levelSpread, speakerLevels, spreadVerdict } from "../analysis/speakerLevel";
 import { groupFillers } from "../analysis/fillerStats";
+import { hasSignal, observeEpisode, parseObservations, putObservation, serializeObservations, suggestRules, totalsOf } from "../analysis/fillerLearn";
+import { useSettings } from "../store/settings";
 import { buildCues, CAPTION_EXT, renderCaptions, type CaptionFormat } from "../analysis/captions";
 import { splitByChapters, totalOutMs } from "../analysis/splitExport";
 import { loudnessProfile, vsEpisode } from "../analysis/profile";
@@ -888,6 +890,58 @@ export const TOOLS: ToolSpec[] = [
         counts: summarize(findings),
         findings: findings.map((f) => ({ severity: f.severity, title: f.title, detail: f.detail, action: f.action })),
       };
+    },
+  },
+  {
+    name: "suggest_filler_rules",
+    description:
+      "依**使用者親手做過的判斷**（不是規則層、也不是 AI 的決定）建議贅字詞表要怎麼設。回「這個詞你最近幾集剪了幾次、留了幾次、建議設成什麼」。要回答「我這個節目該把哪些詞設進詞表」用這支。證據不夠或意見不一面倒的詞不會出現 —— 那些本來就該看語境。這支**不會改任何設定**。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        minObservations: { type: "integer", minimum: 1, maximum: 100, description: "至少看過幾筆才建議（預設 5）。" },
+      },
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const st = useSettings.getState().s;
+      const obs = parseObservations(st.filler_observations);
+      const opts = { minObservations: Math.round(Number(a?.minObservations) || 5), minAgreement: 0.9, keepEpisodes: 20 };
+      const list = suggestRules(totalsOf(obs), st.filler_rules ?? {}, opts);
+      return {
+        episodesLearned: obs.length,
+        suggestions: list.map((x) => ({
+          word: x.text,
+          suggest: x.mode,
+          current: x.current,
+          cut: x.cut,
+          kept: x.kept,
+          episodes: x.episodes,
+          why: x.kind === "change" ? "跟目前的設定相反" : x.builtin ? "內建詞表會剪，但你都留著" : "你一直這樣做",
+        })),
+        hint: obs.length ? undefined : "還沒有學過任何一集 —— 先用 learn_filler_decisions 把這一集記起來。",
+      };
+    },
+  },
+  {
+    name: "learn_filler_decisions",
+    description:
+      "把**這一集**使用者親手做過的贅字裁決記下來，之後 suggest_filler_rules 才有依據。同一集重複呼叫是覆蓋不是累加。只記「接受 / 拒絕」而且來源是使用者的那幾筆；自動剪的與 AI 決定的不算。這支不改詞表、也不改任何剪輯決策。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: async () => {
+      const m = ctxMedia();
+      const tr = useTranscript.getState().byMedia[m.media.id];
+      if (!tr) return { error: "還沒有逐字稿" };
+      const obs = observeEpisode(m.d.candidates[m.media.id] ?? [], m.d.decisions[m.media.id] ?? {}, tr.words, {
+        episode: m.media.id,
+        name: m.media.name,
+      });
+      if (!hasSignal(obs)) return { learned: 0, hint: "這一集還沒有使用者親手做過的贅字裁決" };
+      const settings = useSettings.getState();
+      const next = putObservation(parseObservations(settings.s.filler_observations), obs);
+      await settings.save({ filler_observations: serializeObservations(next) });
+      const words = Object.entries(obs.words).map(([norm, [cut, kept]]) => ({ word: obs.texts[norm] ?? norm, cut, kept }));
+      return { learned: words.reduce((n, w) => n + w.cut + w.kept, 0), words, episodesLearned: next.length };
     },
   },
   {

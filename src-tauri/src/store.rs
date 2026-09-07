@@ -91,6 +91,13 @@ pub struct AppSettings {
     /// 形狀由前端的 analysis/template.ts 定義並自己驗證（讀壞的會被濾掉）。
     #[serde(default)]
     pub project_templates: Vec<String>,
+    /// 使用者親手做過的贅字裁決，一集一筆 JSON（形狀由前端的 analysis/fillerLearn.ts 定義）。
+    ///
+    /// 用來回頭建議詞表規則（「這個詞你最近六集剪了 213 次、留了 2 次」）。
+    /// 跟 project_templates 一樣存不透明字串：欄位會跟著功能長，讀壞的前端自己濾掉。
+    /// 前端會**蓋掉同一集的舊紀錄並限制筆數**，所以這裡不會無限長。
+    #[serde(default)]
+    pub filler_observations: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -116,6 +123,7 @@ impl Default for AppSettings {
             filler_rules: std::collections::HashMap::new(),
             export_presets: Vec::new(),
             project_templates: Vec::new(),
+            filler_observations: Vec::new(),
         }
     }
 }

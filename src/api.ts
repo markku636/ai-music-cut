@@ -30,6 +30,8 @@ export interface AppSettings {
   export_presets: { id: string; label: string; format: string; target_lufs: number; leveling: boolean; stems: boolean }[];
   /** 專案範本（JSON 字串；形狀由 analysis/template.ts 定義）。 */
   project_templates: string[];
+  /** 使用者親手做過的贅字裁決，一集一筆 JSON（形狀由 analysis/fillerLearn.ts 定義）。 */
+  filler_observations: string[];
 }
 
 export interface FfmpegStatus {

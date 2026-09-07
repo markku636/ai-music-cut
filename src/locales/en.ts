@@ -1224,6 +1224,17 @@ const en: Catalog = {
   "精華": "Highlights",
   "交付": "Delivery",
   "跨集": "Across episodes",
+  "記住了這一集的 {n} 個判斷": "Learned {n} decisions from this episode",
+  "記起來之後，「我的詞表」分頁會依你的做法提出建議": "Once learned, the “My word list” tab suggests rules based on what you actually do",
+  "記住我這一集的 {n} 個判斷": "Learn my {n} decisions from this episode",
+  "依你最近 {n} 集的做法建議": "Suggested from how you edited your last {n} episodes",
+  "剪 {c} · 留 {k}": "cut {c} · kept {k}",
+  "（目前設成{cur}）": "(currently set to {cur})",
+  "（內建詞表會剪）": "(the built-in list cuts this)",
+  "設成一律剪": "Always cut it",
+  "設成永不剪": "Never cut it",
+  "略過": "Skip",
+  "還有 {n} 個建議": "{n} more suggestions",
 };
 
 

@@ -1023,6 +1023,15 @@ const en: Catalog = {
   "回到最初": "Back to start",
   "開啟時的狀態": "State when opened",
   "歷史": "History",
+  "同時輸出分軌（人聲一個檔，每個角色各一個檔：{list}）": "Also export stems (voice in one file, one file per role: {list})",
+  "所有檔共用同一組響度量測，所以各軌之間的相對音量跟完整混音一致（每一軌各自正規化的話，配樂會被拉到跟人聲一樣大聲）。真實峰值限制器仍然是逐檔套用，所以把各軌相加不會逐樣本等於完整混音 —— 影片剪接端本來也會重新做一次混音。": "Every file shares one loudness measurement, so the levels between stems match the full mix (normalising each one separately would push the music up to the level of the voice). The true-peak limiter is still applied per file, so summing the stems will not be sample-identical to the full mix — whoever edits the video remixes anyway.",
+  "角色：{name}": "Role: {name}",
+  "角色：自訂…": "Role: custom…",
+  "角色名稱（分軌輸出的檔名會用它）": "Role name (used in the stem file name)",
+  "開場曲": "Intro",
+  "片尾曲": "Outro",
+  "廣告口播": "Ad read",
+  "環境音": "Ambience",
 };
 
 

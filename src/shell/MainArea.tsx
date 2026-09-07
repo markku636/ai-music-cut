@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookMarked, Check, Crop, Flag, ListTree, MoveHorizontal, Music, Palette, Play, Repeat, Scissors, Slice, SquareDashed, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
+import { BookMarked, Check, Crop, Flag, ListTree, MoveHorizontal, Music, Palette, Play, Repeat, Scissors, Slice, SquareDashed, Tags, Trash, TrendingDown, TrendingUp, Volume2, VolumeX, Wind, X, ZoomIn } from "lucide-react";
 import type { AudioEffect } from "../analysis/effects";
 import { detectBeats, MIN_BEAT_CONFIDENCE } from "../analysis/beats";
 import { activeRanges } from "../analysis/edl/build";
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, LANE_LABEL, planDuck, voiceRegionsInOutput, type Overlay } from "../analysis/overlays";
+import { BUILTIN_ROLES, overlayRole, roleLabel } from "../analysis/roles";
 import { mapSrcToOut } from "../analysis/edl/map";
 import { MARKER_KIND_LABEL, isActiveState, type Candidate, type DecisionMap, type Marker, type MarkerKind, type SplitPoint } from "../analysis/types";
 import { EmptyState, Button } from "../ui/index";
@@ -288,9 +289,27 @@ export default function MainArea({ onOpen, onAnalyze, onOpenSettings, onExportRa
   const overlayMenuItems = (o: Overlay): MenuItem[] => {
     const len = Math.max(0, o.srcOutMs - o.srcInMs);
     return [
-      { label: `${LANE_LABEL[o.lane]}　${allMedia.find((m) => m.id === o.mediaId)?.name ?? o.mediaId}`, disabled: true },
+      { label: `${t(roleLabel(overlayRole(o)))}　${allMedia.find((m) => m.id === o.mediaId)?.name ?? o.mediaId}`, disabled: true },
       { separator: true },
       { label: t("試聽這一段"), icon: Play, onClick: () => playRange(o.outStartMs, o.outStartMs + len, { skip: true }) },
+      { separator: true },
+      // 角色決定分軌輸出時它會落在哪一個檔案 —— 拿到成品的人要換掉的通常正是廣告那一段
+      ...BUILTIN_ROLES.filter((r) => r.lane === o.lane).map<MenuItem>((r) => ({
+        label: t("角色：{name}", { name: t(r.label) }),
+        icon: Tags,
+        checked: overlayRole(o) === r.id,
+        onClick: () => mediaId && updateOverlay(mediaId, o.id, { role: r.id }, "設定角色"),
+      })),
+      {
+        label: t("角色：自訂…"),
+        icon: Tags,
+        onClick: () => {
+          if (!mediaId) return;
+          const name = window.prompt(t("角色名稱（分軌輸出的檔名會用它）"), overlayRole(o));
+          if (name == null) return;
+          updateOverlay(mediaId, o.id, { role: name.trim() || undefined }, "設定角色");
+        },
+      },
       { separator: true },
       ...OVERLAY_GAINS.map<MenuItem>((db) => ({
         label: t("音量 {db} dB", { db: db > 0 ? `+${db}` : db }),

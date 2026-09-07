@@ -8,12 +8,17 @@ import { useT } from "../i18n";
 import { clipPath } from "../analysis/clip";
 import { normalizeRanges, reelSourceMs, type ReelRange } from "../analysis/reel";
 import { buildRenderPlan, defaultOutPath, runRender, type RenderFormat } from "../pipeline/render";
-import { renderStems, STEM_LABEL, type StemProgress } from "../pipeline/stems";
+import { renderStems, type StemProgress } from "../pipeline/stems";
 import { useDecisions } from "../store/decisions";
+import { roleLabel, rolesInUse } from "../analysis/roles";
+import type { Overlay } from "../analysis/overlays";
 import { useProject } from "../store/project";
 import { useVerify } from "../store/verify";
 import { useSettings } from "../store/settings";
 import { formatMs } from "../time";
+
+// 空陣列常數：selector 每次回傳新的 [] 會讓 zustand 每次都判定變了
+const EMPTY_OVERLAYS: Overlay[] = [];
 
 export default function RenderDialog({
   mediaId,
@@ -42,7 +47,11 @@ export default function RenderDialog({
   const [leveling, setLeveling] = useState(true);
   const [stems, setStems] = useState(false);
   const [stemStep, setStemStep] = useState<StemProgress | null>(null);
-  const hasOverlays = useDecisions((s2) => (s2.overlays[mediaId] ?? []).length > 0);
+  const overlays = useDecisions((s2) => s2.overlays[mediaId] ?? EMPTY_OVERLAYS);
+  const hasOverlays = overlays.length > 0;
+  // 分軌是依角色分的（Final Cut 的 Audio Roles）：用到哪些角色是從 overlays 推導的，
+  // 沒有另一份清單要同步
+  const roles = useMemo(() => rolesInUse(overlays), [overlays]);
   const [target, setTarget] = useState<number>(projTarget || settings.target_lufs || -16);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<RenderProgress | null>(null);
@@ -72,10 +81,10 @@ export default function RenderDialog({
     try {
       const base = { format, outPath: outPath.trim(), leveling, targetLufs: target, rangeMs: reel?.length ? null : (range ?? null), reelRanges: reel ?? null, reelBedMediaId: reelBed ?? null };
       if (stems && hasOverlays && !range && !reel?.length) {
-        const files = await renderStems(mediaId, base, true, (p) => setStemStep(p));
+        const files = await renderStems(mediaId, base, roles, (p) => setStemStep(p));
         setStemStep(null);
         useVerify.getState().clear(mediaId);
-        toast.success(t("分軌輸出完成：{files}", { files: files.map((f) => t(STEM_LABEL[f.kind])).join("、") }));
+        toast.success(t("分軌輸出完成：{files}", { files: files.map((f) => t(f.label)).join("、") }));
         setDone({ job_id: "", ok: true, out_path: files[0].path, error: null, input_lufs: null, output_lufs: null, output_tp: null, elapsed_ms: 0 });
       } else {
         const r = await runRender(mediaId, base, setProgress);
@@ -209,16 +218,18 @@ export default function RenderDialog({
         </label>
         <label className={`flex items-center gap-2 ${hasOverlays && !range && !reel?.length ? "" : "opacity-45"}`} title={hasOverlays ? undefined : t("這一集沒有配樂 / 音效，沒有東西可以分軌")}>
           <input type="checkbox" checked={stems && hasOverlays} onChange={(e) => setStems(e.target.checked)} disabled={busy || !hasOverlays || !!range || !!reel?.length} />
-          {t("同時輸出分軌（人聲一個檔、配樂與音效一個檔）")}
+          {roles.length > 1
+            ? t("同時輸出分軌（人聲一個檔，每個角色各一個檔：{list}）", { list: roles.map((r) => t(roleLabel(r))).join("、") })
+            : t("同時輸出分軌（人聲一個檔、配樂與音效一個檔）")}
         </label>
         {stems && hasOverlays && !range && !reel?.length && (
           <p className="text-[11px] text-fg/40 leading-relaxed -mt-1">
-            {t("三個檔共用同一組響度量測，所以各軌之間的相對音量跟完整混音一致（每一軌各自正規化的話，配樂會被拉到跟人聲一樣大聲）。真實峰值限制器仍然是逐檔套用，所以把兩軌相加不會逐樣本等於完整混音 —— 影片剪接端本來也會重新做一次混音。")}
+            {t("所有檔共用同一組響度量測，所以各軌之間的相對音量跟完整混音一致（每一軌各自正規化的話，配樂會被拉到跟人聲一樣大聲）。真實峰值限制器仍然是逐檔套用，所以把各軌相加不會逐樣本等於完整混音 —— 影片剪接端本來也會重新做一次混音。")}
           </p>
         )}
         {stemStep && (
           <div className="text-xs text-fg/60">
-            {t("分軌輸出 {i}/{n}：{label}", { i: stemStep.index + 1, n: stemStep.total, label: t(STEM_LABEL[stemStep.kind]) })}
+            {t("分軌輸出 {i}/{n}：{label}", { i: stemStep.index + 1, n: stemStep.total, label: t(stemStep.label) })}
           </div>
         )}
         {(busy || progress) && (

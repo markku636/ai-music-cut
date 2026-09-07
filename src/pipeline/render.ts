@@ -17,6 +17,7 @@ import {
   type ReelRange,
 } from "../analysis/reel";
 import { outputDurationWithOverlays } from "../analysis/overlays";
+import { overlayRole } from "../analysis/roles";
 import { mapSrcToOut } from "../analysis/edl/map";
 import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
 import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
@@ -45,6 +46,11 @@ export interface RenderOptions {
   preview?: boolean;
   /** 分軌輸出：full = 完整混音、voice = 只有人聲（不含 overlays）、music = 只有 overlays。 */
   stem?: "full" | "voice" | "music";
+  /**
+   * 只輸出這個角色的 overlays（主聲軌靜音）。給依角色分軌用；
+   * 不指定時 `stem: "music"` 代表「全部 overlays」。
+   */
+  stemRole?: string | null;
   /** 沿用主混音那一趟的響度量測（分軌一定要帶，各軌才加得回原本的混音）。 */
   loudnormMeasured?: LoudnormStats | null;
   /** 修聲；不給就用這個媒體目前存的設定。傳 null 表示這一趟不修聲（A/B 比較用）。 */
@@ -168,6 +174,9 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   const kept = reel ? [] : opts.rangeMs ? clipOverlays(storeOverlays, outOffsetMs, mainOutMs) : storeOverlays;
   const clipped: RenderOverlay[] = [];
   for (const o of kept) {
+    // 指定角色時只留那個角色 —— 拿到成品的人要換掉的通常正是廣告那一段，
+    // 跟片尾曲混在同一個檔案裡就換不掉了
+    if (opts.stemRole && overlayRole(o) !== opts.stemRole) continue;
     const srcMedia = proj.media.find((m) => m.id === o.mediaId);
     if (!srcMedia) continue; // 來源被移出媒體清單了 —— 靜靜跳過比讓整個輸出失敗好
     clipped.push({
@@ -231,7 +240,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       out_path: opts.outPath,
       channels,
       ...(chapters.length ? { chapters_meta: toFfmetadata(chapters) } : {}),
-      // 人聲 stem 不帶 overlays；配樂 stem 把主聲軌靜音
+      // 人聲 stem 不帶 overlays；配樂 / 角色 stem 把主聲軌靜音
       ...(clipped.length && opts.stem !== "voice" ? { overlays: clipped } : {}),
       ...(opts.stem === "music" ? { mute_main: true } : {}),
       ...(opts.loudnormMeasured ? { loudnorm_measured: opts.loudnormMeasured } : {}),

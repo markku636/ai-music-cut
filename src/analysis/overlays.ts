@@ -29,6 +29,11 @@ export interface Overlay {
   fadeOutMs: number;
   /** 音量控制點（空 = 整段固定 gainDb）。 */
   points?: OverlayPoint[];
+  /**
+   * 分軌角色（Final Cut 的 Audio Roles）。沒設就用 lane 當角色 ——
+   * 舊專案讀進來不會是空的。見 analysis/roles.ts。
+   */
+  role?: string;
 }
 
 export function overlayId(lane: OverlayLane, outStartMs: number): string {

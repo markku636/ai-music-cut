@@ -11,63 +11,54 @@
 // 任何單軌都高，被壓的量也不一樣。這跟所有 DAW 的 stem 匯出一樣 —— stem 是給人重新
 // 混音用的素材，不是母帶的代數分解。UI 上有講清楚，不要在這裡宣稱它會相加相等。
 import type { LoudnormStats } from "../api";
+import { stemPath, stemPlan, type StemSpec } from "../analysis/roles";
 import { t } from "../i18n";
 import { runRender, type RenderOptions } from "./render";
 
-export type StemKind = "full" | "voice" | "music";
-
-export const STEM_LABEL: Record<StemKind, string> = {
-  full: "完整混音",
-  voice: "人聲",
-  music: "配樂與音效",
-};
-
 export interface StemResult {
-  kind: StemKind;
+  id: string;
+  label: string;
   path: string;
 }
 
-/** `a.mp3` + "voice" → `a_voice.mp3` */
-export function stemPath(outPath: string, kind: StemKind): string {
-  if (kind === "full") return outPath;
-  const i = outPath.lastIndexOf(".");
-  return i <= 0 ? `${outPath}_${kind}` : `${outPath.slice(0, i)}_${kind}${outPath.slice(i)}`;
-}
-
 export interface StemProgress {
-  kind: StemKind;
+  id: string;
+  label: string;
   index: number;
   total: number;
 }
 
 /**
- * 輸出完整混音 + 各軌。回傳實際產出的檔案。
+ * 輸出完整混音 + 各軌（依角色）。回傳實際產出的檔案。
  *
- * 沒有配樂時只會輸出完整混音 —— 硬生出一個全靜音的 music stem 沒有意義。
+ * 沒有任何 overlay 時只會輸出完整混音 —— 硬生出一個全靜音的 stem 沒有意義，
+ * 而且還要多跑一趟 loudnorm。
  */
 export async function renderStems(
   mediaId: string,
   opts: RenderOptions,
-  hasOverlays: boolean,
+  roles: string[],
   onStep?: (p: StemProgress) => void,
 ): Promise<StemResult[]> {
-  const kinds: StemKind[] = hasOverlays ? ["full", "voice", "music"] : ["full"];
+  const plan: StemSpec[] = stemPlan(roles);
   const out: StemResult[] = [];
   let measured: LoudnormStats | null = null;
 
-  for (let i = 0; i < kinds.length; i++) {
-    const kind = kinds[i];
-    onStep?.({ kind, index: i, total: kinds.length });
+  for (let i = 0; i < plan.length; i++) {
+    const spec = plan[i];
+    onStep?.({ id: spec.id, label: spec.label, index: i, total: plan.length });
     const done = await runRender(mediaId, {
       ...opts,
-      outPath: stemPath(opts.outPath, kind),
-      stem: kind,
+      outPath: stemPath(opts.outPath, spec.id),
+      // 角色軌跟「配樂軌」一樣要把主聲軌靜音，差別只在留下哪些 overlays
+      stem: spec.kind === "role" ? "music" : spec.kind,
+      stemRole: spec.kind === "role" ? spec.role : null,
       // 第一趟（完整混音）自己量；之後沿用，各軌才加得回原本的混音
-      loudnormMeasured: kind === "full" ? null : measured,
+      loudnormMeasured: spec.kind === "full" ? null : measured,
     });
     if (!done.ok || !done.out_path) throw new Error(done.error ?? t("輸出失敗"));
-    if (kind === "full") measured = done.measured ?? null;
-    out.push({ kind, path: done.out_path });
+    if (spec.kind === "full") measured = done.measured ?? null;
+    out.push({ id: spec.id, label: spec.label, path: done.out_path });
   }
   return out;
 }

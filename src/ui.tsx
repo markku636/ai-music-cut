@@ -190,6 +190,13 @@ export async function pickOpenFile(filters?: Filter[]): Promise<string | null> {
   return typeof res === "string" ? res : null;
 }
 
+/** 一次選多個檔（轉檔 / 合併用）。 */
+export async function pickOpenFiles(filters?: Filter[]): Promise<string[]> {
+  const res = await open({ multiple: true, directory: false, filters });
+  if (Array.isArray(res)) return res.filter((x): x is string => typeof x === "string");
+  return typeof res === "string" ? [res] : [];
+}
+
 export async function pickDirectory(): Promise<string | null> {
   const res = await open({ multiple: false, directory: true });
   return typeof res === "string" ? res : null;

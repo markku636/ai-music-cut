@@ -1,6 +1,6 @@
 [package]
 name = "ai-music-cut"
-version = "0.103.0"
+version = "0.104.0"
 description = "AI Music Cut — Smart podcast editing desktop tool"
 license = "MIT"
 edition = "2021"

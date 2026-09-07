@@ -13,6 +13,7 @@ import { useTranscript } from "../store/transcript";
 import { Button, EmptyState, Input, Modal, Select, Spinner } from "../ui/index";
 import { pickDirectory, toast } from "../ui";
 import type { RenderFormat } from "../pipeline/render";
+import { FORMATS, RENDER_FORMATS } from "../analysis/formats";
 
 /**
  * 發布包：一次把上架要用的東西產齊。
@@ -123,9 +124,11 @@ export default function BundleDialog({ mediaId, onClose }: { mediaId: string | n
             <label>
               <span className="mb-1 block text-[11px] text-fg/50">{t("音檔")}</span>
               <Select value={audioFormat} onChange={(e) => setAudioFormat(e.target.value as RenderFormat)} disabled={busy}>
-                <option value="mp3">mp3</option>
-                <option value="m4a">m4a</option>
-                <option value="wav">wav</option>
+                {RENDER_FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {FORMATS[f].label}
+                </option>
+              ))}
               </Select>
             </label>
             <label>

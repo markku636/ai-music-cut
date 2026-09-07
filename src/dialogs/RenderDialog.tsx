@@ -10,6 +10,7 @@ import { clipPath } from "../analysis/clip";
 import { normalizeRanges, reelSourceMs, type ReelRange } from "../analysis/reel";
 import { startVerify } from "../commands/appActions";
 import { buildRenderPlan, defaultOutPath, runRender, type RenderFormat } from "../pipeline/render";
+import { FORMATS, RENDER_FORMATS } from "../analysis/formats";
 import { renderStems, type StemProgress } from "../pipeline/stems";
 import { useDecisions } from "../store/decisions";
 import { roleLabel, rolesInUse } from "../analysis/roles";
@@ -351,9 +352,11 @@ export default function RenderDialog({
         <FormGrid>
           <Field label={t("格式")}>
             <Select value={format} onChange={(e) => setFormat(e.target.value as RenderFormat)} disabled={busy}>
-              <option value="mp3">MP3（VBR q2）</option>
-              <option value="m4a">M4A（AAC 192k）</option>
-              <option value="wav">WAV（16-bit）</option>
+              {RENDER_FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {FORMATS[f].label}
+                </option>
+              ))}
             </Select>
           </Field>
           <Field label={t("目標響度")}>

@@ -62,6 +62,8 @@ const KIND_LABEL: Record<JobKind, string> = {
   separate: "去人聲",
   verify: "驗收",
   music: "AI 配樂",
+  convert: "轉檔",
+  merge: "合併",
 };
 
 export default function Sidebar({ width }: { width: number }) {

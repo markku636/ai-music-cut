@@ -5,6 +5,7 @@ import { errMessage } from "../api";
 import { useT } from "../i18n";
 import { edlFor } from "../pipeline/rules";
 import { runRender, type RenderFormat } from "../pipeline/render";
+import { FORMATS, RENDER_FORMATS } from "../analysis/formats";
 import { useDecisions } from "../store/decisions";
 import { useProject } from "../store/project";
 import { useSettings } from "../store/settings";
@@ -132,9 +133,11 @@ export default function SplitExportDialog({ mediaId, onClose }: { mediaId: strin
             <label>
               <span className="mb-1 block text-[11px] text-fg/50">{t("格式")}</span>
               <Select value={format} onChange={(e) => setFormat(e.target.value as RenderFormat)} disabled={busy}>
-                <option value="mp3">mp3</option>
-                <option value="m4a">m4a</option>
-                <option value="wav">wav</option>
+                {RENDER_FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {FORMATS[f].label}
+                </option>
+              ))}
               </Select>
             </label>
           </div>

@@ -4,7 +4,7 @@
 //
 //   aicut transcribe <音檔> [--json out.json]
 //   aicut analyze    <音檔> [--project out.aicut.json] [--aggressiveness 50] [--judge]
-//   aicut cut        <音檔> [-o out.mp3] [--aggressiveness 50] [--judge] [--lufs -16] [--format mp3|m4a|wav]
+//   aicut cut        <音檔> [-o out.mp3] [--aggressiveness 50] [--judge] [--lufs -16] [--format mp3|m4a|wav|flac|ogg|opus|aiff]
 //                          [--project p.aicut.json]（沿用 App 存的決策 / 手動剪輯 / 效果）
 //   aicut separate   <音檔> [--stems vocals_accom|all] [--format wav] [--out-dir DIR]
 //
@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { buildEdl, DEFAULT_EDL_OPTIONS, type Edl } from "../src/analysis/edl/build";
 import { isGainEffect, isRangeEffect, type AudioEffect } from "../src/analysis/effects";
+import { isRenderFormat, RENDER_FORMATS } from "../src/analysis/formats";
 import { normalizeTranscript, type ServerTranscript } from "../src/analysis/normalize";
 import { runRulesAt } from "../src/analysis/rules";
 import { thresholdsFor } from "../src/analysis/thresholds";
@@ -80,7 +81,7 @@ function help(): void {
 用法：
   aicut transcribe <音檔> [--json out.json] [--lang zh] [--model auto] [--hotwords "A,B"]
   aicut analyze    <音檔> [--project out.aicut.json] [--aggressiveness 50] [--judge] [--claude-model sonnet]
-  aicut cut        <音檔> [-o out.mp3] [--format mp3|m4a|wav] [--lufs -16] [--aggressiveness 50] [--judge]
+  aicut cut        <音檔> [-o out.mp3] [--format mp3|m4a|wav|flac|ogg|opus|aiff] [--lufs -16] [--aggressiveness 50] [--judge]
                           [--project p.aicut.json]   沿用 App 存的決策 / 手動剪輯 / 效果（不重跑規則）
   aicut separate   <音檔> [--stems vocals_accom|all] [--format wav|mp3|flac] [--out-dir DIR]
   aicut verify     <原始音檔> <剪好的成品> [--project p.aicut.json]   用 ASR 重新轉寫成品，逐字比對該留的字
@@ -371,7 +372,9 @@ async function cmdCut(args: Args): Promise<void> {
   if (!file) throw new Error("專案檔沒有媒體路徑，請一併給音檔");
   const probe = await ff.probe(file);
   const edl = edlOf(a, probe.durationMs, aggr);
-  const format = (str(args.flags, "format", "") || (typeof args.flags.out === "string" ? path.extname(args.flags.out).slice(1) : "mp3") || "mp3").toLowerCase() as "mp3" | "m4a" | "wav";
+  const formatRaw = (str(args.flags, "format", "") || (typeof args.flags.out === "string" ? path.extname(args.flags.out).slice(1) : "mp3") || "mp3").toLowerCase();
+  if (!isRenderFormat(formatRaw)) throw new Error(`不支援的格式：${formatRaw}（可用：${RENDER_FORMATS.join(" / ")}）`);
+  const format = formatRaw;
   const out = typeof args.flags.out === "string" ? args.flags.out : path.join(path.dirname(file), `${path.basename(file).replace(/\.[^.]+$/, "")}_cut.${format}`);
   log(`剪接：${edl.keeps.length} 段保留 · 剪掉 ${(edl.stats.removedMs / 1000).toFixed(1)} 秒 · 目標 ${lufs} LUFS → ${out}`);
   const segs = edl.keeps.map((k) => ({ startMs: k.srcStartMs, endMs: k.srcEndMs, gainDb: k.gainDb }));

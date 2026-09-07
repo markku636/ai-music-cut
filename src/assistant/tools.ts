@@ -5,6 +5,7 @@ import { effectId as fxEffectId } from "../analysis/effects";
 import { allEffectSpecs, applyEffect, effectContext, effectSpec, rangeFor } from "../effects/registry";
 import { resolveValues, type ParamValue } from "../effects/spec";
 import { makeNoisePrint, matchLoudnessGainDb, peakNormalizeGainDb } from "../analysis/levels";
+import { RENDER_FORMATS } from "../analysis/formats";
 import { api, type McpToolCall, type McpToolDef } from "../api";
 import { KIND_LABEL, isActiveState, type Candidate, type CandidateKind, type DecisionState, type MarkerKind } from "../analysis/types";
 import { buildChapters } from "../analysis/chapters";
@@ -1227,7 +1228,7 @@ export const TOOLS: ToolSpec[] = [
       "如果依章節分割輸出，會切成哪幾段、每段成品多長、檔名叫什麼（只是預覽，不會真的輸出）。沒有章節標記時回空陣列 —— 可以先用 set_chapters 標好。第一個章節不在 0 秒時會自動補一段開頭。",
     inputSchema: {
       type: "object",
-      properties: { format: { type: "string", enum: ["mp3", "m4a", "wav"] } },
+      properties: { format: { type: "string", enum: [...RENDER_FORMATS] } },
       additionalProperties: false,
     },
     handler: (a) => {

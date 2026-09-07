@@ -1,5 +1,6 @@
 // 輸出流程：EDL → 響度單元 / 增益 → RenderPlan → Rust（串流剪接 + loudnorm 兩趟）；進度 / 完成事件回報。
 import { listen } from "@tauri-apps/api/event";
+import { toast } from "../ui";
 import { api, type LoudnormStats, type RenderDone, type RenderJoin, type RenderOverlay, type RenderPlan, type RenderProgress, type RenderSeg } from "../api";
 import type { Edl } from "../analysis/edl/build";
 import { DEFAULT_EDL_OPTIONS } from "../analysis/edl/build";
@@ -35,7 +36,8 @@ import { useVerify } from "../store/verify";
 import { useTranscript } from "../store/transcript";
 import { edlFor } from "./rules";
 
-export type RenderFormat = "mp3" | "m4a" | "wav";
+import { type BitDepth, type RenderFormat } from "../analysis/formats";
+export type { RenderFormat };
 
 export interface RenderOptions {
   format: RenderFormat;
@@ -78,6 +80,8 @@ export interface RenderOptions {
   preserveDynamics?: boolean;
   /** 尚未套用、只為了試聽的效果（EffectDialog 的 A/B 用）。 */
   extraEffects?: AudioEffect[];
+  /** 無損格式的位元深度（省略 = 16）。 */
+  bitDepth?: BitDepth;
 }
 
 function sep(p: string): string {
@@ -271,6 +275,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
       target_lufs: opts.targetLufs,
       true_peak_dbtp: -1.5,
       format: opts.format,
+      ...(opts.bitDepth && opts.bitDepth !== 16 ? { bit_depth: opts.bitDepth } : {}),
       out_path: opts.outPath,
       channels,
       ...(chapters.length ? { chapters_meta: toFfmetadata(chapters) } : {}),
@@ -343,6 +348,8 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
   unDone();
   void api.clientLog(`[render] done ok=${r.ok} err=${r.error ?? ""} lufs=${r.output_lufs ?? ""}`).catch(() => {});
   if (r.ok) {
+    // 沒帶進成品的東西要講（flac / wav 寫不進章節）—— 不能默默少掉
+    if (r.dropped?.length) toast.info(t("這個格式寫不進：{items}（成品裡沒有）", { items: r.dropped.join("、") }));
     // 預覽檔不算「最近一次輸出」：驗收要對的是成品
     if (r.out_path && !opts.preview && (opts.stem ?? "full") === "full")
       useVerify.getState().setLastOutput(mediaId, {

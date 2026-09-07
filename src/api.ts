@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { RenderFxRegion, RenderRangeFx } from "./analysis/fx/regions";
+import type { RenderFormat } from "./analysis/formats";
 
 // 單一 Rust 邊界：所有 invoke 集中在此，型別對齊 src-tauri（snake_case 欄位照 Rust struct）。
 
@@ -179,7 +180,9 @@ export interface RenderPlan {
   crossfade_ms: number;
   target_lufs: number;
   true_peak_dbtp: number;
-  format: "mp3" | "m4a" | "wav";
+  format: RenderFormat;
+  /** 無損格式的位元深度（0 / 省略 = 16）。 */
+  bit_depth?: number;
   out_path: string;
   channels: number;
   /**
@@ -314,6 +317,39 @@ export interface RenderDone {
   input_lufs: number | null;
   output_lufs: number | null;
   output_tp: number | null;
+  elapsed_ms: number;
+  /** 沒帶進成品的東西（flac 不能寫章節…）。 */
+  dropped?: string[];
+}
+
+export interface ConvertSpec {
+  src: string;
+  out_path: string;
+  format: RenderFormat;
+  sample_rate: number;
+  channels: number;
+  bit_depth: number;
+  target_lufs: number | null;
+  true_peak_dbtp: number;
+  copy_if_possible: boolean;
+}
+export interface ConvertDone {
+  out_path: string;
+  copied: boolean;
+  input_lufs: number | null;
+  output_lufs: number | null;
+  dropped: string[];
+  elapsed_ms: number;
+}
+export interface MergeSpec {
+  inputs: { path: string; gain_db: number }[];
+  join: "gap" | "crossfade";
+  join_ms: number;
+  channels: number;
+  out_path: string;
+}
+export interface MergeDone {
+  out_path: string;
   elapsed_ms: number;
 }
 
@@ -459,6 +495,10 @@ export const api = {
   /** 一段的平均功率譜（dB / bin）：嗡聲偵測用。 */
   mediaSpectrum: (path: string, startMs: number, endMs: number, n = 8192) =>
     invoke<{ sample_rate: number; n: number; db: number[]; frames: number }>("media_spectrum", { path, startMs, endMs, n }),
+  /** 轉檔一個檔（格式 / 取樣率 / 聲道 / 位元深度 / 正規化；能複製就不重編）。 */
+  convertFile: (spec: ConvertSpec) => invoke<ConvertDone>("convert_file", { spec }),
+  /** 幾個檔接成一個 48k 24-bit wav。 */
+  mergeFiles: (spec: MergeSpec) => invoke<MergeDone>("merge_files", { spec }),
   renderCancel: (jobId: string) => invoke<void>("render_cancel", { jobId }),
   projectSave: (path: string, doc: unknown) => invoke<void>("project_save", { path, doc }),
   /** 寫純文字檔（節目筆記的 .md）。不加 BOM。 */

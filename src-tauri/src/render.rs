@@ -75,8 +75,11 @@ pub struct RenderPlan {
     pub crossfade_ms: f64,
     pub target_lufs: f64,
     pub true_peak_dbtp: f64,
-    /// mp3 | m4a | wav
+    /// mp3 | m4a | wav | flac | ogg | opus | aiff（formats.rs 是唯一的表；不認得就是錯誤，不再默默出 mp3）
     pub format: String,
+    /// 無損格式的位元深度（0 = 16）。
+    #[serde(default)]
+    pub bit_depth: u32,
     pub out_path: String,
     pub channels: u32,
     /// 預覽模式：跳過 loudnorm 的兩趟量測，只做 limiter + 低位元率編碼。
@@ -145,6 +148,9 @@ pub struct RenderDone {
     pub elapsed_ms: u64,
     /// 這一趟量到的響度，分軌輸出要沿用同一組。
     pub measured: Option<LoudnormStats>,
+    /// 沒帶進成品的東西（例如 flac 不能寫章節）—— 要列出來，不能默默少掉。
+    #[serde(default)]
+    pub dropped: Vec<String>,
 }
 
 pub(crate) fn emit_progress(app: &AppHandle, job_id: &str, stage: &str, pct: f32) {
@@ -730,19 +736,15 @@ pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &
             ),
         )
     };
-    let (fmt, codec): (&str, Vec<&str>) = if plan.preview {
+    let (fmt, codec): (&str, Vec<String>) = if plan.preview {
         // 預覽一律 mp3 q5：夠聽接縫，檔案小、編碼快
-        ("mp3", vec!["-c:a", "libmp3lame", "-q:a", "5"])
+        ("mp3", ["-c:a", "libmp3lame", "-q:a", "5"].iter().map(|s| s.to_string()).collect())
     } else {
-        match plan.format.as_str() {
-            "wav" => ("wav", vec!["-c:a", "pcm_s16le"]),
-            "m4a" => ("mp4", vec!["-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart"]),
-            _ => ("mp3", vec!["-c:a", "libmp3lame", "-q:a", "2"]),
-        }
+        crate::formats::codec_args(&plan.format, plan.bit_depth)?
     };
-    // 章節：wav 沒有章節容器，預覽也不需要
-    let meta_path = match (&plan.chapters_meta, plan.preview, fmt) {
-        (Some(t), false, "mp3") | (Some(t), false, "mp4") if !t.trim().is_empty() => {
+    // 章節：只有 mp3 / m4a 有章節容器，預覽也不需要
+    let meta_path = match (&plan.chapters_meta, plan.preview, crate::formats::supports_chapters(&plan.format)) {
+        (Some(t), false, true) if !t.trim().is_empty() => {
             let mp = wav_path.with_extension("chapters.txt");
             tokio::fs::write(&mp, t.as_bytes()).await.map_err(|e| AppError::Ffmpeg(format!("寫章節 metadata 失敗：{e}")))?;
             Some(mp)
@@ -760,7 +762,7 @@ pub async fn encode(app: &AppHandle, bins: &FfmpegBins, wav_path: &Path, plan: &
         c.args(["-map", "0:a", "-map_metadata", "1"]);
     }
     c.args(["-af", &filter, "-ar", "48000"]);
-    c.args(codec);
+    c.args(&codec);
     c.args(["-f", fmt]);
     c.arg(out_part);
     c.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
@@ -811,6 +813,10 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
     let result: AppResult<(Option<f64>, Option<f64>, f64, LoudnormStats)> = async {
         if plan.segs.is_empty() {
             return Err(AppError::Invalid("沒有可輸出的保留段".into()));
+        }
+        // 格式先驗：不認得就現在報，不要剪完 20 秒才發現
+        if !plan.preview {
+            crate::formats::codec_args(&plan.format, plan.bit_depth)?;
         }
         if let Some(dir) = out_path.parent() {
             tokio::fs::create_dir_all(dir).await?;
@@ -865,8 +871,15 @@ pub async fn run(app: AppHandle, bins: FfmpegBins, src: String, plan: RenderPlan
         let _ = tokio::fs::remove_file(&out_part).await;
     }
     match result {
-        Ok((oi, otp, ii, m)) => RenderDone { job_id, ok: true, out_path: Some(plan.out_path), error: None, input_lufs: Some(ii), output_lufs: oi, output_tp: otp, elapsed_ms: t0.elapsed().as_millis() as u64, measured: Some(m) },
-        Err(e) => RenderDone { job_id, ok: false, out_path: None, error: Some(e.message()), input_lufs: None, output_lufs: None, output_tp: None, elapsed_ms: t0.elapsed().as_millis() as u64, measured: None },
+        Ok((oi, otp, ii, m)) => {
+            let dropped = if plan.chapters_meta.as_deref().map(|t| !t.trim().is_empty()).unwrap_or(false) && !plan.preview && !crate::formats::supports_chapters(&plan.format) {
+                vec!["章節".to_string()]
+            } else {
+                vec![]
+            };
+            RenderDone { job_id, ok: true, out_path: Some(plan.out_path), error: None, input_lufs: Some(ii), output_lufs: oi, output_tp: otp, elapsed_ms: t0.elapsed().as_millis() as u64, measured: Some(m), dropped }
+        }
+        Err(e) => RenderDone { job_id, ok: false, out_path: None, error: Some(e.message()), input_lufs: None, output_lufs: None, output_tp: None, elapsed_ms: t0.elapsed().as_millis() as u64, measured: None, dropped: vec![] },
     }
 }
 
@@ -883,6 +896,7 @@ mod tests {
             target_lufs: -16.0,
             true_peak_dbtp: -1.5,
             format: "wav".into(),
+            bit_depth: 0,
             out_path: String::new(),
             channels: 1,
             preview: false,

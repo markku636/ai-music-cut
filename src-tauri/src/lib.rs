@@ -1,12 +1,15 @@
 mod agent;
 mod cleanup;
 mod codex;
+mod convert;
 mod local_asr;
 mod commands;
 mod error;
 mod ffmpeg;
+mod formats;
 mod fx;
 mod mcp;
+mod merge;
 mod mix;
 mod media;
 mod proc;
@@ -106,6 +109,8 @@ pub fn run() {
             commands::fx_preview,
             commands::media_spectrogram,
             commands::media_spectrum,
+            commands::convert_file,
+            commands::merge_files,
             commands::project_save,
             commands::write_text_file,
             commands::project_load,

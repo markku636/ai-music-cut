@@ -8,6 +8,7 @@
 // 舊使用者會被凍在舊版本而且完全無感 —— 跟提示詞覆寫、贅字詞表同一個道理。
 
 import type { RenderFormat } from "../pipeline/render";
+import { isRenderFormat } from "./formats";
 
 export interface ExportPreset {
   id: string;
@@ -126,7 +127,7 @@ export function parseUserPresets(raw: unknown): ExportPreset[] {
     if (!x || typeof x !== "object") continue;
     const p = x as Partial<ExportPreset>;
     if (typeof p.id !== "string" || typeof p.label !== "string") continue;
-    if (p.format !== "mp3" && p.format !== "m4a" && p.format !== "wav") continue;
+    if (!isRenderFormat(p.format)) continue;
     const lufs = typeof p.targetLufs === "number" ? p.targetLufs : (x as { target_lufs?: unknown }).target_lufs;
     if (typeof lufs !== "number" || !Number.isFinite(lufs)) continue;
     out.push({

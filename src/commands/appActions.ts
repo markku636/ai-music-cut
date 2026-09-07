@@ -1,5 +1,5 @@
 import { api, errMessage } from "../api";
-import { AUDIO_EXTENSIONS } from "../brand";
+import { MEDIA_EXTENSIONS } from "../brand";
 import { nextSpeakerChange, speakerAtMs } from "../analysis/speakers";
 import { isActiveState } from "../analysis/types";
 import { t } from "../i18n";
@@ -39,12 +39,12 @@ export function rememberRecent(path: string): void {
 
 export function isAudioPath(p: string): boolean {
   const ext = p.split(".").pop()?.toLowerCase() ?? "";
-  return AUDIO_EXTENSIONS.includes(ext);
+  return MEDIA_EXTENSIONS.includes(ext);
 }
 
 export async function openMedia(path?: string): Promise<void> {
   try {
-    const p = path ?? (await pickOpenFile([{ name: t("音訊"), extensions: AUDIO_EXTENSIONS }]));
+    const p = path ?? (await pickOpenFile([{ name: t("音訊 / 影片"), extensions: MEDIA_EXTENSIONS }]));
     if (!p) return;
     if (p.endsWith(".aicut.json")) {
       await useProject.getState().loadFrom(p);

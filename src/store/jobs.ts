@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-export type JobKind = "prepare" | "waveform" | "analyze" | "judge" | "render" | "separate" | "verify" | "music";
+export type JobKind = "prepare" | "waveform" | "analyze" | "judge" | "render" | "separate" | "verify" | "music" | "convert" | "merge";
 /** 分析 job 的穩定階段（UI 的 4 步小清單靠它，不比對 step 字串）。 */
 export type JobPhase = "prepare" | "transcribe" | "normalize" | "rules";
 export type JobStatus = "queued" | "running" | "done" | "error" | "canceled";

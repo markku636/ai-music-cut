@@ -506,6 +506,22 @@ pub async fn media_spectrum(state: State<'_, AppState>, path: String, start_ms: 
     crate::spectrum::spectrum_of_range(&bins, &path, start_ms, end_ms, n.unwrap_or(8192).clamp(256, 65536) as usize).await
 }
 
+/// 轉檔一個檔（批次由前端逐檔呼叫：一個失敗不影響其他）。
+#[tauri::command]
+pub async fn convert_file(state: State<'_, AppState>, spec: crate::convert::ConvertSpec) -> AppResult<crate::convert::ConvertDone> {
+    let bins = state.ffmpeg_bins().await?;
+    let probe = ffmpeg::probe(&bins, &spec.src).await.ok();
+    let has_chapters = crate::convert::count_chapters(&bins, &spec.src).await > 0;
+    crate::convert::convert_file(&bins, &spec, probe.as_ref().and_then(|p| p.audio.as_ref()), has_chapters).await
+}
+
+/// 幾個檔接成一個（48k 24-bit wav）。
+#[tauri::command]
+pub async fn merge_files(state: State<'_, AppState>, spec: crate::merge::MergeSpec) -> AppResult<crate::merge::MergeDone> {
+    let bins = state.ffmpeg_bins().await?;
+    crate::merge::merge_files(&bins, &spec).await
+}
+
 #[tauri::command]
 pub fn render_cancel(state: State<'_, AppState>, job_id: String) {
     if let Some(f) = state.cancel_flags.lock().get(&job_id) {

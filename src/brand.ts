@@ -10,3 +10,6 @@ export const REPO_URL = "https://github.com/markku636/ai-music-cut";
  */
 export const TOOL_PAGE_URL = "https://blog.markkulab.net/tools/ai-music-cut";
 export const AUDIO_EXTENSIONS = ["mp3", "wav", "m4a", "flac", "ogg", "opus", "aac", "wma", "aiff", "mp4", "m4b"];
+/** 影片容器：每個 ffmpeg 呼叫本來就 -vn，開進來直接當聲軌用（轉檔 / 剪輯都行）。 */
+export const VIDEO_EXTENSIONS = ["mp4", "m4v", "mov", "mkv", "webm", "avi", "ts", "mts", "m2ts", "flv", "wmv"];
+export const MEDIA_EXTENSIONS = [...new Set([...AUDIO_EXTENSIONS, ...VIDEO_EXTENSIONS])];

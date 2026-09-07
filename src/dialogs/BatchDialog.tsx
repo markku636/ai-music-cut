@@ -10,6 +10,7 @@ import {
   type BatchSteps,
 } from "../pipeline/batch";
 import type { RenderFormat } from "../pipeline/render";
+import { FORMATS, RENDER_FORMATS } from "../analysis/formats";
 import { api } from "../api";
 import { Button, Modal, Select } from "../ui/index";
 import { toast } from "../ui";
@@ -184,9 +185,11 @@ export default function BatchDialog({ onClose }: { onClose: () => void }) {
               <span className="text-[11px] text-fg/50">{t("輸出格式")}</span>
               <span className="w-24">
                 <Select value={format} disabled={!steps.render} onChange={(e) => setFormat(e.target.value as RenderFormat)}>
-                  <option value="mp3">mp3</option>
-                  <option value="m4a">m4a</option>
-                  <option value="wav">wav</option>
+                  {RENDER_FORMATS.map((f) => (
+                <option key={f} value={f}>
+                  {FORMATS[f].label}
+                </option>
+              ))}
                 </Select>
               </span>
               <span className="text-[11px] text-fg/35 truncate">

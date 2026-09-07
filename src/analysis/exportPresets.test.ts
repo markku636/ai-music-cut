@@ -144,7 +144,7 @@ describe("parseUserPresets", () => {
   it("擋掉壞資料（手改過的設定檔不該讓對話框掛掉）", () => {
     const raw = [
       { id: "ok", label: "好的", format: "mp3", targetLufs: -16 },
-      { id: "no-format", label: "x", format: "flac", targetLufs: -16 },
+      { id: "no-format", label: "x", format: "wma", targetLufs: -16 },
       { id: "nan", label: "x", format: "mp3", targetLufs: Number.NaN },
       { label: "沒有 id", format: "mp3", targetLufs: -16 },
       null,

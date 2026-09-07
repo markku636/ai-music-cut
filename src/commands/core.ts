@@ -140,6 +140,8 @@ export const CORE_COMMANDS: Command[] = [
   { id: "file.save", title: "儲存專案", group: "file", section: "檔案", icon: Save, shortcuts: ["Ctrl+S"], surfaces: ["menu", "palette", "toolbar"], badge: () => useProject.getState().dirty, enabled: () => OK, run: () => A.saveProject() },
   { id: "file.saveAs", title: "另存專案…", group: "file", section: "檔案", icon: Save, shortcuts: ["Ctrl+Shift+S"], enabled: () => OK, run: () => A.saveProject({ as: true }) },
   { id: "file.export", title: "輸出", group: "file", section: "輸出", icon: FileMusic, shortcuts: ["Ctrl+E"], surfaces: ["menu", "palette", "toolbar", "simple"], simple: true, simpleLabel: "輸出 mp3", simpleHint: "把剪好的結果存成 mp3 檔", simpleOrder: 8, keywords: ["export", "render"], enabled: needsMedia, run: () => A.openRender(null) },
+  { id: "file.convert", title: "轉檔・抽聲軌…", group: "file", section: "輸出", icon: FileMusic, surfaces: ["menu", "palette", "simple"], simple: true, simpleLabel: "轉檔", simpleHint: "把音檔或影片換成 mp3 / wav / flac…，幾個一起選就是批次", keywords: ["convert", "transcode", "extract", "batch", "flac", "opus"], enabled: () => OK, run: () => openDialog("convert", {}) },
+  { id: "file.merge", title: "合併檔案…", group: "file", section: "輸出", icon: Layers, surfaces: ["menu", "palette", "simple"], simple: true, simpleLabel: "合併檔案", simpleHint: "把幾個音檔接成一個", keywords: ["merge", "join", "concat", "append"], enabled: () => OK, run: () => openDialog("merge") },
   {
     id: "file.exportRange",
     title: "只輸出選取範圍…",

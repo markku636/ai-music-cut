@@ -108,7 +108,7 @@ export class Ffmpeg {
     segs: { startMs: number; endMs: number; gainDb: number }[],
     effects: { kind: "mute" | "gain" | "fade_in" | "fade_out"; startMs: number; endMs: number; db?: number }[],
     out: string,
-    opts: { targetLufs: number; truePeak: number; format: "mp3" | "m4a" | "wav"; onProgress?: (stage: string) => void },
+    opts: { targetLufs: number; truePeak: number; format: RenderFormat; onProgress?: (stage: string) => void },
   ): Promise<{ inputLufs: number | null; outputLufs: number | null }> {
     if (!segs.length) throw new Error("沒有任何保留段");
     const tmp = await mkdtemp(path.join(os.tmpdir(), "aicut-"));
@@ -138,8 +138,9 @@ export class Ffmpeg {
 
       opts.onProgress?.("encode");
       const af = `${base}:measured_I=${m.input_i}:measured_TP=${m.input_tp}:measured_LRA=${m.input_lra}:measured_thresh=${m.input_thresh}:offset=${m.target_offset}:linear=true:print_format=json,alimiter=limit=${Math.pow(10, opts.truePeak / 20).toFixed(3)}:level=false`;
-      const enc = opts.format === "mp3" ? ["-c:a", "libmp3lame", "-q:a", "2"] : opts.format === "m4a" ? ["-c:a", "aac", "-b:a", "160k"] : ["-c:a", "pcm_s16le"];
-      r = await run(this.ffmpeg, ["-y", "-hide_banner", "-nostats", "-i", wav, "-af", af, "-ar", "48000", ...enc, "-f", opts.format === "m4a" ? "ipod" : opts.format, out]);
+      // 編碼參數與 App（analysis/formats.ts ↔ Rust formats.rs）同一張表
+      const enc = codecArgs(opts.format);
+      r = await run(this.ffmpeg, ["-y", "-hide_banner", "-nostats", "-i", wav, "-af", af, "-ar", "48000", ...enc, "-f", FORMATS[opts.format].muxer, out]);
       if (r.code !== 0) throw new Error(`編碼失敗：${r.stderr.trim().slice(-400)}`);
       const m2 = parseLoudnorm(r.stderr);
       return { inputLufs: m ? Number(m.input_i) : null, outputLufs: m2 ? Number(m2.output_i) : null };

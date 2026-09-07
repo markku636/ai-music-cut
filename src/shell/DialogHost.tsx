@@ -46,6 +46,8 @@ const REG: Record<DialogId, { comp: AnyComp; needs: Needs }> = {
   style: { comp: dlg(() => import("../dialogs/StyleDialog")), needs: "media" },
   effect: { comp: dlg(() => import("../dialogs/EffectDialog")), needs: "media" },
   introOutro: { comp: dlg(() => import("../dialogs/IntroOutroDialog")), needs: "media" },
+  convert: { comp: dlg(() => import("../dialogs/ConvertDialog")), needs: "none" },
+  merge: { comp: dlg(() => import("../dialogs/MergeDialog")), needs: "none" },
 };
 
 export default function DialogHost() {

@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { UserRound, UserPlus, Users } from "lucide-react";
 import { speakerColor, speakerStats, type Speaker, type SpeakerTurn } from "../analysis/speakers";
+import { levelSpread, speakerLevels, spreadVerdict } from "../analysis/speakerLevel";
 import { Button, EmptyState, Input, Modal } from "../ui/index";
 import { toast } from "../ui";
 import { useT } from "../i18n";
 import { useDecisions } from "../store/decisions";
 import { useTimeline } from "../store/timeline";
+import { useTranscript } from "../store/transcript";
 import { formatMs } from "../time";
 
 // 模組層的空值：每次 render 現做一個 [] 會讓 useMemo 的依賴每次都變。
@@ -29,12 +31,16 @@ export default function SpeakersDialog({ mediaId, onClose }: { mediaId: string |
   const addSpeaker = useDecisions((s) => s.addSpeaker);
   const assign = useDecisions((s) => s.assignSpeaker);
   const selection = useTimeline((s) => s.selection);
+  const local = useTranscript((s) => (mediaId ? s.local[mediaId] : undefined));
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [newName, setNewName] = useState("");
 
   const list = state?.list ?? NO_SPEAKERS;
   const turns = state?.turns ?? NO_TURNS;
   const stats = useMemo(() => speakerStats(turns, list), [turns, list]);
+  const levels = useMemo(() => speakerLevels(local, turns, list), [local, turns, list]);
+  const spread = useMemo(() => levelSpread(levels), [levels]);
+  const verdict = spreadVerdict(spread);
   const totalMs = stats.reduce((a, b) => a + b.ms, 0);
 
   const commitName = (sp: Speaker) => {
@@ -80,6 +86,9 @@ export default function SpeakersDialog({ mediaId, onClose }: { mediaId: string |
             <p className="text-[11px] leading-relaxed text-fg/50">
               {t("佔比是「佔有人在講的時間」，不是佔整集長度 —— 靜音不屬於任何人。兩個人同時講的地方不指派給任何人（沒有答案好過錯誤答案），所以加起來會少於整集。")}
             </p>
+            <p className="text-[11px] leading-relaxed text-fg/50">
+              {t("有講者標籤時，輸出的逐段平衡會知道哪裡是「換人」而不是「同一個人變大聲」——換人的地方一次補到位，不受相鄰段落的階差限制，也不會把前一個人的音量平滑進來。")}
+            </p>
             <div className="space-y-1">
               {stats.map((st) => {
                 const sp = list.find((x) => x.id === st.speakerId);
@@ -109,6 +118,13 @@ export default function SpeakersDialog({ mediaId, onClose }: { mediaId: string |
                         n: st.turns,
                         longest: formatMs(st.longestMs, { millis: false }),
                       })}
+                      {(() => {
+                        const lv = levels.find((x) => x.speakerId === sp.id);
+                        if (!lv) return null;
+                        return lv.lufs == null
+                          ? ` · ${t("響度：講太少，量不出來")}`
+                          : ` · ${t("來源 {lufs} LUFS", { lufs: lv.lufs.toFixed(1) })}`;
+                      })()}
                     </div>
                     {selection && (
                       <Button size="sm" variant="ghost" className="mt-1.5" icon={UserRound} onClick={() => assignSelection(sp.id)}>
@@ -119,6 +135,20 @@ export default function SpeakersDialog({ mediaId, onClose }: { mediaId: string |
                 );
               })}
             </div>
+            {verdict && spread != null && (
+              <div
+                className={`rounded-md border px-3 py-2 text-[11px] leading-relaxed ${
+                  verdict === "bad" ? "border-danger/30 bg-danger/8 text-danger/90" : verdict === "noticeable" ? "border-warning/30 bg-warning/8 text-warning/90" : "border-fg/10 text-fg/50"
+                }`}
+              >
+                {t("講者之間的來源響度最多差 {db} dB。", { db: spread.toFixed(1) })}{" "}
+                {verdict === "even"
+                  ? t("這個落差聽不太出來，逐段平衡輕鬆吸收得掉。")
+                  : verdict === "noticeable"
+                    ? t("聽得出來但補得動 —— 輸出時的逐段平衡會把每個人拉向同一個目標。")
+                    : t("這已經不是後製能好好補救的了：把小聲的那一位拉起來，他的底噪與房間聲會一起拉起來。下次錄音時把兩支麥的增益調近一點。")}
+              </div>
+            )}
             <div className="mono text-[11px] tabular-nums text-fg/35">
               {t("有人在講的時間共 {ms}", { ms: formatMs(totalMs, { millis: false }) })}
             </div>

@@ -53,3 +53,51 @@ describe("planGains", () => {
     expect(g[0].gainDb).toBeLessThanOrEqual(1);
   });
 });
+
+describe("planGains：換人的地方不平滑也不限階差", () => {
+  const mk = (id: number, keepId: number, lufs: number | null, peakDb = -10): MeasuredUnit => ({ id, keepId, startMs: id * 1000, endMs: id * 1000 + 1000, lufs, peakDb });
+  // 同一個保留段內：前兩個單元是主持人 −16、後兩個是來賓 −24
+  const units = [mk(0, 0, -16), mk(1, 0, -16), mk(2, 0, -24), mk(3, 0, -24)];
+  const byId: Record<number, string> = { 0: "h", 1: "h", 2: "g", 3: "g" };
+  const spk = (id: number) => byId[id] ?? null;
+
+  it("知道換人時，來賓第一個單元一次補到位（不受 3 dB 階差限制）", () => {
+    const g = planGains(units, undefined, spk);
+    // 目標 −16：來賓要 +8 dB，但峰值 −10 → 最多 +8（-2 - -10）
+    expect(g[2].gainDb).toBeCloseTo(8, 1);
+  });
+
+  it("不知道換人時要爬好幾格才到位（這就是要修的問題）", () => {
+    const g = planGains(units);
+    expect(g[2].gainDb).toBeLessThan(8);
+    expect(g[2].gainDb).toBeLessThanOrEqual(g[1].gainDb + 3);
+  });
+
+  it("平滑不會把前一個人的增益混進來", () => {
+    // 沒有講者時，來賓第一格會被主持人的 0 dB 拉低 25%
+    expect(planGains(units)[2].gainDb).toBeLessThan(planGains(units, undefined, spk)[2].gainDb);
+  });
+
+  it("同一個人之內仍然平滑、仍然限階差", () => {
+    const solo = [mk(0, 0, -16), mk(1, 0, -40), mk(2, 0, -16)];
+    const same = (id: number) => (id >= 0 ? "h" : null);
+    const g = planGains(solo, undefined, same);
+    expect(g[1].gainDb).toBeLessThanOrEqual(g[0].gainDb + 3);
+    expect(g[0].gainDb).toBeGreaterThan(0); // 鄰居的增益平滑進來了
+  });
+
+  it("判不出講者的單元當成延續，不製造音量跳點", () => {
+    const unknown = (id: number) => (id === 2 ? null : byId[id] ?? null);
+    expect(planGains(units, undefined, unknown)[2].gainDb).toBeLessThanOrEqual(planGains(units)[1].gainDb + 3);
+  });
+
+  it("沒給 speakerOf 時行為跟以前完全一樣", () => {
+    expect(planGains(units, undefined, undefined)).toEqual(planGains(units));
+  });
+
+  it("跨保留段仍然斷開（原本就有的行為）", () => {
+    const across = [mk(0, 0, -16), mk(1, 1, -24)];
+    const oneVoice = () => "h";
+    expect(planGains(across, undefined, oneVoice)[1].gainDb).toBeCloseTo(8, 1);
+  });
+});

@@ -22,6 +22,7 @@ import { mapSrcToOut } from "../analysis/edl/map";
 import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
 import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
 import { splitUnits } from "../analysis/loudness/units";
+import { unitSpeakerMap } from "../analysis/speakerLevel";
 import { t } from "../i18n";
 import { isCleanupActive, type CleanupSpec } from "../analysis/cleanup";
 import { useCleanup } from "../store/cleanup";
@@ -110,7 +111,15 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   const units = reel ? clipUnitsMulti(allUnits, reel) : opts.rangeMs ? clipUnits(allUnits, opts.rangeMs) : allUnits;
   if (!units.length) return null;
   const measured = local ? measureUnits(units, local) : units.map((u) => ({ ...u, lufs: null, peakDb: 0 }));
-  const gains = opts.leveling && local ? planGains(measured, { ...DEFAULT_GAIN_OPTIONS, targetLufs: opts.targetLufs }) : units.map((u) => ({ unitId: u.id, gainDb: 0 }));
+  // 有講者標籤時，逐段平衡就知道哪裡是「換人」而不是「同一個人變大聲」——
+  // 換人要一次補到位，慢慢爬會讓每次換人後的頭幾秒都還在錯的音量上（見 loudness/plan.ts）
+  const turns = useDecisions.getState().speakers[mediaId]?.turns ?? [];
+  const unitSpeaker = turns.length ? unitSpeakerMap(units, turns) : null;
+  const speakerOf = unitSpeaker ? (id: number) => unitSpeaker.get(id) ?? null : undefined;
+  const gains =
+    opts.leveling && local
+      ? planGains(measured, { ...DEFAULT_GAIN_OPTIONS, targetLufs: opts.targetLufs }, speakerOf)
+      : units.map((u) => ({ unitId: u.id, gainDb: 0 }));
   const segs: RenderSeg[] = units.map((u, i) => ({ src_start_ms: u.startMs, src_end_ms: u.endMs, gain_db: gains[i]?.gainDb ?? 0 }));
   const joins: RenderJoin[] = [];
   for (let i = 0; i + 1 < units.length; i++) {

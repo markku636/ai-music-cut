@@ -1155,6 +1155,14 @@ const en: Catalog = {
   "全部人": "Everyone",
   "整群操作只會動到這個人的那幾筆": "Bulk actions only touch this speaker's instances",
   "（只是換一個看法，沒有動到剪輯）": "(just a different view — nothing is edited)",
+  // ---- 講者響度 ----
+  "有講者標籤時，輸出的逐段平衡會知道哪裡是「換人」而不是「同一個人變大聲」——換人的地方一次補到位，不受相鄰段落的階差限制，也不會把前一個人的音量平滑進來。": "With speaker labels, the per-segment leveller can tell a handover from one person simply getting louder: at a handover it corrects in one step, free of the step limit between neighbouring segments, and it never smooths the previous person's level into the next one's.",
+  "響度：講太少，量不出來": "loudness: too little speech to measure",
+  "來源 {lufs} LUFS": "source {lufs} LUFS",
+  "講者之間的來源響度最多差 {db} dB。": "Source loudness differs by up to {db} dB between speakers.",
+  "這個落差聽不太出來，逐段平衡輕鬆吸收得掉。": "That gap is barely audible and the per-segment leveller absorbs it easily.",
+  "聽得出來但補得動 —— 輸出時的逐段平衡會把每個人拉向同一個目標。": "Audible but fixable: on export the per-segment leveller pulls everyone toward the same target.",
+  "這已經不是後製能好好補救的了：把小聲的那一位拉起來，他的底噪與房間聲會一起拉起來。下次錄音時把兩支麥的增益調近一點。": "This is past what post can fix well: lifting the quiet person also lifts their noise floor and room tone. Match the mic gains more closely at the next recording.",
 };
 
 

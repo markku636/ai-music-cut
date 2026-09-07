@@ -112,3 +112,63 @@ describe("buildEdl", () => {
     expect(edl2.joins[0].kind).toBe("crossfade");
   });
 });
+
+describe("貼上（剪下貼上 / 搬移）", () => {
+  const words = mkWords([["我", 0, 200], ["嗯", 300, 450], ["覺得", 500, 800], ["這", 800, 950], ["很", 950, 1100], ["好", 1100, 1400]]);
+  const sentences = mkSentences(words, [[0, 1, 2, 3, 4, 5]]);
+  const base: EdlInput = { words, sentences, vad: [{ startMs: 0, endMs: 1400 }], durationMs: 2000 };
+
+  it("沒有貼上時跟以前完全一樣", () => {
+    const a = buildEdl(base, [], {}, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
+    const b = buildEdl({ ...base, pastes: [] }, [], {}, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
+    expect(b.keeps).toEqual(a.keeps);
+    expect(b.stats.outMs).toBe(a.stats.outMs);
+  });
+
+  it("貼一塊進去，成品變長，而且長度帳對得上", () => {
+    const plain = buildEdl(base, [], {}, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE);
+    const pasted = buildEdl(
+      { ...base, pastes: [{ id: "p1", srcStartMs: 1500, srcEndMs: 1800, atMs: 600 }] },
+      [],
+      {},
+      DEFAULT_EDL_OPTIONS,
+      MIDPOINT_PROBE,
+    );
+    // 多了 300 ms 的內容；接點可能有交越，所以只要求「變長」與「帳自洽」
+    expect(pasted.stats.outMs).toBeGreaterThan(plain.stats.outMs);
+
+    // 帳自洽：各段長度總和 + gap − crossfade = outMs（跟 joins.test.ts 同一條不變式）
+    const segSum = pasted.keeps.reduce((n, k) => n + (k.srcEndMs - k.srcStartMs), 0);
+    const gaps = pasted.joins.filter((j) => j.kind === "gap").reduce((n, j) => n + j.ms, 0);
+    const xf = pasted.joins.filter((j) => j.kind === "crossfade").reduce((n, j) => n + j.ms, 0);
+    expect(Math.abs(segSum + gaps - xf - pasted.stats.outMs)).toBeLessThanOrEqual(2);
+  });
+
+  it("keeps 依成品順序排好（outStart 遞增）", () => {
+    const edl = buildEdl(
+      { ...base, pastes: [{ id: "p1", srcStartMs: 1500, srcEndMs: 1800, atMs: 600 }] },
+      [],
+      {},
+      DEFAULT_EDL_OPTIONS,
+      MIDPOINT_PROBE,
+    );
+    // 不能要求「不重疊」—— crossfade 本來就是讓前後兩段**重疊**那麼多毫秒。
+    // 真正的順序不變式是 outStart 嚴格遞增。
+    for (let i = 1; i < edl.keeps.length; i++) {
+      expect(edl.keeps[i].outStartMs).toBeGreaterThan(edl.keeps[i - 1].outStartMs);
+    }
+  });
+
+  it("貼上的那一段來源可以不照順序（搬移的本質）", () => {
+    const edl = buildEdl(
+      { ...base, pastes: [{ id: "p1", srcStartMs: 1500, srcEndMs: 1800, atMs: 300 }] },
+      [],
+      {},
+      DEFAULT_EDL_OPTIONS,
+      MIDPOINT_PROBE,
+    );
+    const srcOrder = edl.keeps.map((k) => k.srcStartMs);
+    // 來源順序被打破了 —— 這正是貼上要做到的事
+    expect(srcOrder.some((v, i) => i > 0 && v < srcOrder[i - 1])).toBe(true);
+  });
+});

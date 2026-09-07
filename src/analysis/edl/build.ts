@@ -2,6 +2,7 @@
 // 純函式、無 DOM；probe 提供能量最低點（Rust 波形桶）供邊界貼齊，測試可用 midpoint 假件。
 import type { Candidate, DecisionMap, Sentence, SplitPoint, VadRegion, Word } from "../types";
 import { applySplits } from "./split";
+import { applyPastes, type Paste } from "./arrange";
 import { effectiveXfFrames, effectiveXfMs, framesToMs, msToFrames } from "./joins";
 import { DEFAULT_BREATH_OPTIONS, planBreath, type BreathContext, type BreathOptions } from "./breath";
 import { chooseJoin, DEFAULT_FADE_POLICY, type FadePolicy } from "./fade";
@@ -140,6 +141,14 @@ export interface EdlInput {
   durationMs: number;
   /** 刀片切點（人工）。空的時候整條路徑與以前逐位元相同。 */
   splits?: SplitPoint[];
+  /**
+   * 貼上的區塊（剪下貼上 / 搬移）。空的時候整條路徑與以前逐位元相同。
+   *
+   * 這是唯一會讓 keeps **不照來源順序**、而且同一段來源可能出現兩次的東西。
+   * 下面第 7 步的接點與輸出時間帳本來就是照陣列順序累加的，所以撐得住；
+   * 但 edl/map.ts 的查表假設了來源順序，重排過的 EDL 要走 arrange.ts 的 srcToOutArranged。
+   */
+  pastes?: Paste[];
 }
 
 const WORD_KINDS = new Set(["filler", "stutter", "restart", "unclear", "rambling", "off_topic", "redo"]);
@@ -313,6 +322,15 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
   const split = applySplits(keeps, splits, opts.minKeepMs);
   keeps.length = 0;
   keeps.push(...split.keeps);
+
+  // 6c) 貼上：把區塊插進去，順序從此是**成品順序**而不是來源順序。
+  //     沒有貼上時 applyPastes 原封不動回傳，整條路徑與以前逐位元相同。
+  const pastes = input.pastes ?? [];
+  if (pastes.length) {
+    const arranged = applyPastes(keeps, pastes, opts.minKeepMs);
+    keeps.length = 0;
+    keeps.push(...arranged);
+  }
 
   // 7) joins + 輸出時間
   //

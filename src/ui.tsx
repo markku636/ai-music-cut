@@ -48,6 +48,8 @@ export interface Toast {
   id: number;
   kind: "success" | "error" | "info";
   text: string;
+  /** 右側一顆按鈕（例如「復原」）；按了就關掉這則。 */
+  action?: { label: string; onClick: () => void };
 }
 
 interface ConfirmReq {
@@ -71,7 +73,7 @@ interface UiStore {
   toasts: Toast[];
   confirmReq: ConfirmReq | null;
   promptReq: PromptReq | null;
-  pushToast: (kind: Toast["kind"], text: string) => void;
+  pushToast: (kind: Toast["kind"], text: string, opts?: { action?: Toast["action"]; ttlMs?: number }) => void;
   dismissToast: (id: number) => void;
   requestConfirm: (req: ConfirmReq) => void;
   resolveConfirm: (ok: boolean) => void;
@@ -85,10 +87,10 @@ export const useUi = create<UiStore>((set, get) => ({
   toasts: [],
   confirmReq: null,
   promptReq: null,
-  pushToast: (kind, text) => {
+  pushToast: (kind, text, opts) => {
     const id = toastSeq++;
-    set((s) => ({ toasts: [...s.toasts, { id, kind, text }] }));
-    const ttl = kind === "error" ? 6000 : 3200;
+    set((s) => ({ toasts: [...s.toasts, { id, kind, text, action: opts?.action }] }));
+    const ttl = opts?.ttlMs ?? (kind === "error" ? 6000 : 3200);
     setTimeout(() => get().dismissToast(id), ttl);
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((n) => n.id !== id) })),
@@ -119,6 +121,8 @@ export const toast = {
   success: (text: string) => useUi.getState().pushToast("success", text),
   error: (text: string) => useUi.getState().pushToast("error", text),
   info: (text: string) => useUi.getState().pushToast("info", text),
+  /** 做完一件事 + 一顆「復原」。小白不知道 Ctrl+Z，做錯了要按得到。 */
+  undo: (text: string, onUndo: () => void) => useUi.getState().pushToast("success", text, { action: { label: t("復原"), onClick: onUndo }, ttlMs: 7000 }),
 };
 
 /** 以 Promise 取代瀏覽器 confirm()，配合 <UiHost /> 的樣式化對話框。 */
@@ -231,15 +235,34 @@ export function UiHost() {
         aria-label={t("通知")}
       >
         {toasts.map((n) => {
-          const cls = `toast-in px-3 py-2 rounded-md shadow-lg text-sm border cursor-pointer break-words ${kindStyle(n.kind)}`;
+          const cls = `toast-in px-3 py-2 rounded-md shadow-lg text-sm border cursor-pointer break-words flex items-center justify-between gap-2 ${kindStyle(n.kind)}`;
+          const body = (
+            <>
+              <span className="min-w-0">{n.text}</span>
+              {n.action && (
+                <button
+                  type="button"
+                  data-testid="toast-action"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    n.action!.onClick();
+                    dismissToast(n.id);
+                  }}
+                  className="shrink-0 rounded border border-current/40 px-2 py-0.5 text-[11px] font-medium hover:bg-white/10"
+                >
+                  {n.action.label}
+                </button>
+              )}
+            </>
+          );
           // 錯誤用 alert/assertive（立即播報），其餘用 status/polite。以字面值滿足 a11y lint。
           return n.kind === "error" ? (
             <div key={n.id} role="alert" aria-live="assertive" onClick={() => dismissToast(n.id)} className={cls}>
-              {n.text}
+              {body}
             </div>
           ) : (
             <div key={n.id} role="status" aria-live="polite" onClick={() => dismissToast(n.id)} className={cls}>
-              {n.text}
+              {body}
             </div>
           );
         })}

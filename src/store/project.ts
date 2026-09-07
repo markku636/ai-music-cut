@@ -24,6 +24,8 @@ interface ProjectStore {
   activeMediaId: string | null;
   aggressiveness: number;
   targetLufs: number;
+  /** 輸出時逐段音量平衡；簡易面板的「音量弄整齊」就是它。 */
+  leveling: boolean;
   /** 各媒體的分析產物（逐字稿等），由 pipeline 寫入；存檔時原樣序列化。 */
   analysis: Record<string, MediaAnalysisV1>;
 
@@ -34,6 +36,7 @@ interface ProjectStore {
   setAnalysis: (mediaId: string, data: MediaAnalysisV1 | null) => void;
   setAggressiveness: (v: number) => void;
   setTargetLufs: (v: number) => void;
+  setLeveling: (v: boolean) => void;
   markDirty: () => void;
   newProject: () => void;
   loadFrom: (path: string) => Promise<ProjectFileV1>;
@@ -65,6 +68,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
   // App 啟動流程（設定載完之後）與 newProject()。
   aggressiveness: 50,
   targetLufs: -16,
+  leveling: true,
   analysis: {},
 
   openMedia: async (path) => {
@@ -108,11 +112,12 @@ export const useProject = create<ProjectStore>((set, get) => ({
     }),
   setAggressiveness: (v) => set({ aggressiveness: Math.max(0, Math.min(100, Math.round(v))), dirty: true }),
   setTargetLufs: (v) => set({ targetLufs: v, dirty: true }),
+  setLeveling: (v) => set({ leveling: v, dirty: true }),
   markDirty: () => set({ dirty: true }),
   newProject: () =>
     // 新專案要吃設定裡的「預設激進度」。這一條原本寫死 50，設定裡那個滑桿因此
     // **完全沒有作用** —— 使用者拉了它，每一個新專案還是 50。
-    set({ path: null, dirty: false, createdAt: null, media: [], activeMediaId: null, analysis: {}, aggressiveness: defaultAggressiveness(), targetLufs: -16 }),
+    set({ path: null, dirty: false, createdAt: null, media: [], activeMediaId: null, analysis: {}, aggressiveness: defaultAggressiveness(), targetLufs: -16, leveling: true }),
 
   loadFrom: async (path) => {
     const doc = await api.projectLoad(path);
@@ -125,6 +130,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
       activeMediaId: f.activeMediaId,
       aggressiveness: f.settings.aggressiveness,
       targetLufs: f.settings.targetLufs,
+      leveling: f.settings.leveling ?? true,
       analysis: f.analysis,
     });
     return f;
@@ -136,7 +142,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
     const target = path ?? s.path;
     if (!target) throw new Error("未指定專案檔路徑");
     const doc = buildProjectFile(
-      { media: s.media, activeMediaId: s.activeMediaId, settings: { aggressiveness: s.aggressiveness, targetLufs: s.targetLufs }, analysis },
+      { media: s.media, activeMediaId: s.activeMediaId, settings: { aggressiveness: s.aggressiveness, targetLufs: s.targetLufs, leveling: s.leveling }, analysis },
       { name: APP_NAME, version: __APP_VERSION__ },
       s.createdAt ? { createdAt: s.createdAt } : null,
     );

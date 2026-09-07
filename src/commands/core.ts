@@ -75,6 +75,7 @@ import { keepOnlySelection } from "../timeline/selectionActions";
 import { toast } from "../ui";
 import { t } from "../i18n";
 import * as A from "./appActions";
+import { withUndoToast } from "./undoToast";
 import { activeId, needsAnalysis, needsAnyMedia, needsClaude, needsHistory, needsMedia, needsNotAnalyzing, needsSelectedCandidate, needsSelection, needsTwoMedia } from "./guards";
 import { OK } from "./registry";
 import type { Command, Enabled } from "./types";
@@ -151,6 +152,26 @@ export const CORE_COMMANDS: Command[] = [
       if (sel) A.openRender({ startMs: sel.startMs, endMs: sel.endMs });
     },
   },
+  {
+    id: "export.leveling",
+    title: "逐段音量平衡",
+    group: "file",
+    section: "輸出",
+    icon: Volume2,
+    surfaces: ["menu", "palette", "simple"],
+    simple: true,
+    simpleLabel: "音量弄整齊",
+    simpleHint: "輸出時把每一段拉到一樣大聲（預設開）",
+    simpleOrder: 3,
+    checked: () => useProject.getState().leveling,
+    enabled: needsMedia,
+    run: () => {
+      const p = useProject.getState();
+      const next = !p.leveling;
+      p.setLeveling(next);
+      toast.info(next ? t("輸出時會逐段平衡音量") : t("輸出時不做逐段平衡"));
+    },
+  },
   { id: "file.splitExport", title: "依章節分割輸出（一次錄多集）", group: "file", section: "交付", icon: Scissors, enabled: needsMedia, run: () => openDialog("splitExport") },
   { id: "file.captions", title: "字幕與逐字稿（SRT / VTT / Markdown）", group: "file", section: "交付", icon: Captions, enabled: needsAnalysis, run: () => openDialog("captions") },
   { id: "file.bundle", title: "發布包（音檔＋字幕＋筆記＋章節）", group: "file", section: "交付", icon: Package, enabled: needsMedia, run: () => openDialog("bundle") },
@@ -174,7 +195,7 @@ export const CORE_COMMANDS: Command[] = [
     keywords: ["cut", "delete"],
     // 有選取剪選取；沒有選取但選了候選 → 拒絕候選（Delete 的舊語意）
     enabled: () => (useTimeline.getState().selection || useDecisions.getState().selectedIds.length ? needsMedia() : { ok: false, why: "先在波形上拖一段" }),
-    run: () => A.deleteKey(),
+    run: () => withUndoToast(t("已剪掉"), () => A.deleteKey()),
   },
   { id: "edit.lift", title: "提起（留白靜音，不關洞）", group: "edit", section: "剪輯", icon: VolumeX, shortcuts: ["Shift+Delete", "Shift+Backspace"], surfaces: ["menu", "palette", "context"], enabled: needsSelection, run: () => A.liftWithToast() },
   {
@@ -189,7 +210,7 @@ export const CORE_COMMANDS: Command[] = [
     simpleHint: "頭尾都剪掉，只留下拖選的",
     simpleOrder: 5,
     enabled: needsSelection,
-    run: () => void keepOnlySelection(),
+    run: () => withUndoToast(t("只留下選的這段"), () => void keepOnlySelection()),
   },
   { id: "edit.blade", title: "在播放線切一刀", group: "edit", section: "剪輯", icon: Slice, shortcuts: ["B"], enabled: needsMedia, run: () => A.bladeToggle() },
   { id: "edit.cutClipboard", title: "剪下選取", group: "edit", section: "剪貼簿", icon: Clipboard, shortcuts: ["Ctrl+X"], enabled: needsSelection, run: () => A.cutToClipboard() },
@@ -281,6 +302,18 @@ export const CORE_COMMANDS: Command[] = [
     run: () => useUi.getState().toggleTab(x.id),
   })),
   { id: "view.railToggle", title: "收合側欄", group: "view", section: "側欄", icon: ChevronsRight, checked: () => !useUi.getState().railOpen, enabled: () => OK, run: () => useUi.getState().setRailOpen(!useUi.getState().railOpen) },
+  {
+    id: "view.mode.toggle",
+    title: "切換簡易 / 專業模式",
+    group: "view",
+    section: "側欄",
+    icon: LayoutTemplate,
+    simple: true,
+    keywords: ["simple", "pro", "mode"],
+    checked: () => useUi.getState().mode === "pro",
+    enabled: () => OK,
+    run: () => useUi.getState().toggleMode(),
+  },
   ...DENSITIES.map<Command>((d) => ({
     id: `view.density.${d.id}`,
     title: d.title,
@@ -341,9 +374,47 @@ export const CORE_COMMANDS: Command[] = [
   { id: "ai.assistant", title: "AI 助手", group: "ai", section: "AI", icon: Sparkles, checked: () => useAssistant.getState().open, enabled: () => OK, run: () => useAssistant.getState().toggle() },
   { id: "ai.judge", title: "AI 判讀（剪輯＋審核）", group: "ai", section: "這一集", icon: BrainCircuit, enabled: both(needsAnalysis, needsClaude), run: () => A.judgeActive() },
   { id: "ai.autoCut", title: "一鍵智慧剪輯", group: "ai", section: "這一集", icon: Zap, surfaces: ["menu", "palette", "toolbar"], enabled: needsMedia, run: () => openDialog("autoCut") },
-  { id: "ai.analyze", title: "分析", group: "ai", section: "這一集", icon: WandSparkles, surfaces: ["menu", "palette", "toolbar"], keywords: ["analyze", "transcribe"], enabled: needsNotAnalyzing, run: () => A.analyzeWithPreflight() },
+  {
+    id: "ai.analyze",
+    title: "分析",
+    group: "ai",
+    section: "這一集",
+    icon: WandSparkles,
+    surfaces: ["menu", "palette", "toolbar", "simple"],
+    simple: true,
+    simpleLabel: "自動剪掉贅字",
+    simpleHint: "找出嗯、呃、重講並剪掉；逐字稿劃線＝已剪，雙擊可還原",
+    simpleOrder: 1,
+    keywords: ["analyze", "transcribe"],
+    enabled: needsNotAnalyzing,
+    run: () => {
+      // 簡易模式再按一次不重跑：解釋劃線是什麼，別讓人以為壞了
+      const st = useProject.getState();
+      const m = st.media.find((x) => x.id === st.activeMediaId);
+      if (useUi.getState().mode === "simple" && m?.analysis === "ready") {
+        toast.info(t("已經剪過了：劃線的字就是剪掉的，雙擊可以還原"));
+        return;
+      }
+      A.analyzeWithPreflight();
+    },
+  },
   { id: "ai.separate", title: "去人聲", group: "ai", section: "聲音", icon: MicOff, enabled: needsMedia, run: () => openDialog("separate") },
   { id: "ai.music", title: "AI 配樂", group: "ai", section: "聲音", icon: Disc3, enabled: () => OK, run: () => openDialog("music") },
+  {
+    id: "ai.music.introOutro",
+    title: "加片頭 / 片尾音樂",
+    group: "ai",
+    section: "聲音",
+    icon: Music,
+    surfaces: ["menu", "palette", "simple"],
+    simple: true,
+    simpleLabel: "加片頭 / 片尾音樂",
+    simpleHint: "選一個音樂檔，放到開頭或結尾，會自動在講話時變小聲",
+    simpleOrder: 6,
+    keywords: ["intro", "outro", "music", "bgm"],
+    enabled: needsMedia,
+    run: () => openDialog("introOutro"),
+  },
   {
     id: "ai.style",
     title: "改成另一種曲風…",

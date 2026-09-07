@@ -6,6 +6,8 @@ export type RailTab = "decisions" | "index" | "history" | "assistant" | "verify"
 export type Density = "compact" | "normal" | "comfortable";
 /** 簡易（小白）/ 專業。兩邊共用同一套指令與波形，只是組合不同。 */
 export type UiMode = "simple" | "pro";
+/** 開始畫面選的「你想做什麼」。影響預設工具、側欄與拍線偵測。 */
+export type WorkProfile = "podcast" | "music" | "repair" | "convert" | "record";
 
 /** 密度 → 根字級縮放。CSS 變數 --ui-scale 由 applyDensity 寫到 <html>。 */
 export const DENSITY_SCALE: Record<Density, number> = {
@@ -24,14 +26,21 @@ interface Persisted {
   railWidth: number;
   density: Density;
   mode: UiMode;
+  profile: WorkProfile | null;
+  /** 已經按過「知道了」的首次提示 id。 */
+  hintsSeen: string[];
 }
 
-const DEFAULTS: Persisted = { tab: "decisions", railOpen: true, railWidth: 320, density: "normal", mode: "pro" };
+const PROFILES: WorkProfile[] = ["podcast", "music", "repair", "convert", "record"];
+const DEFAULTS: Persisted = { tab: "decisions", railOpen: true, railWidth: 320, density: "normal", mode: "pro", profile: null, hintsSeen: [] };
 
-function load(): Persisted {
+/**
+ * 從 localStorage 的字串還原（純函式，測試用）。
+ * 沒存過（第一次裝）→ 簡易；有舊 blob 但沒 mode → 專業 —— 老用戶不會在升級後被丟進簡易。
+ */
+export function parsePersisted(raw: string | null): Persisted {
+  if (!raw) return { ...DEFAULTS, mode: "simple" };
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return DEFAULTS;
     const v = JSON.parse(raw) as Partial<Persisted>;
     return {
       tab: v.tab === "assistant" || v.tab === "verify" || v.tab === "index" ? v.tab : "decisions",
@@ -39,7 +48,17 @@ function load(): Persisted {
       railWidth: Math.max(RAIL_MIN, Math.min(RAIL_MAX, Number(v.railWidth) || DEFAULTS.railWidth)),
       density: v.density === "compact" || v.density === "comfortable" ? v.density : "normal",
       mode: v.mode === "simple" ? "simple" : "pro",
+      profile: PROFILES.includes(v.profile as WorkProfile) ? (v.profile as WorkProfile) : null,
+      hintsSeen: Array.isArray(v.hintsSeen) ? v.hintsSeen.filter((x): x is string => typeof x === "string") : [],
     };
+  } catch {
+    return DEFAULTS;
+  }
+}
+
+function load(): Persisted {
+  try {
+    return parsePersisted(localStorage.getItem(KEY));
   } catch {
     return DEFAULTS;
   }
@@ -70,18 +89,33 @@ interface UiStore extends Persisted {
   setDensity: (d: Density) => void;
   setMode: (m: UiMode) => void;
   toggleMode: () => void;
+  setProfile: (p: WorkProfile | null) => void;
+  markHintSeen: (id: string) => void;
+  /** 拖檔案進視窗的高亮（暫態）。 */
+  dragOver: boolean;
+  setDragOver: (v: boolean) => void;
 }
 
 export const useUi = create<UiStore>((set, get) => {
   const init = load();
   const persist = () => {
     const s = get();
-    save({ tab: s.tab, railOpen: s.railOpen, railWidth: s.railWidth, density: s.density, mode: s.mode });
+    save({ tab: s.tab, railOpen: s.railOpen, railWidth: s.railWidth, density: s.density, mode: s.mode, profile: s.profile, hintsSeen: s.hintsSeen });
   };
   return {
     ...init,
     transcriptSearch: false,
     setTranscriptSearch: (transcriptSearch) => set({ transcriptSearch }),
+    dragOver: false,
+    setDragOver: (dragOver) => set({ dragOver }),
+    setProfile: (profile) => {
+      set({ profile });
+      persist();
+    },
+    markHintSeen: (id) => {
+      set((s) => (s.hintsSeen.includes(id) ? s : { hintsSeen: [...s.hintsSeen, id] }));
+      persist();
+    },
     setTab: (tab) => {
       set({ tab, railOpen: true });
       persist();

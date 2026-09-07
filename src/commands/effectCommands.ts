@@ -11,6 +11,7 @@ import { useTranscript } from "../store/transcript";
 import { addEffectOnSelection } from "../timeline/selectionActions";
 import { toast } from "../ui";
 import { activeId, needsMedia, needsSelection } from "./guards";
+import { withUndoToast } from "./undoToast";
 import { OK } from "./registry";
 import type { Command } from "./types";
 
@@ -75,7 +76,7 @@ export const EFFECT_COMMANDS: Command[] = [
         { id: effectId("fade_out", sel.endMs - len, sel.endMs), kind: "fade_out", startMs: sel.endMs - len, endMs: sel.endMs },
       ];
       // 一筆 undo：淡入 + 淡出是一個動作
-      useDecisions.getState().addEffects(id, list, "淡入淡出");
+      void withUndoToast(t("已加淡入淡出"), () => useDecisions.getState().addEffects(id, list, "淡入淡出"));
     },
   },
   {
@@ -86,7 +87,11 @@ export const EFFECT_COMMANDS: Command[] = [
     icon: Sparkles,
     pairId: "cleanup",
     variant: "quick",
-    surfaces: ["menu", "palette", "context"],
+    surfaces: ["menu", "palette", "context", "simple"],
+    simple: true,
+    simpleLabel: "去雜音",
+    simpleHint: "壓掉背景嘶聲跟低頻隆隆，整集一起；可復原",
+    simpleOrder: 2,
     keywords: ["denoise", "noise", "clean"],
     enabled: () => {
       const m = needsMedia();
@@ -97,10 +102,14 @@ export const EFFECT_COMMANDS: Command[] = [
     run: () => {
       const id = activeId();
       if (!id) return;
+      const prev = useCleanup.getState().byMedia[id] ?? null;
       const est = estimateCleanup(useTranscript.getState().local[id] ?? null);
       useCleanup.getState().set(id, est.suggested);
       useProject.getState().markDirty();
-      toast.success(t("修聲已套用：{d}").replace("{d}", describeCleanup(est.suggested)));
+      toast.undo(t("修聲已套用：{d}").replace("{d}", describeCleanup(est.suggested)), () => {
+        useCleanup.getState().set(id, prev);
+        useProject.getState().markDirty();
+      });
     },
   },
   {

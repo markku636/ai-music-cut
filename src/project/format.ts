@@ -15,6 +15,8 @@ export interface ProjectMediaV1 {
 export interface ProjectSettingsV1 {
   aggressiveness: number;
   targetLufs: number;
+  /** 輸出時逐段音量平衡（簡易面板的「音量弄整齊」）。缺 = true（舊專案檔）。 */
+  leveling?: boolean;
 }
 
 /** 每個媒體的分析產物（逐字稿 / 候選 / 決策）。M2+ 逐步填入，用 unknown 保留擴充彈性。 */
@@ -94,6 +96,7 @@ export function parseProjectFile(doc: unknown): ProjectFileV1 {
     settings: {
       aggressiveness: clampNum(settings.aggressiveness, 0, 100, 50),
       targetLufs: clampNum(settings.targetLufs, -30, -8, -16),
+      leveling: settings.leveling === undefined ? true : settings.leveling === true,
     },
     analysis: isRecord(doc.analysis) ? (doc.analysis as Record<string, MediaAnalysisV1>) : {},
   };

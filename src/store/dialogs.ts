@@ -37,7 +37,8 @@ export type DialogId =
   | "cleanup"
   | "highlights"
   | "style"
-  | "effect";
+  | "effect"
+  | "introOutro";
 
 /** 有參數的對話框；沒列在這裡的就是沒有參數。 */
 export interface DialogPropMap {

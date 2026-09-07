@@ -8,13 +8,15 @@ import { ffmpegSourceLabel, shortFfmpegVersion } from "../ffmpegSource";
 import { useSettings } from "../store/settings";
 import { formatMs } from "../time";
 import { openSettings } from "../commands/appActions";
+import type { UiMode } from "../store/ui";
 
 function Dot({ ok, warn }: { ok: boolean; warn?: boolean }) {
   return <span className={`inline-block w-1.5 h-1.5 rounded-full ${ok ? (warn ? "bg-warning" : "bg-success") : "bg-danger"}`} aria-hidden />;
 }
 
-export default function StatusBar() {
+export default function StatusBar({ variant = "pro" }: { variant?: UiMode }) {
   const t = useT();
+  const simple = variant === "simple";
   const onOpenSettings = (focus?: "key" | "ffmpeg") => openSettings(focus ?? null);
   const ffmpeg = useSettings((s) => s.ffmpeg);
   const ttls = useSettings((s) => s.ttls);
@@ -50,6 +52,7 @@ ${ffmpegSourceLabel(ffmpeg.source)}：${ffmpeg.ffmpeg_path}` : t("找不到 ffmp
         <Dot ok={!!ffmpeg?.found} />
         {ffmpeg?.found ? `ffmpeg ${shortFfmpegVersion(ffmpeg.version)} · ${ffmpegSourceLabel(ffmpeg.source)}` : t("找不到 ffmpeg")}
       </button>
+      {!simple && (
       <button
         type="button"
         onClick={() => onOpenSettings("key")}
@@ -64,7 +67,8 @@ ${ffmpegSourceLabel(ffmpeg.source)}：${ffmpeg.ffmpeg_path}` : t("找不到 ffmp
         ttls {ttls?.ok ? `${ttls.latency_ms ?? "?"}ms` : t("離線")}
         {ttls?.ok && !key?.present && <span className="text-warning">· {t("未設金鑰")}</span>}
       </button>
-      <ModelMenu onOpenSettings={() => onOpenSettings()} />
+      )}
+      {!simple && <ModelMenu onOpenSettings={() => onOpenSettings()} />}
       <span className="mono shrink-0 text-fg/60">{formatMs(currentMs)}</span>
       <span className="ml-auto flex items-center gap-1.5 min-w-0">
         <Dot ok={!dirty} warn={false} />

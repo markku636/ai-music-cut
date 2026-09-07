@@ -39,6 +39,8 @@ import { bladeAt, seamsOfEdl, setSeamPause, trimSeam, type SeamInfo } from "./ti
 import { liftSelection } from "./timeline/trimActions";
 import { runCommand, useCommands } from "./commands/registry";
 import { useDialogs } from "./store/dialogs";
+import { useVerify } from "./store/verify";
+import { useJobs } from "./store/jobs";
 
 export interface DevBridge {
   playRange: typeof playRange;
@@ -100,6 +102,8 @@ export interface DevBridge {
   commands: typeof useCommands;
   runCommand: typeof runCommand;
   dialogs: typeof useDialogs;
+  verify: typeof useVerify;
+  jobs: typeof useJobs;
 }
 
 export function installDevBridge() {
@@ -189,5 +193,7 @@ export function installDevBridge() {
     commands: useCommands,
     runCommand,
     dialogs: useDialogs,
+    verify: useVerify,
+    jobs: useJobs,
   };
 }

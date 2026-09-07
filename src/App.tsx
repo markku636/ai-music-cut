@@ -1,37 +1,27 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { api, errMessage } from "./api";
 import { installToolBridge } from "./assistant/tools";
 import { installCommands } from "./commands";
 import * as A from "./commands/appActions";
-import { defaultAggressiveness } from "./store/project";
-import type { AudioEffect } from "./analysis/effects";
 import { installHotkeys } from "./hotkeys";
-import { currentEdl, seamsOfEdl } from "./timeline/trimActions";
 import { runAnalyze } from "./pipeline/analyze";
 import { runJudge } from "./pipeline/judge";
 import { enrichAnalysis } from "./pipeline/persist";
-import { useDecisions } from "./store/decisions";
+import AudioPlayer from "./preview/AudioPlayer";
+import DialogHost from "./shell/DialogHost";
+import ProShell from "./shell/ProShell";
+import SimpleShell from "./shell/SimpleShell";
 import { useAssistant } from "./store/assistant";
 import { useAssistantChat } from "./store/assistantChat";
-import DialogHost from "./shell/DialogHost";
-import MainArea from "./shell/MainArea";
-import RightRail from "./shell/RightRail";
-import SetupBanner from "./shell/SetupBanner";
-import Sidebar from "./shell/Sidebar";
-import Splitter from "./shell/Splitter";
-import StatusBar from "./shell/StatusBar";
-import Toolbar from "./shell/Toolbar";
-import WorkflowStrip from "./shell/WorkflowStrip";
-import { useResizable } from "./shell/useResizable";
-import { selectActiveMedia, useProject } from "./store/project";
+import { useDecisions } from "./store/decisions";
+import { defaultAggressiveness, selectActiveMedia, useProject } from "./store/project";
 import { useSettings } from "./store/settings";
+import { useUi } from "./store/ui";
 import { applyAppTheme, useTheme } from "./theme";
 import { UiHost } from "./ui";
 
 let devAutoOpened = false;
-
-const EMPTY_FX: AudioEffect[] = [];
 
 /** 開場畫面至少待這麼久（毫秒），動畫才看得完；淡出另外算。 */
 const SPLASH_MIN_MS = 780;
@@ -49,19 +39,12 @@ function hideBootSplash(): void {
 }
 
 /**
- * App 殼：版面 + 啟動效果。所有「動作」在 commands/（指令註冊表），所有對話框在 DialogHost。
- * 這裡不再有 22 個 useState boolean。
+ * App 根：啟動效果 + 選一個殼。所有「動作」在 commands/（指令註冊表），所有對話框在 DialogHost。
+ * 簡易 / 專業是同一套指令、同一個 Workspace 的兩種組合（SimpleShell / ProShell）。
  */
 export default function App() {
   const active = useProject(selectActiveMedia);
-  // 索引分頁要的接縫 / 效果。edlFor 直接讀 store，所以用這幾個當「該重算」的訊號。
-  const railCands = useDecisions((s) => (active ? s.candidates[active.id] : undefined));
-  const railDecs = useDecisions((s) => (active ? s.decisions[active.id] : undefined));
-  const railSplits = useDecisions((s) => (active ? s.splits[active.id] : undefined));
-  const railEffects = useDecisions((s) => (active ? s.effects[active.id] ?? EMPTY_FX : EMPTY_FX));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const railSeams = useMemo(() => seamsOfEdl(currentEdl()), [active?.id, railCands, railDecs, railSplits]);
-  const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
+  const mode = useUi((s) => s.mode);
 
   // 指令註冊表 + 反應性訂閱（冪等，StrictMode 跑兩次沒關係）
   useEffect(() => installCommands(), []);
@@ -156,6 +139,12 @@ export default function App() {
     let un: (() => void) | undefined;
     getCurrentWebview()
       .onDragDropEvent((ev) => {
+        const ui = useUi.getState();
+        if (ev.payload.type === "enter" || ev.payload.type === "over") {
+          if (!ui.dragOver) ui.setDragOver(true);
+          return;
+        }
+        ui.setDragOver(false);
         if (ev.payload.type !== "drop") return;
         for (const p of ev.payload.paths) {
           if (A.isAudioPath(p) || p.endsWith(".aicut.json")) void A.openMedia(p);
@@ -168,21 +157,13 @@ export default function App() {
     return () => un?.();
   }, []);
 
-  // 快捷鍵：絕大多數由指令註冊表派發；只有 JKL 與方向鍵手寫
-  useEffect(() => installHotkeys({ shuttle: A.shuttle, nudge: A.nudge }), []);
+  // 快捷鍵：絕大多數由指令註冊表派發；只有 JKL 與方向鍵手寫。簡易模式只放行 simple 指令。
+  useEffect(() => installHotkeys({ shuttle: A.shuttle, nudge: A.nudge, simpleOnly: () => useUi.getState().mode === "simple" }), []);
 
   return (
     <div className="h-full flex flex-col">
-      <Toolbar />
-      <WorkflowStrip />
-      <SetupBanner />
-      <div className="flex-1 flex min-h-0">
-        <Sidebar width={sidebar.size} />
-        <Splitter axis="x" onPointerDown={sidebar.onPointerDown} />
-        <MainArea />
-        <RightRail mediaId={active?.id ?? null} analysisState={active?.analysis ?? null} seams={railSeams} effects={railEffects} />
-      </div>
-      <StatusBar />
+      <AudioPlayer path={active?.path ?? null} />
+      {mode === "simple" ? <SimpleShell /> : <ProShell />}
       <DialogHost />
       <UiHost />
     </div>

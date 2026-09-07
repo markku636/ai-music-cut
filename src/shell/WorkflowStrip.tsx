@@ -9,6 +9,7 @@ import { selectActiveMedia, useProject } from "../store/project";
 import { useSettings } from "../store/settings";
 import { useVerify } from "../store/verify";
 import * as A from "../commands/appActions";
+import type { UiMode } from "../store/ui";
 
 const EMPTY: never[] = [];
 
@@ -24,8 +25,9 @@ interface Caption {
  * 四步流程列：① 開啟音檔 → ② 分析 → ③ 檢視決策 → ④ 輸出。
  * 由 store 推導「目前在哪一步」，只有目前步顯示說明與唯一主按鈕，讓畫面任何時候都只有一個「下一步」。
  */
-export default function WorkflowStrip() {
+export default function WorkflowStrip({ variant = "pro" }: { variant?: UiMode }) {
   const t = useT();
+  const simple = variant === "simple";
   const p = {
     onOpen: () => void A.openMedia(),
     onAnalyze: () => A.analyzeWithPreflight(),
@@ -48,12 +50,39 @@ export default function WorkflowStrip() {
   const verifyReport = useVerify((s) => (mediaId ? s.byMedia[mediaId] ?? null : null));
 
   const counts = decisionCounts(candidates, decisions ?? {});
-  const step = !active ? 1 : active.analysis !== "ready" ? 2 : rendered ? 4 : 3;
+  // 簡易只有三步：開檔 → 做調整 → 輸出。分析是「做調整」裡的一顆按鈕，不是一個步驟。
+  const step = simple ? (!active ? 1 : rendered ? 3 : 2) : !active ? 1 : active.analysis !== "ready" ? 2 : rendered ? 4 : 3;
   const keyMissing = key !== null && !key.present;
-  const labels = [t("開啟音檔"), t("分析"), t("檢視決策"), t("輸出")];
+  const labels = simple ? [t("開啟音檔"), t("做調整"), t("輸出")] : [t("開啟音檔"), t("分析"), t("檢視決策"), t("輸出")];
 
   let caption: Caption;
-  if (step === 1) {
+  if (simple && step === 2 && !analyzeJob) {
+    caption = {
+      text: t("在波形上拖一段再按右邊的按鈕；或直接輸出"),
+      cta: (
+        <Button size="sm" variant="primary" onClick={p.onRender}>
+          {t("輸出")}
+        </Button>
+      ),
+    };
+  } else if (simple && step === 3) {
+    caption = {
+      text: t("已輸出 · 可以打開資料夾"),
+      badge: <Badge tone="success">{t("完成")}</Badge>,
+      cta: (
+        <>
+          {lastOutput && (
+            <Button size="sm" variant="primary" onClick={() => A.openPath(lastOutput.path)}>
+              {t("打開資料夾")}
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={p.onRender}>
+            {t("再輸出一次")}
+          </Button>
+        </>
+      ),
+    };
+  } else if (step === 1) {
     caption = {
       text: t("先開一個 mp3 / wav / m4a"),
       cta: (

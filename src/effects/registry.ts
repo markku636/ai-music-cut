@@ -54,15 +54,29 @@ function enabledFor(spec: EffectSpec): () => Enabled {
 }
 
 export async function applyEffect(app: EffectApplication, mediaId: string): Promise<void> {
+  const text = t("已套用：{label}", { label: app.label });
   if (app.kind === "effects") {
+    const before = useDecisions.getState().past.length;
     useDecisions.getState().addEffects(mediaId, app.effects, app.label);
+    const after = useDecisions.getState().past.length;
+    // 復原鈕只退自己這一筆：之後又做了別的事就改成提示，不然會退錯
+    toast.undo(text, () => {
+      const d = useDecisions.getState();
+      if (d.past.length === after && after > before) d.undo();
+      else toast.info(t("後面還有別的修改，請用「復原」一步一步退回"));
+    });
   } else if (app.kind === "cleanup") {
+    const prev = useCleanup.getState().byMedia[mediaId] ?? null;
     useCleanup.getState().set(mediaId, isCleanupActive(app.spec) ? app.spec : null);
     useProject.getState().markDirty();
+    toast.undo(text, () => {
+      useCleanup.getState().set(mediaId, prev);
+      useProject.getState().markDirty();
+    });
   } else {
     await app.apply();
+    toast.success(text);
   }
-  toast.success(t("已套用：{label}", { label: app.label }));
 }
 
 function applyNow(spec: EffectSpec, values: ReturnType<typeof resolveValues>): void {

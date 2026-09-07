@@ -3,7 +3,8 @@ import { BadgeCheck, ClipboardCheck, FileMusic, FolderOpen } from "lucide-react"
 import { api, errMessage, type RenderDone, type RenderProgress } from "../api";
 import { KIND_LABEL, type CandidateKind } from "../analysis/types";
 import { Button, Field, FormGrid, Input, Modal, Select } from "../ui/index";
-import { pickSaveFile, toast } from "../ui";
+import { pickSaveFile, toast, uiPrompt } from "../ui";
+import { useUi } from "../store/ui";
 import { useT } from "../i18n";
 import { clipPath } from "../analysis/clip";
 import { normalizeRanges, reelSourceMs, type ReelRange } from "../analysis/reel";
@@ -60,6 +61,8 @@ export default function RenderDialog({
   reelBed?: string | null;
 }) {
   const t = useT();
+  // 簡易模式：只剩路徑與一顆「輸出」；預設集 / 格式 / 響度 / 三個勾選都藏起來（用專案裡的值）
+  const simple = useUi((s) => s.mode === "simple");
   const media = useProject((s) => s.media.find((m) => m.id === mediaId) ?? null);
   const projTarget = useProject((s) => s.targetLufs);
   const settings = useSettings((s) => s.s);
@@ -68,7 +71,7 @@ export default function RenderDialog({
   // 預設關：多數 podcast 要的是「打到目標」，被壓一點無所謂。
   // 訪談 / 有音樂的節目才會寧可小聲也要保住動態。
   const [preserveDynamics, setPreserveDynamics] = useState(false);
-  const [leveling, setLeveling] = useState(true);
+  const [leveling, setLeveling] = useState(useProject.getState().leveling);
   const [stems, setStems] = useState(false);
   const [stemStep, setStemStep] = useState<StemProgress | null>(null);
   const overlays = useDecisions((s2) => s2.overlays[mediaId] ?? EMPTY_OVERLAYS);
@@ -198,7 +201,7 @@ export default function RenderDialog({
     <Modal
       open
       onClose={busy ? () => {} : onClose}
-      title={t("輸出")}
+      title={simple ? t("輸出 mp3") : t("輸出")}
       icon={FileMusic}
       size="md"
       footer={
@@ -223,8 +226,8 @@ export default function RenderDialog({
               </Button>
             </>
           )}
-          <Button variant="primary" onClick={() => void start()} loading={busy} disabled={!built || !outPath.trim()}>
-            {t("開始輸出")}
+          <Button variant="primary" onClick={() => void start()} loading={busy} disabled={!built || !outPath.trim()} data-testid="render-go">
+            {simple ? t("輸出") : t("開始輸出")}
           </Button>
         </>
       }
@@ -252,7 +255,7 @@ export default function RenderDialog({
             )}
           </div>
         )}
-        {findings.length > 0 && (
+        {findings.length > 0 && (!simple || blocked || counts.warnings > 0) && (
           <div className="rounded-md border border-fg/10 px-3 py-2 space-y-1.5">
             <div className="flex items-center gap-1.5 text-[11px]">
               <ClipboardCheck size={12} className={blocked ? "text-danger" : counts.warnings ? "text-warning" : "text-fg/45"} />
@@ -261,7 +264,7 @@ export default function RenderDialog({
                 {t("{w} 個警告 · {n} 個提醒", { w: counts.blockers + counts.warnings, n: counts.notes })}
               </span>
             </div>
-            {findings.map((f) => (
+            {findings.filter((f) => !simple || f.severity !== "note").map((f) => (
               <div key={f.id} className="flex items-start gap-1.5 text-[11px] leading-snug">
                 <span
                   aria-hidden
@@ -293,6 +296,8 @@ export default function RenderDialog({
             ))}
           </div>
         )}
+        {!simple && (
+        <>
         <Field
           label={t("輸出預設")}
           hint={active?.note ? t(active.note) : t("平台規範是別人訂的，不是每一集要重新想的東西。")}
@@ -315,8 +320,8 @@ export default function RenderDialog({
               variant="ghost"
               disabled={busy}
               title={t("把目前的格式 / 響度 / 逐段平衡 / 分軌存成一個預設")}
-              onClick={() => {
-                const name = window.prompt(t("預設名稱"), active ? "" : t("我的預設"));
+              onClick={async () => {
+                const name = await uiPrompt(t("預設名稱"), { defaultValue: active ? "" : t("我的預設") });
                 if (name == null) return;
                 const next = saveUserPreset(userPresets, name, shape);
                 if (next === userPresets) {
@@ -360,6 +365,8 @@ export default function RenderDialog({
             </Select>
           </Field>
         </FormGrid>
+        </>
+        )}
         <Field label={t("輸出檔案")}>
           <div className="flex gap-2">
             <Input value={outPath} onChange={(e) => setOutPath(e.target.value)} className="flex-1" spellCheck={false} disabled={busy} />
@@ -391,6 +398,8 @@ export default function RenderDialog({
             })}
           </div>
         )}
+        {!simple && (
+        <>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={leveling} onChange={(e) => setLeveling(e.target.checked)} disabled={busy} />
           {t("逐段音量平衡（把忽大忽小的段落拉齊，再整體正規化到目標響度）")}
@@ -405,6 +414,8 @@ export default function RenderDialog({
             ? t("同時輸出分軌（人聲一個檔，每個角色各一個檔：{list}）", { list: roles.map((r) => t(roleLabel(r))).join("、") })
             : t("同時輸出分軌（人聲一個檔、配樂與音效一個檔）")}
         </label>
+        </>
+        )}
         {stems && hasOverlays && !range && !reel?.length && (
           <p className="text-[11px] text-fg/40 leading-relaxed -mt-1">
             {t("所有檔共用同一組響度量測，所以各軌之間的相對音量跟完整混音一致（每一軌各自正規化的話，配樂會被拉到跟人聲一樣大聲）。真實峰值限制器仍然是逐檔套用，所以把各軌相加不會逐樣本等於完整混音 —— 影片剪接端本來也會重新做一次混音。")}

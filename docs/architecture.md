@@ -277,6 +277,10 @@
 | `src/store/dialogs.ts` + `src/shell/DialogHost.tsx` | 對話框改成 id 堆疊；每個對話框各自 code-split（`ui/lazyOverlay`）；`needs:"media"` 的在 active media 消失時自動關 |
 | `src/ui/MenuPanel.tsx` | 右鍵 / 下拉 / 子選單共用：hover 120 ms 開子選單、↑↓ Home End 首字導覽、`muted`；子選單的 DOM 也算「在選單裡面」（不然滑進 flyout 會被當成點外面） |
 | `src/shell/CommandPalette.tsx` | Ctrl+K。同時比翻譯後標題、繁中原文、關鍵字、快捷鍵；停用的也列出來、右邊寫原因 |
+| `src/shell/ProShell.tsx` / `SimpleShell.tsx` | 兩個殼。專業 = 工具列 · 流程列 · [媒體 \| Workspace + 逐字稿 \| 右側欄]；簡易 = 小標題列 · 三步流程列 · [Workspace + 逐字稿 \| SimplePanel]。`store/ui.mode` 決定掛哪個；第一次裝是簡易、升級前有 blob 的是專業（`parsePersisted`） |
+| `src/shell/Workspace.tsx` / `TranscriptArea.tsx` | 從 MainArea 抽出來的波形區（傳輸列 / 時間軸 / 概覽 / 四個右鍵 / 播放相關 hook）與逐字稿區。兩個殼掛的是**同一份**，`variant` 只決定拿掉什麼 |
+| `src/shell/SimplePanel.tsx` | 簡易面板：復原 + `simplePanelCommands()`（`simple` + `simpleOrder` 的指令，≤8 顆）+ 輸出。停用不灰掉：第二行灰字是原因 |
+| `src/commands/undoToast.ts` + `toast.undo` | 每個破壞性動作後面一顆「復原」；只退自己那一筆（歷史頂端不是自己就改成提示） |
 | `src/effects/spec.ts` + `registry.ts` | 有參數的效果寫成 `EffectSpec`（params ≤3、presets、suggest、build）；`registerEffectSpec` 產生 `<id>.dialog / .preset.<p> / .quick` 指令。`dialogs/EffectDialog.tsx` 只是把 spec 畫出來 |
 
 規矩：

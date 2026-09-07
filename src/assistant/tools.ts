@@ -17,6 +17,7 @@ import { levelSpread, speakerLevels, spreadVerdict } from "../analysis/speakerLe
 import { groupFillers } from "../analysis/fillerStats";
 import { buildCues, CAPTION_EXT, renderCaptions, type CaptionFormat } from "../analysis/captions";
 import { splitByChapters, totalOutMs } from "../analysis/splitExport";
+import { loudnessProfile, vsEpisode } from "../analysis/profile";
 
 import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, planDuck, voiceRegionsInOutput } from "../analysis/overlays";
 import { analyzeMicSync, combineMics } from "../pipeline/syncMics";
@@ -854,6 +855,45 @@ export const TOOLS: ToolSpec[] = [
       if (!Object.keys(patch).length) throw new ToolError("沒有任何要改的欄位");
       x.d.updateOverlay(x.media.id, id, patch, "調整配樂");
       return { updated: id, patch };
+    },
+  },
+  {
+    name: "get_loudness_profile",
+    description:
+      "**你聽不到聲音，這支讓你看得到。** 回這一集的響度輪廓（一條粗略的曲線）、最安靜與最大聲的幾段、底噪與人聲水準。用來回答「哪裡特別小聲」「這集吵不吵」「要不要修聲」這種光看逐字稿答不出來的問題。數字是**來源**的響度，不是成品 —— 輸出時的逐段平衡與響度正規化還會再動一次。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bucketSec: { type: "integer", minimum: 5, maximum: 600, description: "每一格多少秒（預設 30）。節目太長時會自動加寬，回傳的 bucketMs 才是實際用的。" },
+      },
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const m = ctxMedia();
+      const local = useTranscript.getState().local[m.media.id];
+      const p = loudnessProfile(local, Math.round(num(a.bucketSec, 30) * 1000));
+      if (!p) throw new ToolError("這個音檔還沒有本機波形分析（請先按「分析」）");
+      const view = (b: { startMs: number; endMs: number; lufs: number }) => ({
+        at: formatMs(b.startMs, { millis: false }),
+        startMs: Math.round(b.startMs),
+        endMs: Math.round(b.endMs),
+        lufs: Number(b.lufs.toFixed(1)),
+        vsEpisodeLu: vsEpisode(p, b) == null ? null : Number(vsEpisode(p, b)!.toFixed(1)),
+      });
+      return {
+        durationMs: Math.round(p.durationMs),
+        bucketMs: p.bucketMs,
+        episodeLufs: Number(p.episodeLufs.toFixed(1)),
+        // 一條粗略的曲線：只給數字，位置用索引 × bucketMs 推得出來
+        curveLufs: p.buckets.map((b) => Number(b.lufs.toFixed(1))),
+        quietest: p.quietest.map(view),
+        loudest: p.loudest.map(view),
+        noiseFloorDb: p.gate ? Number(p.gate.noiseFloorDb.toFixed(1)) : null,
+        speechDb: p.gate ? Number(p.gate.speechDb.toFixed(1)) : null,
+        speechToNoiseLu: p.gate ? Number(p.gate.marginDb.toFixed(1)) : null,
+        // 差距小於 12 dB 的話修聲會傷到內容（見 analysis/gate.ts）
+        note: p.gate && p.gate.marginDb < 12 ? "人聲與底噪只差不到 12 dB，這一集本來就偏吵；硬做降噪會傷到內容" : undefined,
+      };
     },
   },
   {

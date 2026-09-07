@@ -12,6 +12,7 @@ import FillersDialog from "./dialogs/FillersDialog";
 import TemplateDialog from "./dialogs/TemplateDialog";
 import SpeakersDialog from "./dialogs/SpeakersDialog";
 import CaptionsDialog from "./dialogs/CaptionsDialog";
+import SplitExportDialog from "./dialogs/SplitExportDialog";
 import PromptsDialog from "./dialogs/PromptsDialog";
 import type { ReelRange } from "./analysis/reel";
 import { useHighlights } from "./store/highlights";
@@ -202,6 +203,7 @@ export default function App() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [speakersOpen, setSpeakersOpen] = useState(false);
   const [captionsOpen, setCaptionsOpen] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
   const [batchOpen, setBatchOpen] = useState(false);
   const [verifyFor, setVerifyFor] = useState<{ outPath: string | null; durationMs: number | null } | null>(null);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
@@ -516,6 +518,8 @@ export default function App() {
         onSpeakers={() => setSpeakersOpen(true)}
         onCaptions={() => setCaptionsOpen(true)}
         canCaptions={!!active}
+        onSplitExport={() => setSplitOpen(true)}
+        canSplitExport={!!active}
         onBatch={() => setBatchOpen(true)}
         canBatch={mediaCount > 0}
         canCleanup={!!active}
@@ -588,6 +592,7 @@ export default function App() {
       {templatesOpen && <TemplateDialog mediaId={active?.id ?? null} onClose={() => setTemplatesOpen(false)} />}
       {speakersOpen && <SpeakersDialog mediaId={active?.id ?? null} onClose={() => setSpeakersOpen(false)} />}
       {captionsOpen && <CaptionsDialog mediaId={active?.id ?? null} onClose={() => setCaptionsOpen(false)} />}
+      {splitOpen && <SplitExportDialog mediaId={active?.id ?? null} onClose={() => setSplitOpen(false)} />}
       {batchOpen && <BatchDialog onClose={() => setBatchOpen(false)} />}
       {autoCutOpen && active && <AutoCutDialog mediaId={active.id} onClose={() => setAutoCutOpen(false)} />}
       {notesOpen && active && <ShowNotesDialog mediaId={active.id} onClose={() => setNotesOpen(false)} />}

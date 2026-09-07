@@ -1163,6 +1163,22 @@ const en: Catalog = {
   "這個落差聽不太出來，逐段平衡輕鬆吸收得掉。": "That gap is barely audible and the per-segment leveller absorbs it easily.",
   "聽得出來但補得動 —— 輸出時的逐段平衡會把每個人拉向同一個目標。": "Audible but fixable: on export the per-segment leveller pulls everyone toward the same target.",
   "這已經不是後製能好好補救的了：把小聲的那一位拉起來，他的底噪與房間聲會一起拉起來。下次錄音時把兩支麥的增益調近一點。": "This is past what post can fix well: lifting the quiet person also lifts their noise floor and room tone. Match the mic gains more closely at the next recording.",
+  // ---- 依章節分割輸出 ----
+  "開場": "Opening",
+  "{n} 段全部輸出完成": "All {n} parts exported",
+  "{ok} / {n} 段輸出完成，其餘失敗": "{ok} of {n} parts exported, the rest failed",
+  "依章節分割輸出": "Split export by chapters",
+  "輸出 {n} 段": "Export {n} parts",
+  "這一集沒有章節標記": "No chapter markers in this episode",
+  "在波形上按 Ctrl+M 下章節標記，或用「節目筆記」讓 AI 提章節再一鍵寫成標記。章節之間就是分割點。": "Press Ctrl+M on the waveform to drop a chapter marker, or let Show notes propose chapters and write them as markers in one click. The chapters are the split points.",
+  "每一段都各走一次完整的輸出管線（逐段平衡、修聲、配樂、響度正規化），不是把成品切開 —— 切成品的話每一段的響度都是照整集算的，單獨聽會偏掉。一次跑一段。": "Each part runs the full export pipeline of its own (per-segment levelling, cleanup, music, loudness normalisation) rather than slicing a finished file: a sliced file carries loudness computed for the whole episode, so each part drifts off target when heard on its own. One part at a time.",
+  "選擇": "Choose",
+  "段": "#",
+  "成品長度": "Output length",
+  "檔名": "File name",
+  "狀態": "Status",
+  "共 {n} 段 · 成品合計 {ms}": "{n} parts · {ms} of output in total",
+  "依章節分割輸出（一次錄多集）": "Split export by chapters (several episodes in one recording)",
 };
 
 

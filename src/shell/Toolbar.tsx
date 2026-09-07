@@ -32,6 +32,8 @@ export interface ToolbarProps {
   canAutoCut: boolean;
   onPrompts: () => void;
   onFillers: () => void;
+  onTakes: () => void;
+  canTakes: boolean;
   onTemplates: () => void;
   onSpeakers: () => void;
   onCaptions: () => void;
@@ -73,6 +75,7 @@ export default function Toolbar(p: ToolbarProps) {
     { group: t("這一集") },
     { icon: <Icon icon={BrainCircuit} size={16} />, label: t("AI 判讀（剪輯＋審核）"), onClick: p.onJudge, disabled: !p.canJudge, hint: t("先完成分析") },
     { icon: <Icon icon={MessageSquareOff} size={16} />, label: t("贅字管理（依詞整群處理）"), onClick: p.onFillers, disabled: false },
+    { icon: <Icon icon={Layers} size={16} />, label: t("替代 take（同一句講了好幾次）"), onClick: p.onTakes, disabled: !p.canTakes, hint: t("先完成分析") },
     { icon: <Icon icon={Users} size={16} />, label: t("講者（誰講了多久 / 改名 / 手動指派）"), onClick: p.onSpeakers, disabled: false },
     { icon: <Icon icon={Link2} size={16} />, label: t("同步麥克風"), onClick: p.onSyncMics, disabled: !p.canSyncMics, hint: t("媒體清單裡要有兩個以上的檔案") },
     { group: t("聲音") },

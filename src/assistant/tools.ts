@@ -27,6 +27,8 @@ import { analyzeMicSync, combineMics } from "../pipeline/syncMics";
 import type { EffectKind } from "../analysis/effects";
 import { edlFor, runRulesFor } from "../pipeline/rules";
 import { qcFor } from "../pipeline/audioQc";
+import { keepTake, takesFor } from "../pipeline/takes";
+import { savedMsOf } from "../analysis/takes";
 import { useTimeline } from "../store/timeline";
 import { addEffectOnSelection } from "../timeline/selectionActions";
 import { bladeAt, liftSelection, seamsOfEdl, setSeamPause, trimSeam } from "../timeline/trimActions";
@@ -896,6 +898,49 @@ export const TOOLS: ToolSpec[] = [
         // null = **沒檢查**（這一集還沒做本機分析），不是「檢查過很乾淨」
         audioQc: qc ? { ...qc.summary, spots: qc.findings.map((f) => ({ kind: f.kind, atMs: f.startMs, value: f.value })) } : null,
       };
+    },
+  },
+  {
+    name: "list_takes",
+    description:
+      "找出**同一句話講了好幾次**的地方（Final Cut 的 Audition）。一個人錄音講壞了最常見的反應不是說「重講」，而是停半秒直接再講一次 —— 錄完一集下來同一句有兩三個版本。回每一組的各次嘗試、時間、原文，以及留一個能省多少。**只找不剪**：要剪要用 keep_take，而且剪的是一整句真正的內容，判斷錯的代價很高，先讓使用者聽過。",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: () => {
+      const m = ctxMedia();
+      const groups = takesFor(m.media.id);
+      return {
+        groups: groups.map((g) => ({
+          id: g.id,
+          defaultKeep: g.defaultKeep,
+          savedMsIfDefault: savedMsOf(g, g.defaultKeep),
+          attempts: g.attempts.map((a) => ({ index: a.index, atMs: a.startMs, endMs: a.endMs, text: a.text })),
+        })),
+        hint: groups.length ? "預設建議留最後一次（會再講一遍就是因為前面不滿意）。" : undefined,
+      };
+    },
+  },
+  {
+    name: "keep_take",
+    description:
+      "在一組替代 take 裡留下某一次，其餘剪掉（一次 undo 就能全還原）。groupId 來自 list_takes。keepIndex 是第幾次嘗試（0 起算）。索引超出範圍時**什麼都不做**，不會把整組剪光。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        groupId: { type: "string", description: "list_takes 回的那個 id。" },
+        keepIndex: { type: "integer", minimum: 0, description: "要留第幾次（0 起算）；不給就用 defaultKeep（最後一次）。" },
+      },
+      required: ["groupId"],
+      additionalProperties: false,
+    },
+    handler: (a) => {
+      const m = ctxMedia();
+      const groupId = String(a?.groupId ?? "");
+      const group = takesFor(m.media.id).find((g) => g.id === groupId);
+      if (!group) return { error: "找不到這一組 take（先用 list_takes）" };
+      const keep = a?.keepIndex == null ? group.defaultKeep : Math.round(Number(a.keepIndex));
+      const r = keepTake(m.media.id, groupId, keep);
+      if (!r.cut) return { cut: 0, error: "keepIndex 超出範圍，沒有動任何東西" };
+      return { ...r, kept: group.attempts[keep]?.text };
     },
   },
   {

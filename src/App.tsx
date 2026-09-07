@@ -9,6 +9,7 @@ import ShowNotesDialog from "./dialogs/ShowNotesDialog";
 import AutoCutDialog from "./dialogs/AutoCutDialog";
 import BatchDialog from "./dialogs/BatchDialog";
 import FillersDialog from "./dialogs/FillersDialog";
+import TakesDialog from "./dialogs/TakesDialog";
 import TemplateDialog from "./dialogs/TemplateDialog";
 import SpeakersDialog from "./dialogs/SpeakersDialog";
 import { nextSpeakerChange, speakerAtMs } from "./analysis/speakers";
@@ -203,6 +204,7 @@ export default function App() {
   const [autoCutOpen, setAutoCutOpen] = useState(false);
   const [promptsOpen, setPromptsOpen] = useState(false);
   const [fillersOpen, setFillersOpen] = useState(false);
+  const [takesOpen, setTakesOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [speakersOpen, setSpeakersOpen] = useState(false);
   const [captionsOpen, setCaptionsOpen] = useState(false);
@@ -540,6 +542,8 @@ export default function App() {
         canAutoCut={!!active}
         onPrompts={() => setPromptsOpen(true)}
         onFillers={() => setFillersOpen(true)}
+        onTakes={() => setTakesOpen(true)}
+        canTakes={!!active}
         onTemplates={() => setTemplatesOpen(true)}
         onSpeakers={() => setSpeakersOpen(true)}
         onCaptions={() => setCaptionsOpen(true)}
@@ -617,6 +621,7 @@ export default function App() {
       {musicOpen && <MusicDialog onClose={() => setMusicOpen(false)} />}
       {promptsOpen && <PromptsDialog onClose={() => setPromptsOpen(false)} />}
       {fillersOpen && <FillersDialog mediaId={active?.id ?? null} onClose={() => setFillersOpen(false)} />}
+      {takesOpen && <TakesDialog mediaId={active?.id ?? null} onClose={() => setTakesOpen(false)} />}
       {templatesOpen && <TemplateDialog mediaId={active?.id ?? null} onClose={() => setTemplatesOpen(false)} />}
       {speakersOpen && <SpeakersDialog mediaId={active?.id ?? null} onClose={() => setSpeakersOpen(false)} />}
       {captionsOpen && <CaptionsDialog mediaId={active?.id ?? null} onClose={() => setCaptionsOpen(false)} />}

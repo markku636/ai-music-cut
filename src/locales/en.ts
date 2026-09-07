@@ -1254,6 +1254,19 @@ const en: Catalog = {
   "不先下載的話，第一次分析時才會抓 —— 那時你正等著看結果，卻卡在一個沒有進度的下載上。越大越準也越慢。": "If you skip this, the model downloads during your first analysis — while you are waiting for a result, stuck on a download with no progress bar. Bigger is more accurate and slower.",
   "顯存與記憶體是**估計值**：實際還會受音檔長度與其他程式佔用影響。": "VRAM and RAM figures are estimates: actual use also depends on audio length and what else is running.",
   "顯存是 int8 的估計值（這個 App 就是用 int8 跑的）。auto 會依你的顯示卡自己挑。": "VRAM figures are int8 estimates (int8 is what this app runs). auto picks a model based on your GPU.",
+  "沒有動任何東西": "Nothing was changed",
+  "留下第 {n} 次，剪掉 {c} 段（省 {s} 秒）": "Kept take {n}, cut {c} segments ({s} s saved)",
+  "替代 take（同一句講了好幾次）": "Alternate takes (the same line said more than once)",
+  "沒有找到重錄的段落": "No re-recorded passages found",
+  "這裡找的是「同一句話連著講了好幾次」。要先完成分析才有逐字稿可以比對。": "This looks for the same line said several times in a row. Analysis has to finish first, so there is a transcript to compare.",
+  "都處理完了": "All done",
+  "這一集的 {n} 組重錄都已經挑過了。": "You have picked a take for all {n} groups in this episode.",
+  "每一組都是同一句話的幾次嘗試。**先聽再決定** —— 剪掉的是一整句真正的內容，不是贅字。預設建議留最後一次（會再講一遍就是因為前面不滿意），但有時候第一次最自然。": "Each group is several attempts at the same line. Listen before you decide — what gets cut here is a whole sentence of real content, not a filler. The last take is suggested by default (you said it again because the earlier one did not satisfy you), but sometimes the first one is the most natural.",
+  "{n} 次嘗試": "{n} attempts",
+  "留一個可省 {s} 秒": "keeping one saves {s} s",
+  "試聽這一次": "Audition this take",
+  "建議": "Suggested",
+  "留這次": "Keep this",
 };
 
 

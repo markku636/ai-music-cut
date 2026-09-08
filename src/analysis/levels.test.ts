@@ -108,11 +108,25 @@ describe("makeNoisePrint", () => {
 });
 
 describe("suggestDenoise", () => {
-  it("有噪音樣本就用它（measured）；夠安靜就不建議", () => {
+  it("有噪音樣本就用它（measured）；夠安靜就不建議，summary 也要說不用降", () => {
     const s = suggestDenoise(null, null, { startMs: 0, endMs: 1000, floorDb: -40, at: 0 });
     expect(s.confidence).toBe("measured");
     expect(s.nrDb).toBeGreaterThan(0);
-    expect(suggestDenoise(null, null, { startMs: 0, endMs: 1000, floorDb: -70, at: 0 }).nrDb).toBe(0);
+    expect(s.summary).toBe(`噪音樣本 -40.0 dBFS → 降噪 ${s.nrDb} dB`);
+    const quiet = suggestDenoise(null, null, { startMs: 0, endMs: 1000, floorDb: -70, at: 0 });
+    expect(quiet.nrDb).toBe(0);
+    expect(quiet.summary).toBe("噪音樣本 -70.0 dBFS，已經夠安靜，不建議降噪");
+  });
+  it("summary 的參數有代進去（t() 的 {floor} / {nr} 不能原樣留著）", () => {
+    const a = fake([...quiet(200, -45), ...loud(200)]);
+    const s = suggestDenoise(a, { startMs: 0, endMs: 2000 }, null);
+    expect(s.summary).not.toContain("{");
+    expect(s.summary).toContain(`降噪 ${s.nrDb} dB`);
+    const peak = peakNormalizeGainDb(fake(loud(200, 64)), 0, 1000, -1)!;
+    expect(peak.summary).not.toContain("{");
+    expect(peak.summary).toMatch(/^峰值 -\d+\.\d dBFS → -1 dBFS，增益 \+\d+\.\d dB（±\d\.\d\d）$/);
+    const lu = matchLoudnessGainDb(fake(loud(400, 100, -20)), 0, 2000, -16)!;
+    expect(lu.summary).toMatch(/^這段 -\d+\.\d LUFS → -16 LUFS，增益 \+\d+\.\d dB$/);
   });
   it("沒樣本用範圍 5% 百分位（heuristic）；沒分析用一般值（default）", () => {
     const a = fake([...quiet(200, -45), ...loud(200)]);

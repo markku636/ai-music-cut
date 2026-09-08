@@ -678,3 +678,29 @@ pub fn open_external(url: String) -> AppResult<()> {
     crate::proc::open_url(u);
     Ok(())
 }
+
+/// 一批路徑存不存在（轉檔輸出 / 錄音 take / 對齊檔撞名用）。前端在決定檔名前先問一次，
+/// 不然 `.part` → rename 會把磁碟上已經有的檔靜靜蓋掉（媒體清單裡沒有 ≠ 磁碟上沒有）。
+#[tauri::command]
+pub async fn paths_exist(paths: Vec<String>) -> AppResult<Vec<bool>> {
+    let mut out = Vec::with_capacity(paths.len());
+    for p in &paths {
+        out.push(tokio::fs::metadata(p).await.is_ok());
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod paths_exist_tests {
+    #[tokio::test]
+    async fn reports_existing_and_missing() {
+        let dir = std::env::temp_dir().join(format!("aicut-pe-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.wav");
+        std::fs::write(&a, b"x").unwrap();
+        let b = dir.join("b.wav");
+        let r = super::paths_exist(vec![a.to_string_lossy().into_owned(), b.to_string_lossy().into_owned(), String::new()]).await.unwrap();
+        assert_eq!(r, vec![true, false, false]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

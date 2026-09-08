@@ -191,9 +191,36 @@ export function retighten(a: AlignAnalysis, tightness: number): AlignAnalysis {
   return { ...a, tightness, points: shaped.points, segments: shaped.segments, summary, resampleRatio: resampleOnly(summary), offsetMs: summary.offsetMs };
 }
 
-/** 對齊檔的路徑：dub 旁邊的 `<dub>_aligned.wav`。 */
-export function alignedPathFor(dubPath: string): string {
-  return dubPath.replace(/\.[^.]+$/, "") + "_aligned.wav";
+/** 對齊檔的路徑：dub 旁邊的 `<dub>_aligned.wav`；n ≥ 2 → `_aligned2.wav`、`_aligned3.wav`… */
+export function alignedPathFor(dubPath: string, n = 1): string {
+  return dubPath.replace(/\.[^.]+$/, "") + `_aligned${n > 1 ? n : ""}.wav`;
+}
+
+/** 每次往磁碟問幾個候選（同一個 dub 對齊個位數次就很多了）。 */
+const ALIGNED_PROBE_BATCH = 8;
+/** 最多編到幾號；再多就不是正常使用。 */
+const MAX_ALIGNED = 999;
+
+/**
+ * 找一個不會蓋到既有檔的對齊檔路徑：媒體清單裡已經有（大小寫不分）、或磁碟上已經有，就往下編號。
+ * 以前固定 `_aligned.wav`，第二次輸出會靜默蓋掉上一次的（清單裡那一筆還指著同一個路徑）。
+ * `exists` 失敗（後端還沒有 paths_exist 指令）就退回只看媒體清單，跟 naming.ts / convert.ts 一樣。
+ */
+export async function freeAlignedPath(dubPath: string, taken: readonly string[], exists: (paths: string[]) => Promise<boolean[]>): Promise<string> {
+  const lower = new Set(taken.map((p) => p.toLowerCase()));
+  for (let n = 1; n <= MAX_ALIGNED; n += ALIGNED_PROBE_BATCH) {
+    const candidates = Array.from({ length: ALIGNED_PROBE_BATCH }, (_, i) => alignedPathFor(dubPath, n + i)).filter((p) => !lower.has(p.toLowerCase()));
+    if (!candidates.length) continue;
+    let hits: boolean[];
+    try {
+      hits = await exists(candidates);
+    } catch {
+      return candidates[0];
+    }
+    const free = candidates.findIndex((_, i) => hits[i] !== true);
+    if (free >= 0) return candidates[free];
+  }
+  return alignedPathFor(dubPath, Date.now());
 }
 
 export interface AlignRenderResult {
@@ -208,7 +235,11 @@ export async function renderAlignment(a: AlignAnalysis, opts: { verify?: boolean
   const dub = proj.media.find((m) => m.id === a.dubId);
   const guideM = proj.media.find((m) => m.id === a.guideId);
   if (!dub || !guideM) throw new Error(t("找不到媒體"));
-  const outPath = alignedPathFor(dub.path);
+  const outPath = await freeAlignedPath(
+    dub.path,
+    proj.media.map((m) => m.path),
+    (paths) => api.pathsExist(paths),
+  );
   const jobs = useJobs.getState();
   const jobId = newJobId();
   jobs.upsert({ id: jobId, kind: "align", mediaId: a.dubId, step: t("對齊輸出"), pct: null, status: "running", message: outPath });

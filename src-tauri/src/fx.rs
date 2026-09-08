@@ -148,7 +148,7 @@ pub fn filter_for(fx: &RangeFx) -> String {
         ),
         RangeFx::Compressor { threshold_db, ratio, attack_ms, release_ms, makeup_db } => format!(
             // acompressor 的 threshold / makeup 是線性倍率：dB 在這裡換算，前端只講 dB
-            "acompressor=threshold={:.4}:ratio={:.1}:attack={:.0}:release={:.0}:makeup={:.3}:knee=2.83:detection=rms",
+            "acompressor=threshold={:.4}:ratio={:.1}:attack={:.2}:release={:.2}:makeup={:.3}:knee=2.83:detection=rms",
             10f64.powf(clamp(*threshold_db, -60.0, 0.0) / 20.0),
             clamp(*ratio, 1.0, 20.0),
             clamp(*attack_ms, 0.01, 2000.0),
@@ -226,6 +226,17 @@ pub fn is_correlated(chain: &[RangeFx]) -> bool {
 
 pub fn has_reverse(chain: &[RangeFx]) -> bool {
     chain.iter().any(|f| matches!(f, RangeFx::Reverse))
+}
+
+/// wet 端的完整濾鏡：`atrim` 把 demuxer 多讀的零頭切到剛好 `n_in` frame（反轉時多讀的會跑到串流**開頭**），
+/// 非反轉再 `apad` 補 `post` frame 的靜音 —— 區域碰到成品結尾時 post-roll 在檔案裡不存在，
+/// afftdn / atempo 延遲的尾巴要靠這段靜音才流得出來，不然 core 讀不到足夠的 frame 就整個輸出失敗。
+pub fn wet_filter(chain: &[RangeFx], n_in: u64, post: u64) -> String {
+    if has_reverse(chain) || post == 0 {
+        format!("atrim=end_sample={n_in},{}", chain_filter(chain))
+    } else {
+        format!("atrim=end_sample={n_in},apad=pad_len={post},{}", chain_filter(chain))
+    }
 }
 
 /// 一段區域要跟 ffmpeg 要多少 pre / post，以及 core 要丟掉幾個 frame 才對得上 dry 的 start。
@@ -496,15 +507,18 @@ impl WetOpener for FfmpegOpener<'_> {
     type Stream = FfmpegWet;
     async fn open(&mut self, region: &Region, pre: u64, post: u64, ch: usize) -> AppResult<FfmpegWet> {
         let ss = (region.start - pre) as f64 / SR as f64;
-        let dur = (region.end - region.start + pre + post) as f64 / SR as f64;
-        let af = chain_filter(&region.chain);
+        let n_in = region.end - region.start + pre + post;
+        let dur = n_in as f64 / SR as f64;
+        let af = wet_filter(&region.chain, n_in, post);
         let mut c = proc::cmd(&self.bins.ffmpeg);
         c.args(["-nostdin", "-hide_banner", "-loglevel", "error"]);
-        // wav 是 PCM，-ss 在 -i 前面是精確的 byte 位移，不會落在「前一個 keyframe」
-        c.args(["-ss", &format!("{ss:.6}")]);
+        // wav 是 PCM，-ss 在 -i 前面是精確的 byte 位移，不會落在「前一個 keyframe」。
+        // -t 也要在 -i 前面：放後面是**輸出**選項，demuxer 會把檔案讀到底 —— areverse 要等 EOF 才吐，
+        // 反轉出來的就是檔案**尾巴**那一段而不是這個區域（frame 數剛好對，core 看不出來）。
+        c.args(["-ss", &format!("{ss:.6}"), "-t", &format!("{dur:.6}")]);
         c.arg("-i");
         c.arg(&self.in_wav);
-        c.args(["-t", &format!("{dur:.6}"), "-af", &af]);
+        c.args(["-af", &af]);
         c.args(["-f", "f32le", "-ar", "48000", "-ac", &ch.to_string(), "pipe:1"]);
         c.stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true);
         let child = c.spawn().map_err(|e| AppError::Ffmpeg(format!("範圍濾波啟動失敗（{}）：{e}", kinds_label(&region.chain))))?;
@@ -576,9 +590,9 @@ pub async fn preview(bins: &FfmpegBins, src: &str, start_ms: f64, end_ms: f64, c
     if !dry.is_file() {
         let mut c = proc::cmd(&bins.ffmpeg);
         c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y"]);
-        c.args(["-ss", &format!("{:.6}", start / 1000.0), "-i"]);
+        c.args(["-ss", &format!("{:.6}", start / 1000.0), "-t", &format!("{:.6}", len / 1000.0), "-i"]);
         c.arg(src);
-        c.args(["-t", &format!("{:.6}", len / 1000.0), "-vn", "-ar", "48000", "-c:a", "libmp3lame", "-q:a", "5"]);
+        c.args(["-vn", "-ar", "48000", "-c:a", "libmp3lame", "-q:a", "5"]);
         c.arg(&dry);
         let o = c.output().await.map_err(|e| AppError::Ffmpeg(format!("ffmpeg 啟動失敗：{e}")))?;
         if !o.status.success() {
@@ -590,13 +604,15 @@ pub async fn preview(bins: &FfmpegBins, src: &str, start_ms: f64, end_ms: f64, c
         sorted.sort_by_key(rank);
         let (pre, post, discard) = roll_plan(&sorted, ms_to_frames(start), false);
         let ss = (ms_to_frames(start) - pre) as f64 / SR as f64;
-        let dur = (ms_to_frames(len) + pre + post) as f64 / SR as f64;
-        let af = format!("aresample=48000,{},atrim=start_sample={}:end_sample={},asetpts=PTS-STARTPTS", chain_filter(&sorted), discard, discard + ms_to_frames(len));
+        let n_in = ms_to_frames(len) + pre + post;
+        let dur = n_in as f64 / SR as f64;
+        // 跟 punch-in 同一套：-t 在 -i 前、atrim 切準、apad 補 EOF（反轉的試聽以前拿到的是檔案尾巴）
+        let af = format!("aresample=48000,{},atrim=start_sample={}:end_sample={},asetpts=PTS-STARTPTS", wet_filter(&sorted, n_in, post), discard, discard + ms_to_frames(len));
         let mut c = proc::cmd(&bins.ffmpeg);
         c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y"]);
-        c.args(["-ss", &format!("{ss:.6}"), "-i"]);
+        c.args(["-ss", &format!("{ss:.6}"), "-t", &format!("{dur:.6}"), "-i"]);
         c.arg(src);
-        c.args(["-t", &format!("{dur:.6}"), "-vn", "-af", &af, "-c:a", "libmp3lame", "-q:a", "5"]);
+        c.args(["-vn", "-af", &af, "-c:a", "libmp3lame", "-q:a", "5"]);
         c.arg(&wet);
         let o = c.output().await.map_err(|e| AppError::Ffmpeg(format!("ffmpeg 啟動失敗：{e}")))?;
         if !o.status.success() {
@@ -640,8 +656,10 @@ mod tests {
         assert_eq!(filter_for(&RangeFx::Eq { low_db: -3.0, mid_db: 2.0, high_db: 3.0 }), "bass=g=-3.0:f=200,equalizer=f=1000:t=o:w=1.5:g=2.0,treble=g=3.0:f=4000");
         assert_eq!(
             filter_for(&RangeFx::Compressor { threshold_db: -18.0, ratio: 4.0, attack_ms: 10.0, release_ms: 120.0, makeup_db: 6.0 }),
-            "acompressor=threshold=0.1259:ratio=4.0:attack=10:release=120:makeup=1.995:knee=2.83:detection=rms"
+            "acompressor=threshold=0.1259:ratio=4.0:attack=10.00:release=120.00:makeup=1.995:knee=2.83:detection=rms"
         );
+        // 夾限下界 0.01 ms 要印得出來（{:.0} 會變成 attack=0，ffmpeg 拒收）
+        assert!(filter_for(&RangeFx::Compressor { threshold_db: -18.0, ratio: 4.0, attack_ms: 0.0, release_ms: -5.0, makeup_db: 0.0 }).contains("attack=0.01:release=0.01:"));
         assert_eq!(filter_for(&RangeFx::Echo { delay_ms: 250.0, decay: 0.4 }), "aecho=in_gain=0.8:out_gain=0.6:delays=250:decays=0.40");
         assert_eq!(filter_for(&RangeFx::Reverb { size: 1.0, mix: 1.0 }), "aecho=0.8:0.7:23|47|71|107|157:0.55|0.45|0.35|0.25|0.15");
         // 0.15 × 0.5 = 0.075 在二進位是 0.07499…，{:.2} 印 0.07（不是四捨五入的 0.08）
@@ -664,6 +682,9 @@ mod tests {
     #[test]
     fn reverse_roll_plan_has_no_post_and_discards_nothing() {
         assert_eq!(roll_plan(&[RangeFx::Reverse], 48000, true), (POST_EXTRA_FRAMES, 0, 0));
+        // wet 濾鏡：反轉只切準不補；有延遲的鏈補 post frame 的靜音（EOF 才流得出延遲的尾巴）
+        assert_eq!(wet_filter(&[RangeFx::Reverse], 1000, 0), "atrim=end_sample=1000,areverse");
+        assert_eq!(wet_filter(&[dn(12.0, -50.0)], 5000, LAT_AFFTDN + POST_EXTRA_FRAMES), format!("atrim=end_sample=5000,apad=pad_len={},{}", LAT_AFFTDN + POST_EXTRA_FRAMES, chain_filter(&[dn(12.0, -50.0)])));
         assert_eq!(roll_plan(&[RangeFx::Reverse], 100, false), (100, 0, 0));
         assert_eq!(roll_plan(&[dn(12.0, -50.0)], 48000, false), (48000, LAT_AFFTDN + POST_EXTRA_FRAMES, 48000 + LAT_AFFTDN));
         assert_eq!(roll_plan(&[RangeFx::Pitch { semitones: 2.0 }], 48000, true), (PAD_FRAMES, POST_EXTRA_FRAMES + XF_FRAMES, PAD_FRAMES));
@@ -978,7 +999,9 @@ mod tests {
             let lag = lag_of(&dry, &wet, 4800);
             eprintln!("[fx-cal] {:<8} latency = {} frames ({:.2} ms), out len {} vs in {}", kind_name(&fx), lag, lag as f64 * 1000.0 / SR as f64, wet.len(), dry.len());
             let table = latency_frames(&fx) as i64;
-            assert!((lag as i64 - table).abs() <= 2, "{}: 表上是 {} 但量到 {} —— 把 LAT_* 更新成量到的值", kind_name(&fx), table, lag);
+            // 變調是 asetrate + aresample + atempo：WSOLA 之後互相關的 lag 沒有「正確值」，量到 17 frame（0.35 ms）就算對
+            let tol = if matches!(fx, RangeFx::Pitch { .. }) { 48 } else { 2 };
+            assert!((lag as i64 - table).abs() <= tol, "{}: 表上是 {} 但量到 {} —— 把 LAT_* 更新成量到的值", kind_name(&fx), table, lag);
         }
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1050,6 +1073,109 @@ mod tests {
         eprintln!("[fx-e2e] quiet rms dry {quiet_dry:.5} wet {quiet_wet:.5}");
         // 白雜訊 2 秒、nr=18：實測降 ~2.5 dB（afftdn 對寬頻白雜訊本來就保守，真實嘶聲降得多）
         assert!(quiet_wet < quiet_dry * 0.85, "降噪要真的降（dry {quiet_dry} wet {quiet_wet}）");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 跑一段 punch-in 的共用部分：回 (dry, got)。
+    async fn run_punch_in(bins: &FfmpegBins, dir: &std::path::Path, dry: &[f32], regions: Vec<FxRegion>) -> Vec<f32> {
+        let n = dry.len();
+        let src = dir.join("concat.wav");
+        write_wav(&src, dry, 1);
+        let regs = validate_regions(&regions, n as u64).unwrap();
+        let mut opener = FfmpegOpener { bins, in_wav: src.clone() };
+        let mut reader = hound::WavReader::open(&src).unwrap();
+        let mut samples = reader.samples::<f32>();
+        let mut got: Vec<f32> = Vec::new();
+        let cancel = AtomicBool::new(false);
+        let written = punch_in_core(
+            |f: &mut [f32]| {
+                for v in f.iter_mut() {
+                    *v = match samples.next() {
+                        Some(Ok(x)) => x,
+                        _ => return Ok(false),
+                    };
+                }
+                Ok(true)
+            },
+            n as u64,
+            1,
+            &regs,
+            &mut opener,
+            |f: &[f32]| {
+                got.extend_from_slice(f);
+                Ok(())
+            },
+            |_| {},
+            &cancel,
+        )
+        .await
+        .unwrap();
+        assert_eq!(written, n as u64);
+        assert_eq!(got.len(), n);
+        got
+    }
+
+    /// 反轉：區域裡拿到的必須是**這個區域**倒著放。-t 放在輸出端時 areverse 會把檔案讀到底，
+    /// 拿到的是檔案尾巴倒著放、frame 數還剛好對 —— 用一條斜坡訊號就能分辨。
+    #[tokio::test]
+    #[ignore]
+    async fn fx_end_to_end_reverse_region_is_the_region_not_the_tail() {
+        let Some(bins) = bundled_bins() else {
+            eprintln!("no bundled ffmpeg; skip");
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("aicut-fx-rev-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let n = SR as usize * 6;
+        // 斜坡 −0.5 → +0.5（每個 sample 值都不同）加一點高頻讓它像聲音
+        let dry: Vec<f32> = (0..n).map(|i| (i as f32 / n as f32 - 0.5) + 0.05 * (2.0 * std::f32::consts::PI * 3000.0 * i as f32 / SR as f32).sin()).collect();
+        let mut regions = vec![reg(2000.0, 4000.0)];
+        regions[0].chain = vec![RangeFx::Reverse];
+        let got = run_punch_in(&bins, &dir, &dry, regions).await;
+        let (a, b) = (ms_to_frames(2000.0) as usize, ms_to_frames(4000.0) as usize);
+        assert!(got[..a].iter().zip(&dry[..a]).all(|(x, y)| x == y), "區域前要逐 sample 相等");
+        assert!(got[b..].iter().zip(&dry[b..]).all(|(x, y)| x == y), "區域後要逐 sample 相等");
+        // 區域內（避開兩端 10 ms 交叉）：got[a+k] == dry[b-1-k]
+        let xf = XF_FRAMES as usize;
+        let mut worst = 0f32;
+        for k in xf..(b - a - xf) {
+            worst = worst.max((got[a + k] - dry[b - 1 - k]).abs());
+        }
+        eprintln!("[fx-rev] worst |got − reversed dry| = {worst:.5}");
+        assert!(worst < 2e-3, "反轉區域要是本區域倒放（worst {worst}）");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 降噪區域一路到檔尾：post-roll 在檔案裡不存在，要靠 apad 補的靜音把 afftdn 延遲的尾巴推出來，
+    /// 以前這裡會回「濾鏡回傳的長度不對」讓整個輸出失敗。
+    #[tokio::test]
+    #[ignore]
+    async fn fx_end_to_end_denoise_region_reaching_eof() {
+        let Some(bins) = bundled_bins() else {
+            eprintln!("no bundled ffmpeg; skip");
+            return;
+        };
+        let dir = std::env::temp_dir().join(format!("aicut-fx-eof-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let n = SR as usize * 5;
+        let mut seed = 7u32;
+        let dry: Vec<f32> = (0..n)
+            .map(|i| {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let noise = ((seed >> 9) as f32 / (1u32 << 23) as f32 - 1.0) * 0.02;
+                noise + 0.3 * (2.0 * std::f32::consts::PI * 220.0 * i as f32 / SR as f32).sin()
+            })
+            .collect();
+        let mut regions = vec![reg(3000.0, 5000.0)];
+        regions[0].chain = vec![dn(18.0, -34.0)];
+        let got = run_punch_in(&bins, &dir, &dry, regions).await;
+        let a = ms_to_frames(3000.0) as usize;
+        assert!(got[..a].iter().zip(&dry[..a]).all(|(x, y)| x == y), "區域前要逐 sample 相等");
+        // 最後 100 ms 不是靜音（延遲的尾巴真的流出來了，不是補的 0）
+        let tail = &got[n - 4800..];
+        let rms = (tail.iter().map(|v| (*v as f64).powi(2)).sum::<f64>() / tail.len() as f64).sqrt();
+        eprintln!("[fx-eof] tail rms {rms:.4}");
+        assert!(rms > 0.1, "檔尾要有內容（rms {rms}）");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

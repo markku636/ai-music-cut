@@ -289,6 +289,14 @@
 - 停用要給 `why`（zh key）。畫面上不會灰掉不解釋：tooltip、toast、命令面板右側都是同一句。
 - 兩個 store（`useCommands`、`useDialogs`）要從 `window.__aicut` 拿（見 dev 鉤子），不要手動 `import()`：HMR 之後那是另一個實例。
 
+## 對齊渲染：自己的 WSOLA（v0.109）
+
+- `src-tauri/src/align.rs`：`WarpMap`（分段線性，輸出 frame → dub frame）+ `wsola()`（20 ms Hann grain、10 ms hop、每格回到理想位置 ±5 ms 內用 NCC 找接法、離理想位置越遠扣分）。輸入是 ffmpeg 解出來的 f32 串流（`FrameSource` trait，`Window` 滑動視窗記憶體有界），輸出 24-bit wav 串流寫。位移正 = 前面補靜音、負 = 跳過扭完之後的開頭。
+- 為什麼不用 atempo：runtime 換速每次 −21 ms；每段獨立 + 脈衝校準在脈衝列上準、在語音上穩定晚 30 ms（WSOLA 往前找最像的地方，落點平均值跟內容有關）。這裡的設計反過來：每格都回到理想位置找，誤差有界且不累積。純 Rust 測試：脈衝列 0.9 / 1.1 / 1.0 三段 ≤ 2.1 ms、1.0 倍透明、立體聲同落點、正弦無 click；`#[ignore]` 真解碼 roundtrip 含正負位移。
+- `fx.rs wet_filter`：`-ss/-t` 都放在 `-i` 前（輸入選項）+ `atrim=end_sample` 切準 + 非反轉鏈 `apad` 補 post-roll。`-t` 放輸出端時 areverse / showspectrumpic 會把檔案讀到底。
+- `convert.rs plan`：重編一律明講 `-ar`（loudnorm 內部 192 kHz）、Opus 只收 8/12/16/24/48 kHz。
+- `commands::paths_exist`：前端決定輸出檔名前先問磁碟（`pipeline/convert.ts planOutPathsOnDisk`、`recording/naming.ts nextTakeIndexOnDisk`、`pipeline/align.ts freeAlignedPath`）；後端沒有這支指令時三處都退回只看媒體清單。
+
 ## 選單列 / 一鍵修 / 來源時間錨定（v0.107）
 
 - `shell/MenuBar.tsx`：專業模式專用，`groupMenu(g, "menu")` 把註冊表裡 file / edit / select / playback / effect / repair / tool / ai / view / help 十個群組各長成一個 `MenuPanel`；滑過去（mouseover）就切換開著的選單；簡易模式不掛。

@@ -99,57 +99,64 @@ export async function startCapture(opts: CaptureOptions): Promise<CaptureHandle>
   };
 
   let teardown: () => Promise<void> = async () => {};
-  if (opts.source) {
-    const src = opts.source;
-    let stopped = false;
-    const pump = (async () => {
-      for await (const chunk of src) {
-        if (stopped) break;
-        push(chunk);
+  // record_start 之後任何一步失敗（沒麥克風權限、AudioWorklet 載不進來…）都要把 Rust 那邊的工作收掉，
+  // 不然 job 與 .part 檔會一直留著、下一次同名輸出也開不了
+  try {
+    if (opts.source) {
+      const src = opts.source;
+      let stopped = false;
+      const pump = (async () => {
+        for await (const chunk of src) {
+          if (stopped) break;
+          push(chunk);
+        }
+        if (!stopped) opts.onEnded?.();
+      })();
+      teardown = async () => {
+        stopped = true;
+        await pump.catch(() => {});
+      };
+    } else {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          deviceId: opts.deviceId ? { exact: opts.deviceId } : undefined,
+          channelCount: 1,
+          sampleRate: SAMPLE_RATE,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        },
+      });
+      const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
+      try {
+        await ctx.audioWorklet.addModule("/pcm-worklet.js");
+        const srcNode = ctx.createMediaStreamSource(stream);
+        const node = new AudioWorkletNode(ctx, "pcm-capture", { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1 });
+        let flushed: () => void = () => {};
+        const flushedP = new Promise<void>((r) => (flushed = r));
+        node.port.onmessage = (e) => {
+          if (e.data === "flushed") flushed();
+          else if (e.data instanceof Float32Array) push(e.data);
+        };
+        srcNode.connect(node);
+        teardown = async () => {
+          node.port.postMessage("stop");
+          await Promise.race([flushedP, new Promise((r) => setTimeout(r, 500))]);
+          srcNode.disconnect();
+          node.disconnect();
+          stream.getTracks().forEach((t) => t.stop());
+          await ctx.close().catch(() => {});
+        };
+      } catch (e) {
+        // 串流已經拿到手：先放掉，job 的取消交給外層
+        stream.getTracks().forEach((t) => t.stop());
+        await ctx.close().catch(() => {});
+        throw new Error(`AudioWorklet 載入失敗：${e instanceof Error ? e.message : String(e)}`);
       }
-      if (!stopped) opts.onEnded?.();
-    })();
-    teardown = async () => {
-      stopped = true;
-      await pump.catch(() => {});
-    };
-  } else {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        deviceId: opts.deviceId ? { exact: opts.deviceId } : undefined,
-        channelCount: 1,
-        sampleRate: SAMPLE_RATE,
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-      },
-    });
-    const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
-    try {
-      await ctx.audioWorklet.addModule("/pcm-worklet.js");
-    } catch (e) {
-      stream.getTracks().forEach((t) => t.stop());
-      await ctx.close();
-      await invoke("record_cancel", { jobId }).catch(() => {});
-      throw new Error(`AudioWorklet 載入失敗：${e instanceof Error ? e.message : String(e)}`);
     }
-    const srcNode = ctx.createMediaStreamSource(stream);
-    const node = new AudioWorkletNode(ctx, "pcm-capture", { numberOfInputs: 1, numberOfOutputs: 0, channelCount: 1 });
-    let flushed: () => void = () => {};
-    const flushedP = new Promise<void>((r) => (flushed = r));
-    node.port.onmessage = (e) => {
-      if (e.data === "flushed") flushed();
-      else if (e.data instanceof Float32Array) push(e.data);
-    };
-    srcNode.connect(node);
-    teardown = async () => {
-      node.port.postMessage("stop");
-      await Promise.race([flushedP, new Promise((r) => setTimeout(r, 500))]);
-      srcNode.disconnect();
-      node.disconnect();
-      stream.getTracks().forEach((t) => t.stop());
-      await ctx.close().catch(() => {});
-    };
+  } catch (e) {
+    await invoke("record_cancel", { jobId }).catch(() => {});
+    throw e;
   }
 
   return {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Volume2 } from "lucide-react";
-import { advancedParams, mainParams, matchingPreset, resolveValues, type EffectSpec } from "./spec";
+import { advancedParams, applyPresetKeepMeasured, mainParams, matchingPreset, resolveValues, type EffectSpec } from "./spec";
 import { gainSpec } from "./specs/gain";
 
 const spec: EffectSpec = {
@@ -28,6 +28,33 @@ describe("resolveValues", () => {
   });
   it("非數字進滑桿退回預設", () => {
     expect(resolveValues(spec, null, { a: "nope" }).a).toBe(5);
+  });
+});
+
+describe("applyPresetKeepMeasured", () => {
+  const nfSpec: EffectSpec = {
+    ...spec,
+    params: [
+      { id: "nr", label: "nr", kind: "slider", min: 3, max: 30, step: 1, default: 12 },
+      { id: "nf", label: "nf", kind: "slider", min: -80, max: -20, step: 1, default: -50, measured: true },
+      { id: "x", label: "x", kind: "slider", min: 0, max: 10, step: 1, default: 5 },
+    ],
+    presets: [
+      { id: "light", label: "light", values: { nr: 6 } },
+      { id: "reset", label: "reset", values: { nr: 6, nf: -50 } },
+    ],
+  };
+  const current = { nr: 9, nf: -63, x: 8 };
+  it("spec 標 measured 的 key：preset 沒列就留目前的值；其他 key 照舊退回預設", () => {
+    expect(applyPresetKeepMeasured(nfSpec, nfSpec.presets[0], current)).toEqual({ nr: 6, nf: -63, x: 5 });
+  });
+  it("preset 明確列到的 key 以 preset 為準（就算等於預設）", () => {
+    expect(applyPresetKeepMeasured(nfSpec, nfSpec.presets[1], current)).toEqual({ nr: 6, nf: -50, x: 5 });
+  });
+  it("對話框追蹤到的 measured key 也一樣保住，而且會 clamp", () => {
+    expect(applyPresetKeepMeasured(nfSpec, nfSpec.presets[0], { ...current, x: 99 }, new Set(["x"]))).toEqual({ nr: 6, nf: -63, x: 10 });
+    // 沒標、沒追蹤 → 等於 resolveValues(spec, preset)
+    expect(applyPresetKeepMeasured(spec, spec.presets[0], { a: 1, b: -1, c: true, d: "y" })).toEqual(resolveValues(spec, spec.presets[0]));
   });
 });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalAnalysis } from "../analysis/peaks";
 import type { KeepSegment } from "../analysis/edl/build";
-import { autoStopMs, fitDecision, planRedub, trimTake } from "./punchIn";
+import { autoStopMs, FALLBACK_SPEECH_DB, fitDecision, percentileSorted, planRedub, pushSortedSample, speechGateDb, trimTake } from "./punchIn";
 import { nextTakeIndex, takePath } from "./naming";
 import { initialLevel, meterFraction, peakDb, pushLevel } from "./levels";
 
@@ -21,6 +21,36 @@ describe("trimTake", () => {
   });
   it("整段安靜 → 整段", () => {
     expect(trimTake(fake(Array(50).fill(-60)))).toEqual({ startMs: 0, endMs: 250 });
+  });
+  it("門檻可以由外面給（吵的麥：−40 的底噪不算有聲音）", () => {
+    const a = fake([...Array(100).fill(-40), ...Array(200).fill(-15), ...Array(100).fill(-40)]);
+    // 固定 −45 會把整段當成有聲音
+    expect(trimTake(a)).toEqual({ startMs: 0, endMs: 2000 });
+    expect(trimTake(a, -30)).toEqual({ startMs: 500 - 80, endMs: 1500 + 80 });
+  });
+});
+
+describe("speechGateDb", () => {
+  it("樣本不夠 → 固定 −40", () => {
+    const s: number[] = [];
+    for (let i = 0; i < 5; i++) pushSortedSample(s, -60);
+    expect(speechGateDb(s)).toEqual({ floorDb: -120, speechDb: FALLBACK_SPEECH_DB, measured: false });
+  });
+  it("底噪 = 第 20 百分位、門檻 = 底噪 + 12；樣本插入後保持有序", () => {
+    const s: number[] = [];
+    // 亂序餵：2 包 −70、8 包 −62、10 包人聲 −20
+    for (const v of [-20, -62, -70, -20, -62, -20, -62, -70, -20, -62, -20, -62, -20, -62, -20, -62, -20, -62, -20, -20]) pushSortedSample(s, v);
+    expect(s).toEqual([...s].sort((a, b) => a - b));
+    expect(percentileSorted(s, 0)).toBe(-70);
+    expect(percentileSorted(s, 1)).toBe(-20);
+    const g = speechGateDb(s);
+    expect(g).toEqual({ floorDb: -62, speechDb: -50, measured: true });
+  });
+  it("門檻夾在 −55 … −20", () => {
+    expect(speechGateDb(Array(12).fill(-90)).speechDb).toBe(-55);
+    expect(speechGateDb(Array(12).fill(-15)).speechDb).toBe(-20);
+    expect(speechGateDb(Array(12).fill(-40)).speechDb).toBe(-28);
+    expect(percentileSorted([], 0.5)).toBe(-120);
   });
 });
 

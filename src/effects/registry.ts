@@ -9,7 +9,7 @@ import { useProject } from "../store/project";
 import { useTimeline, type TimeSelection } from "../store/timeline";
 import { useTranscript } from "../store/transcript";
 import { toast } from "../ui";
-import { resolveValues, type EffectApplication, type EffectContext, type EffectSpec } from "./spec";
+import { resolveValues, type EffectApplication, type EffectContext, type EffectSpec, type Suggestion } from "./spec";
 
 /**
  * 效果 spec 的登記處。`registerEffectSpec(spec)` 回傳它產生的指令：
@@ -53,9 +53,19 @@ function enabledFor(spec: EffectSpec): () => Enabled {
   return spec.scope === "selection" ? needsSelection : needsMedia;
 }
 
-export async function applyEffect(app: EffectApplication, mediaId: string): Promise<void> {
-  const text = t("已套用：{label}", { label: app.label });
+/**
+ * 套用一個效果並給復原提示。`note` 是建議值的一句話（量到什麼、是不是估的），
+ * 接在提示後面 —— 使用者才看得出「為什麼是這個數字」。
+ */
+export async function applyEffect(app: EffectApplication, mediaId: string, note?: string): Promise<void> {
+  const applied = t("已套用：{label}", { label: app.label });
+  const text = note ? `${applied} · ${note}` : applied;
   if (app.kind === "effects") {
+    // 沒有東西要套（例如降噪建議 0 dB）：store 不會進 undo，這裡也不能假裝套了
+    if (!app.effects.length) {
+      toast.info(t("量起來不需要處理"));
+      return;
+    }
     const before = useDecisions.getState().past.length;
     useDecisions.getState().addEffects(mediaId, app.effects, app.label);
     const after = useDecisions.getState().past.length;
@@ -79,7 +89,7 @@ export async function applyEffect(app: EffectApplication, mediaId: string): Prom
   }
 }
 
-function applyNow(spec: EffectSpec, values: ReturnType<typeof resolveValues>): void {
+function applyNow(spec: EffectSpec, values: ReturnType<typeof resolveValues>, note?: string): void {
   const id = useProject.getState().activeMediaId;
   if (!id) return;
   const ctx = effectContext(id);
@@ -90,7 +100,26 @@ function applyNow(spec: EffectSpec, values: ReturnType<typeof resolveValues>): v
     toast.info(t(err));
     return;
   }
-  void applyEffect(spec.build(values, range, ctx), id);
+  void applyEffect(spec.build(values, range, ctx), id, note);
+}
+
+/** 建議值的一句話：量到什麼；不是實測就講明白（summary 可能已翻譯，t() 對翻過的字串是 identity）。 */
+function suggestionNote(sug: Suggestion): string {
+  const parts = [t(sug.summary)];
+  if (sug.confidence === "heuristic") parts.push(t("估計值，非實測"));
+  else if (sug.confidence === "default") parts.push(t("未量測，用一般值"));
+  return parts.join(" · ");
+}
+
+/**
+ * 建議值本身就是「不用處理」（降噪 0 dB）？clamp 會把 0 拉到滑桿下限再套下去，
+ * 所以拿**原始**建議值先問一次 build：產不出效果就是 no-op。
+ */
+function suggestionIsNoop(spec: EffectSpec, sug: Suggestion, values: ReturnType<typeof resolveValues>, range: TimeSelection, ctx: EffectContext): boolean {
+  const raw = { ...values };
+  for (const [k, v] of Object.entries(sug.values)) if (v != null) raw[k] = v;
+  const probe = spec.build(raw, range, ctx);
+  return probe.kind === "effects" && !probe.effects.length;
 }
 
 export function commandsForSpec(spec: EffectSpec): Command[] {
@@ -132,7 +161,13 @@ export function commandsForSpec(spec: EffectSpec): Command[] {
         const range = rangeFor(spec, ctx);
         if (!range) return;
         const sug = spec.suggest!(ctx, range);
-        applyNow(spec, resolveValues(spec, spec.presets[0] ?? null, sug?.values ?? null));
+        const values = resolveValues(spec, spec.presets[0] ?? null, sug?.values ?? null);
+        if (sug && suggestionIsNoop(spec, sug, values, range, ctx)) {
+          toast.info(t("量起來不需要處理"));
+          return;
+        }
+        // 復原提示帶上建議的理由與可信度，不然「（建議值）」套完只看到一個數字
+        applyNow(spec, values, sug ? suggestionNote(sug) : undefined);
       },
     });
   }

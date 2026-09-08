@@ -75,6 +75,7 @@ pub fn run() {
             commands::show_main_window,
             commands::client_log,
             commands::dev_env,
+            commands::paths_exist,
             commands::settings_get,
             commands::settings_set,
             commands::app_paths,

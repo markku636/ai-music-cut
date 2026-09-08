@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { denoiseDbFor } from "./cleanup";
 import { rangeLoudness } from "./meter";
 import type { LocalAnalysis } from "./peaks";
@@ -86,27 +87,41 @@ const fmt = (db: number) => `${db >= 0 ? "+" : ""}${db.toFixed(1)}`;
 export function peakNormalizeGainDb(a: LocalAnalysis | null, fromMs: number, toMs: number, targetDbfs = -1): GainSuggestion | null {
   if (!a) return null;
   const { db, q } = rangePeak(a, fromMs, toMs);
-  if (!Number.isFinite(db)) return { db: 0, summary: "這段是靜音，沒有峰值可以對齊", confidence: "default" };
+  if (!Number.isFinite(db)) return { db: 0, summary: t("這段是靜音，沒有峰值可以對齊"), confidence: "default" };
   const gain = Math.max(-40, Math.min(40, targetDbfs - db));
   const unc = peakUncertaintyDb(q);
   if (q >= 8) {
-    return { db: gain, summary: `峰值 ${db.toFixed(1)} dBFS → ${targetDbfs} dBFS，增益 ${fmt(gain)} dB（±${unc.toFixed(2)}）`, confidence: "measured" };
+    return {
+      db: gain,
+      summary: t("峰值 {peak} dBFS → {target} dBFS，增益 {gain} dB（±{unc}）", { peak: db.toFixed(1), target: targetDbfs, gain: fmt(gain), unc: unc.toFixed(2) }),
+      confidence: "measured",
+    };
   }
-  return { db: gain, summary: `這段太小聲（峰值約 ${db.toFixed(0)} dBFS），分析解析度不夠（±${unc.toFixed(1)} dB）；建議改用「響度對齊」`, confidence: "heuristic" };
+  return {
+    db: gain,
+    summary: t("這段太小聲（峰值約 {peak} dBFS），分析解析度不夠（±{unc} dB）；建議改用「響度對齊」", { peak: db.toFixed(0), unc: unc.toFixed(1) }),
+    confidence: "heuristic",
+  };
 }
 
 /** 響度對齊：ref = "episode" 對齊到整集平均，或給一個 LUFS 數字。 */
 export function matchLoudnessGainDb(a: LocalAnalysis | null, fromMs: number, toMs: number, ref: "episode" | number): GainSuggestion | null {
   if (!a) return null;
   const r = rangeLoudness(a, fromMs, toMs, typeof ref === "number" ? ref : -16);
-  if (r.silent) return { db: 0, summary: "這段是靜音，量不到響度", confidence: "default" };
+  if (r.silent) return { db: 0, summary: t("這段是靜音，量不到響度"), confidence: "default" };
   if (ref === "episode") {
-    if (r.vsEpisodeLu == null) return { db: 0, summary: "整集量不到響度", confidence: "default" };
+    if (r.vsEpisodeLu == null) return { db: 0, summary: t("整集量不到響度"), confidence: "default" };
     const gain = Math.max(-24, Math.min(24, -r.vsEpisodeLu));
-    return { db: gain, summary: `這段 ${r.lufs.toFixed(1)} LUFS，比整集${r.vsEpisodeLu >= 0 ? "大" : "小"} ${Math.abs(r.vsEpisodeLu).toFixed(1)} LU → 增益 ${fmt(gain)} dB`, confidence: "measured" };
+    // 「大 / 小」拆成兩把 key：別的語言不一定能只換一個字
+    const p = { lufs: r.lufs.toFixed(1), lu: Math.abs(r.vsEpisodeLu).toFixed(1), gain: fmt(gain) };
+    return {
+      db: gain,
+      summary: r.vsEpisodeLu >= 0 ? t("這段 {lufs} LUFS，比整集大 {lu} LU → 增益 {gain} dB", p) : t("這段 {lufs} LUFS，比整集小 {lu} LU → 增益 {gain} dB", p),
+      confidence: "measured",
+    };
   }
   const gain = Math.max(-24, Math.min(24, ref - r.lufs));
-  return { db: gain, summary: `這段 ${r.lufs.toFixed(1)} LUFS → ${ref} LUFS，增益 ${fmt(gain)} dB`, confidence: "measured" };
+  return { db: gain, summary: t("這段 {lufs} LUFS → {ref} LUFS，增益 {gain} dB", { lufs: r.lufs.toFixed(1), ref, gain: fmt(gain) }), confidence: "measured" };
 }
 
 export const NOISE_PRINT_MIN_MS = 300;
@@ -137,15 +152,22 @@ export interface DenoiseSuggestion {
 export function suggestDenoise(a: LocalAnalysis | null, range: { startMs: number; endMs: number } | null, print: NoisePrint | null): DenoiseSuggestion {
   if (print) {
     const nr = denoiseDbFor(print.floorDb);
-    return { nrDb: nr, nfDb: Math.round(print.floorDb), summary: nr ? `噪音樣本 ${print.floorDb.toFixed(1)} dBFS → 降噪 ${nr} dB` : `噪音樣本 ${print.floorDb.toFixed(1)} dBFS，已經夠安靜，不建議降噪`, confidence: "measured" };
+    const floor = print.floorDb.toFixed(1);
+    return {
+      nrDb: nr,
+      nfDb: Math.round(print.floorDb),
+      summary: nr ? t("噪音樣本 {floor} dBFS → 降噪 {nr} dB", { floor, nr }) : t("噪音樣本 {floor} dBFS，已經夠安靜，不建議降噪", { floor }),
+      confidence: "measured",
+    };
   }
-  if (!a) return { nrDb: 12, nfDb: -50, summary: "還沒有波形分析，用一般值", confidence: "default" };
+  if (!a) return { nrDb: 12, nfDb: -50, summary: t("還沒有波形分析，用一般值"), confidence: "default" };
   const floor = range ? percentileDbRange(a, range.startMs, range.endMs, 0.05) : percentileDbRange(a, 0, a.durationMs, 0.05);
   const nr = denoiseDbFor(floor);
+  const floorS = floor.toFixed(1);
   return {
     nrDb: nr,
     nfDb: Math.round(Math.max(-80, Math.min(-20, floor))),
-    summary: nr ? `底噪約 ${floor.toFixed(1)} dBFS → 降噪 ${nr} dB（選一段純底噪當樣本會更準）` : `底噪約 ${floor.toFixed(1)} dBFS，已經夠安靜，不建議降噪`,
+    summary: nr ? t("底噪約 {floor} dBFS → 降噪 {nr} dB（選一段純底噪當樣本會更準）", { floor: floorS, nr }) : t("底噪約 {floor} dBFS，已經夠安靜，不建議降噪", { floor: floorS }),
     confidence: "heuristic",
   };
 }

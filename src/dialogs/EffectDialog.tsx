@@ -2,13 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pause, Play, Sparkles } from "lucide-react";
 import { renderAbPair, abWindow } from "../effects/preview";
 import { applyEffect, effectContext, effectSpec, rangeFor } from "../effects/registry";
-import { advancedParams, mainParams, matchingPreset, resolveValues, type ParamSpec, type ParamValue, type ParamValues, type Suggestion } from "../effects/spec";
+import { advancedParams, applyPresetKeepMeasured, mainParams, matchingPreset, resolveValues, type ParamSpec, type ParamValue, type ParamValues, type Suggestion } from "../effects/spec";
 import { useT } from "../i18n";
 import { useAbPreview } from "../preview/useAbPreview";
 import { useUi } from "../store/ui";
 import { formatMs } from "../time";
 import { Button, Field, Modal, Select, Spinner } from "../ui/index";
 import { toast } from "../ui";
+
+/** 建議值裡真的有給值的 key（null / undefined 的 resolveValues 也不會吃）。 */
+function suggestedKeys(v: Partial<ParamValues> | null | undefined): string[] {
+  return v ? Object.keys(v).filter((k) => v[k] != null) : [];
+}
 
 /**
  * 通用效果對話框：blurb → 主參數（≤3）→ 預設 chips → A/B 試聽 → 進階（可收合）→ 取消 / 套用。
@@ -38,11 +43,15 @@ export default function EffectDialog({
   // 要真的量過才知道的建議（嗡聲偵測…）：開了對話框才跑，回來後蓋過同步的那份
   const [asyncSuggestion, setAsyncSuggestion] = useState<Suggestion | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  // 量測（analyze）掛了：值留預設，但要講出來，不然使用者以為底噪是量過的
+  const [analyzeFailed, setAnalyzeFailed] = useState(false);
   const suggestion = asyncSuggestion ?? syncSuggestion;
   const [values, setValues] = useState<ParamValues>(() => (spec ? resolveValues(spec, null, initial ?? syncSuggestion?.values ?? null) : {}));
   const [showAdvanced, setShowAdvanced] = useState(false);
   // 使用者動過參數之後，量測結果就只顯示不覆蓋
   const touched = useRef(false);
+  // 目前的值是 suggest / analyze 給的那些 key（底噪…）：點 preset 時沒明確列到就留著，不退回預設
+  const measuredKeys = useRef<Set<string>>(new Set(initial ? [] : suggestedKeys(syncSuggestion?.values)));
 
   const ab = useAbPreview(() => {
     if (!spec || !range) throw new Error(t("沒有可以試聽的內容"));
@@ -62,10 +71,11 @@ export default function EffectDialog({
         setAsyncSuggestion(s);
         if (!touched.current) {
           setValues(resolveValues(spec, null, s.values));
+          for (const k of suggestedKeys(s.values)) measuredKeys.current.add(k);
           ab.invalidate();
         }
       })
-      .catch(() => {})
+      .catch(() => alive && setAnalyzeFailed(true))
       .finally(() => alive && setAnalyzing(false));
     return () => {
       alive = false;
@@ -89,7 +99,13 @@ export default function EffectDialog({
   };
   const applyPreset = (p: (typeof spec.presets)[number]) => {
     touched.current = true;
-    setValues(resolveValues(spec, p, null));
+    setValues((cur) => applyPresetKeepMeasured(spec, p, cur, measuredKeys.current));
+    ab.invalidate();
+  };
+  const takeSuggestion = () => {
+    if (!suggestion) return;
+    setValues(resolveValues(spec, null, suggestion.values));
+    for (const k of suggestedKeys(suggestion.values)) measuredKeys.current.add(k);
     ab.invalidate();
   };
   const active = matchingPreset(spec, values);
@@ -175,6 +191,11 @@ export default function EffectDialog({
             {suggestion.summary}
           </div>
         )}
+        {analyzeFailed && (
+          <div className="text-[11px] text-amber-300" data-testid="effect-analyze-failed">
+            {t("量測失敗，先用預設值")}
+          </div>
+        )}
 
         {main.map(renderParam)}
 
@@ -187,7 +208,7 @@ export default function EffectDialog({
               </Button>
             ))}
             {suggestion && (
-              <Button size="sm" variant="ghost" icon={Sparkles} onClick={() => { setValues(resolveValues(spec, null, suggestion.values)); ab.invalidate(); }}>
+              <Button size="sm" variant="ghost" icon={Sparkles} onClick={takeSuggestion}>
                 {t("用建議值")}
               </Button>
             )}

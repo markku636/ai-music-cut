@@ -61,10 +61,11 @@ describe("fxRegionsToOut", () => {
   ];
   const xf: JoinSpec[] = [{ kind: "crossfade", ms: 20 }];
 
-  it("落在剪除區的效果不產生區域", () => {
+  it("落在剪除區的效果不產生區域（也不算「太短」）", () => {
     const r = fxRegionsToOut([fx("denoise", 12_000, 18_000)], segs, xf);
     expect(r.regions).toEqual([]);
     expect(r.unsupported).toEqual([]);
+    expect(r.dropped).toEqual([]);
   });
 
   it("跨剪點的效果是一塊，長度 = 兩邊保留的部分 − crossfade 重疊", () => {
@@ -98,11 +99,27 @@ describe("fxRegionsToOut", () => {
     expect(regions.every((r) => r.effectIds.length === 1)).toBe(true);
   });
 
-  it("短於 2·XF 的碎片丟掉", () => {
+  it("短於 2·XF 的碎片丟掉，整個沒套到的效果列在 dropped", () => {
     const tiny = fx("declick", 1_000, 1_000 + 15);
-    expect(fxRegionsToOut([tiny], segs, xf).regions).toEqual([]);
+    const r = fxRegionsToOut([tiny], segs, xf);
+    expect(r.regions).toEqual([]);
+    expect(r.dropped).toEqual([tiny]);
     const ok = fx("declick", 1_000, 1_000 + 20);
-    expect(fxRegionsToOut([ok], segs, xf).regions).toHaveLength(1);
+    const r2 = fxRegionsToOut([ok], segs, xf);
+    expect(r2.regions).toHaveLength(1);
+    expect(r2.dropped).toEqual([]);
+  });
+
+  it("只是被修掉一小塊、別處還有套到的效果不算 dropped", () => {
+    // 4.990–5.000 s 兩個效果疊在一起（10 ms < 2·XF 丟掉），但各自另一邊都還在
+    const a = fx("denoise", 1_000, 5_000);
+    const b = fx("dc", 4_990, 7_000);
+    const r = fxRegionsToOut([a, b], segs, xf);
+    expect(r.regions).toHaveLength(2);
+    expect(r.dropped).toEqual([]);
+    // 兩個都太短就兩個都列
+    const r2 = fxRegionsToOut([fx("denoise", 1_000, 1_010), fx("dc", 3_000, 3_012)], segs, xf);
+    expect(r2.dropped.map((e) => e.kind)).toEqual(["denoise", "dc"]);
   });
 
   it("兩塊之間短於 XF 的縫收起來（前一塊延到後一塊起點）", () => {

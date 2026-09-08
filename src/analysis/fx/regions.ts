@@ -116,6 +116,11 @@ export interface FxRegionsResult {
   regions: FxRegion[];
   /** 引擎還不支援、這一趟不會處理的效果（要列出來，不能默默少掉）。 */
   unsupported: AudioEffect[];
+  /**
+   * 有落在成品裡、但每一塊都短於 2·XF（20 ms）而整個被丟掉的效果 —— 使用者加了卻沒套，要講出來。
+   * 只是被修掉一小塊、其他地方還有套到的不算；完全落在剪除區的也不算（那不是「太短」）。
+   */
+  dropped: AudioEffect[];
 }
 
 /**
@@ -126,7 +131,7 @@ export function fxRegionsToOut(effects: readonly AudioEffect[], segs: SegSpan[],
   const range = effects.filter(isRangeEffect);
   const supported = range.filter((e) => toRenderFx(e) !== null);
   const unsupported = range.filter((e) => toRenderFx(e) === null);
-  if (!supported.length || !segs.length) return { regions: [], unsupported };
+  if (!supported.length || !segs.length) return { regions: [], unsupported, dropped: [] };
 
   const outStart = segOutStartFrames(segs, joins);
   const pieces: Piece[] = [];
@@ -143,7 +148,7 @@ export function fxRegionsToOut(effects: readonly AudioEffect[], segs: SegSpan[],
       pieces.push({ a: outStart[i] + (ov0 - s0), b: outStart[i] + (ov1 - s0), e });
     }
   }
-  if (!pieces.length) return { regions: [], unsupported };
+  if (!pieces.length) return { regions: [], unsupported, dropped: [] };
 
   // 邊界掃描：所有起訖點切成基本區間，每個區間看哪些效果蓋到它
   const bounds = [...new Set(pieces.flatMap((p) => [p.a, p.b]))].sort((x, y) => x - y);
@@ -176,7 +181,10 @@ export function fxRegionsToOut(effects: readonly AudioEffect[], segs: SegSpan[],
     effectIds: r.effects.map((e) => e.id),
     correlated: !r.effects.some((e) => FX_UNCORRELATED.includes(e.kind as RangeEffectKind)),
   }));
-  return { regions, unsupported };
+  // 有 piece（落在成品裡）卻一塊都沒留下的效果：全部碎片都太短，等於沒套
+  const applied = new Set(kept.flatMap((r) => r.effects.map((e) => e.id)));
+  const dropped = supported.filter((e) => !applied.has(e.id) && pieces.some((p) => p.e.id === e.id));
+  return { regions, unsupported, dropped };
 }
 
 /** 一個範圍效果在成品裡總共蓋了幾個 frame（不含被丟掉的碎片）—— 測試與 UI 摘要用。 */

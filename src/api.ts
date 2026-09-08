@@ -521,6 +521,8 @@ export const api = {
   /** 寫純文字檔（節目筆記的 .md）。不加 BOM。 */
   writeTextFile: (path: string, content: string) => invoke<void>("write_text_file", { path, content }),
   projectLoad: (path: string) => invoke<unknown>("project_load", { path }),
+  /** 一批路徑存不存在（轉檔輸出 / 錄音 take 撞名用）。後端指令 paths_exist；還沒有時呼叫端要自己退回。 */
+  pathsExist: (paths: string[]) => invoke<boolean[]>("paths_exist", { paths }),
   openPath: (path: string) => invoke<void>("open_path", { path }),
   openExternal: (url: string) => invoke<void>("open_external", { url }),
   claudeDetect: () => invoke<ClaudeStatus>("claude_detect"),

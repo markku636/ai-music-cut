@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Circle, Mic, Square } from "lucide-react";
-import { errMessage } from "../api";
+import { api, errMessage } from "../api";
+import { estimateGate, worthGating } from "../analysis/gate";
 import { rmsDbRange } from "../analysis/peaks";
 import { withUndoToast } from "../commands/undoToast";
 import { useT } from "../i18n";
@@ -10,8 +11,8 @@ import { ensureLocalAnalysis } from "../pipeline/waveform";
 import { playRange, stopRange } from "../preview/playerRef";
 import { listInputs, startCapture, takeDevStubSource, type CaptureHandle, type InputDevice, type RecordDone } from "../recording/capture";
 import { initialLevel, meterFraction, pushLevel, type LevelState } from "../recording/levels";
-import { freshRecordingPath, nextTakeIndex, takePath } from "../recording/naming";
-import { autoStopMs, fitDecision, planRedub, trimTake } from "../recording/punchIn";
+import { freshRecordingPath, nextTakeIndexOnDisk, takePath } from "../recording/naming";
+import { autoStopMs, fitDecision, planRedub, pushSortedSample, speechGateDb, trimTake } from "../recording/punchIn";
 import { useDecisions } from "../store/decisions";
 import { useProject } from "../store/project";
 import { useTranscript } from "../store/transcript";
@@ -44,6 +45,8 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
   const handleRef = useRef<CaptureHandle | null>(null);
   const spokeRef = useRef(false);
   const lastLoudRef = useRef(0);
+  /** 這次錄音每包的峰值（dBFS，遞增排好）：講話門檻從它的第 20 百分位（這支麥的底噪）量出來。 */
+  const peaksRef = useRef<number[]>([]);
   const stoppingRef = useRef(false);
   const slot = mode === "retake" ? (range ?? null) : null;
   const slotMs = slot ? slot.endMs - slot.startMs : 0;
@@ -66,7 +69,8 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
   }, []);
 
   const outPathFor = async (): Promise<string | null> => {
-    if (active) return takePath(active.path, nextTakeIndex(active.path, media.map((m) => m.path)));
+    // 編號看媒體清單也看磁碟：上一個 session 錄的 take 不在清單裡，不看磁碟會被 .part → rename 蓋掉
+    if (active) return takePath(active.path, await nextTakeIndexOnDisk(active.path, media.map((m) => m.path), (ps) => api.pathsExist(ps)));
     const dir = await pickDirectory();
     return dir ? freshRecordingPath(dir) : null;
   };
@@ -105,6 +109,7 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
     if (!outPath) return;
     spokeRef.current = false;
     lastLoudRef.current = 0;
+    peaksRef.current = [];
     setLevel(initialLevel());
     setElapsed(0);
     const stops = slot ? autoStopMs(slotMs) : null;
@@ -118,7 +123,9 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
           setElapsed(ms);
           if (!stops) return;
           // 講過話之後安靜 ≥ 1.5 s 自動停；硬停 = 2 × 槽 + 3 s
-          if (db > -40) {
+          // 「講話」的門檻不寫死：底噪（峰值第 20 百分位）+ 12 dB；樣本不到 1 s 之前先用 −40
+          pushSortedSample(peaksRef.current, db);
+          if (db > speechGateDb(peaksRef.current).speechDb) {
             spokeRef.current = true;
             lastLoudRef.current = ms;
           }
@@ -166,7 +173,9 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
     // take 只加進清單、不切 active：切過去再切回來會讓主角重載、播放頭歸零、預覽清掉
     const takeId = await useProject.getState().openMedia(done.path, { activate: false });
     const takeLocal = await ensureLocalAnalysis(takeId);
-    const trim = trimTake(takeLocal);
+    // 修頭尾的門檻照這支 take 自己的底噪 / 人聲分布來（gate.ts）；差距太小（幾乎整段都在講）才退回固定 −45
+    const gate = estimateGate(takeLocal);
+    const trim = trimTake(takeLocal, worthGating(gate) ? gate.thresholdDb : undefined);
     const fit = fitDecision(trim.endMs - trim.startMs, slotMs);
     setLastTake({ done, takeId, trim });
     if (fit === "too_long") {

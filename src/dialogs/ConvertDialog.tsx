@@ -27,6 +27,8 @@ export default function ConvertDialog({ paths: initialPaths, onClose }: { paths?
   const [outDir, setOutDir] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<ConvertResult[] | null>(null);
+  // 這一批被取消（工作面板的 ✕）：沒跑到的檔在清單上標「未執行」，不當成功
+  const [canceled, setCanceled] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   useEffect(() => {
@@ -64,10 +66,15 @@ export default function ConvertDialog({ paths: initialPaths, onClose }: { paths?
     if (!paths.length) return;
     setBusy(true);
     setResults([]);
+    setCanceled(false);
     try {
       const rs = await runConvertBatch(paths, { ...effective, outDir }, (_i, r) => setResults((cur) => [...(cur ?? []), r]));
       const ok = rs.filter((r) => r.ok).length;
-      if (ok === rs.length) toast.success(t("轉好了：{n} 個檔案", { n: ok }));
+      // runConvertBatch 被取消時只回跑過的那幾個：少於來源數就是取消，不是全部成功
+      const stopped = rs.length < paths.length;
+      setCanceled(stopped);
+      if (stopped) toast.info(t("已取消：轉好 {ok} 個，{left} 個未執行", { ok, left: paths.length - rs.length }));
+      else if (ok === rs.length) toast.success(t("轉好了：{n} 個檔案", { n: ok }));
       else toast.info(t("轉好 {ok} 個，{bad} 個失敗", { ok, bad: rs.length - ok }));
     } finally {
       setBusy(false);
@@ -116,6 +123,8 @@ export default function ConvertDialog({ paths: initialPaths, onClose }: { paths?
                     {r.ok ? (r.done?.copied ? t("已複製") : t("已轉檔")) : t("失敗")}
                     {r.done?.dropped.length ? ` · ${t("沒帶到：{items}", { items: r.done.dropped.join("、") })}` : ""}
                   </span>
+                ) : results && canceled ? (
+                  <span className="text-fg/40">{t("未執行")}</span>
                 ) : (
                   <span className="text-fg/40" title={outs[i]}>
                     → {fileName(outs[i])}

@@ -35,6 +35,8 @@ export interface ParamSpec {
   advanced?: boolean;
   /** 簡易模式唯一的那根滑桿。 */
   primary?: boolean;
+  /** 值是量出來的（底噪、電源頻率…）：套 preset 時沒明確列到就留著目前的值，不退回預設。 */
+  measured?: boolean;
 }
 
 export interface EffectPreset {
@@ -121,6 +123,21 @@ export function resolveValues(spec: EffectSpec, preset?: EffectPreset | null, ov
     if (preset && p.id in preset.values) v = preset.values[p.id] as ParamValue;
     if (overrides && p.id in overrides && overrides[p.id] != null) v = overrides[p.id] as ParamValue;
     out[p.id] = clampValue(p, v);
+  }
+  return out;
+}
+
+/**
+ * 套 preset，但保住量出來的值：`measured`（spec 標的，或對話框追蹤到「這個值是 suggest / analyze 給的」）的參數，
+ * preset 沒有明確列出來就留目前的值，不退回 spec 預設 —— 不然點一下「中」，底噪就從量到的 −63 變回 −50。
+ * preset 有列的 key 一律以 preset 為準。
+ */
+export function applyPresetKeepMeasured(spec: EffectSpec, preset: EffectPreset, current: ParamValues, measured: ReadonlySet<string> = new Set()): ParamValues {
+  const out = resolveValues(spec, preset, null);
+  for (const p of spec.params) {
+    if (!(p.measured || measured.has(p.id))) continue;
+    if (p.id in preset.values) continue;
+    if (current[p.id] != null) out[p.id] = clampValue(p, current[p.id]);
   }
   return out;
 }

@@ -50,14 +50,17 @@ pub async fn spectrogram_png(bins: &FfmpegBins, src: &str, start_ms: f64, end_ms
     let part = dir.join(format!("{}.part.png", out.file_stem().and_then(|s| s.to_str()).unwrap_or("spec")));
     // log 頻率軸（人聲在 100–4k 之間才看得到細節）、60 dB 動態、Hann 視窗；legend=0 只要圖
     let lavfi = format!(
-        "aformat=channel_layouts=mono,showspectrumpic=s={w}x{h}:legend=0:scale=log:fscale=log:start=40:stop=16000:color={}:win_func=hann:drange=60",
+        "aformat=channel_layouts=mono,atrim=duration={:.6},showspectrumpic=s={w}x{h}:legend=0:scale=log:fscale=log:start=40:stop=16000:color={}:win_func=hann:drange=60",
+        len / 1000.0,
         palette_ok(palette)
     );
     let mut c = proc::cmd(&bins.ffmpeg);
     c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y"]);
-    c.args(["-ss", &format!("{:.6}", start / 1000.0), "-i"]);
+    // -t 一定要在 -i 前面（輸入選項）：showspectrumpic 要等輸入 EOF 才出圖，-t 放輸出端擋不住 demuxer，
+    // 畫出來的會是 start..檔尾整段壓進這張圖；atrim 再把 demuxer 多讀的零頭切掉
+    c.args(["-ss", &format!("{:.6}", start / 1000.0), "-t", &format!("{:.6}", len / 1000.0), "-i"]);
     c.arg(src);
-    c.args(["-t", &format!("{:.6}", len / 1000.0), "-vn", "-lavfi", &lavfi, "-frames:v", "1", "-f", "image2"]);
+    c.args(["-vn", "-lavfi", &lavfi, "-frames:v", "1", "-f", "image2"]);
     c.arg(&part);
     let o = c.output().await.map_err(|e| AppError::Ffmpeg(format!("ffmpeg 啟動失敗：{e}")))?;
     if !o.status.success() {
@@ -162,9 +165,9 @@ pub async fn spectrum_of_range(bins: &FfmpegBins, src: &str, start_ms: f64, end_
     let len = (end_ms - start).clamp(100.0, MAX_SPECTRUM_MS);
     let mut c = proc::cmd(&bins.ffmpeg);
     c.args(["-nostdin", "-hide_banner", "-loglevel", "error"]);
-    c.args(["-ss", &format!("{:.6}", start / 1000.0), "-i"]);
+    c.args(["-ss", &format!("{:.6}", start / 1000.0), "-t", &format!("{:.6}", len / 1000.0), "-i"]);
     c.arg(src);
-    c.args(["-t", &format!("{:.6}", len / 1000.0), "-vn", "-f", "f32le", "-ac", "1", "-ar", "48000", "pipe:1"]);
+    c.args(["-vn", "-af", &format!("atrim=duration={:.6}", len / 1000.0), "-f", "f32le", "-ac", "1", "-ar", "48000", "pipe:1"]);
     let o = c.output().await.map_err(|e| AppError::Ffmpeg(format!("ffmpeg 啟動失敗：{e}")))?;
     if !o.status.success() {
         return Err(AppError::Ffmpeg(format!("解碼失敗：{}", String::from_utf8_lossy(&o.stderr).trim())));

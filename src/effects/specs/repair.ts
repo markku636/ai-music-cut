@@ -27,7 +27,13 @@ function previewOf(build: (v: ParamValues, range: TimeSelection) => EffectApplic
   };
 }
 
-const denoiseBuild = (v: ParamValues, range: TimeSelection) => rangeEffect("denoise", range, { nrDb: Number(v.nrDb), nfDb: Number(v.nfDb) }, `降噪 ${v.nrDb} dB`);
+const denoiseBuild = (v: ParamValues, range: TimeSelection): EffectApplication => {
+  const nrDb = Number(v.nrDb);
+  const label = `降噪 ${nrDb} dB`;
+  // 0 dB = 量起來不用降：不產生效果。registry 看到空的會說「量起來不需要處理」，而不是套一個空的進 undo
+  if (!(nrDb > 0)) return { kind: "effects", effects: [], label };
+  return rangeEffect("denoise", range, { nrDb, nfDb: Number(v.nfDb) }, label);
+};
 
 /** 範圍降噪：簡易右鍵的「去雜音」優先走這支（有選取就只處理那一段）。 */
 export const denoiseSpec: EffectSpec = {
@@ -64,7 +70,8 @@ export const denoiseSpec: EffectSpec = {
   suggest: (ctx, range) => {
     const print = useCleanup.getState().noisePrint[ctx.mediaId] ?? null;
     const s = suggestDenoise(ctx.local, range, print);
-    return { values: { nrDb: s.nrDb || 6, nfDb: s.nfDb }, summary: s.summary, confidence: s.confidence };
+    // 量到 0（夠安靜）就照實給 0：summary 會說不建議降噪；以前硬改成 6 dB 是把「不用降」翻成「降一點」
+    return { values: { nrDb: s.nrDb, nfDb: s.nfDb }, summary: s.summary, confidence: s.confidence };
   },
   build: denoiseBuild,
   preview: previewOf(denoiseBuild),

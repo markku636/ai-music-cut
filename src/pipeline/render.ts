@@ -112,6 +112,8 @@ export interface BuiltPlan {
   fxRegions: FxRegion[];
   /** 引擎還不支援、這一趟不會處理的範圍效果 —— 要列出來，不能默默少掉。 */
   unsupportedFx: AudioEffect[];
+  /** 太短（不到兩端交叉 20 ms）而整個沒套到的範圍效果 —— 使用者要知道為什麼聽不出差別。 */
+  droppedFx: AudioEffect[];
 }
 
 export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan | null {
@@ -296,6 +298,7 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
     chapters,
     fxRegions: fx.regions,
     unsupportedFx: fx.unsupported,
+    droppedFx: fx.dropped,
   };
 }
 
@@ -351,6 +354,8 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
   if (r.ok) {
     // 沒帶進成品的東西要講（flac / wav 寫不進章節）—— 不能默默少掉
     if (r.dropped?.length) toast.info(t("這個格式寫不進：{items}（成品裡沒有）", { items: r.dropped.join("、") }));
+    // 太短的範圍效果沒套（放不下兩端 10 ms 的交叉）—— 不講的話使用者只會覺得「效果沒作用」
+    if (built.droppedFx.length) toast.info(t("有 {n} 段效果太短（不到 20 ms）沒有套用", { n: built.droppedFx.length }));
     // 預覽檔不算「最近一次輸出」：驗收要對的是成品
     if (r.out_path && !opts.preview && (opts.stem ?? "full") === "full")
       useVerify.getState().setLastOutput(mediaId, {

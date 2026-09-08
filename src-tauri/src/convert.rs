@@ -85,10 +85,24 @@ pub fn plan(spec: &ConvertSpec, audio: Option<&AudioStream>, has_chapters: bool)
     let (muxer, codec) = formats::codec_args(&spec.format, spec.bit_depth)?;
     let copy = can_copy(spec, audio);
     let mut resample = Vec::new();
+    let mut dropped = Vec::new();
     if !copy {
-        if spec.sample_rate > 0 {
+        // 重編一律明講 -ar：loudnorm 內部跑 192 kHz，沒指定就會用 192 kHz（m4a 96 kHz）寫出去。
+        // 「沿用來源」= probe 到的取樣率；probe 不到又要正規化就用 48 kHz。
+        let mut ar = if spec.sample_rate > 0 { spec.sample_rate.clamp(8000, 192_000) } else { audio.map(|a| a.sample_rate).unwrap_or(0) };
+        if ar == 0 && spec.target_lufs.is_some() {
+            ar = 48_000;
+        }
+        // libopus 只收 8 / 12 / 16 / 24 / 48 kHz，其他值 ffmpeg 連編碼器都開不起來（而且錯誤訊息在 stderr 前段看不到）
+        if spec.format == "opus" && !matches!(ar, 8000 | 12_000 | 16_000 | 24_000 | 48_000) {
+            if ar > 0 {
+                dropped.push(format!("取樣率 {} Hz（Opus 只能 8 / 12 / 16 / 24 / 48 kHz，已改用 48 kHz）", ar));
+            }
+            ar = 48_000;
+        }
+        if ar > 0 {
             resample.push("-ar".to_string());
-            resample.push(spec.sample_rate.clamp(8000, 192_000).to_string());
+            resample.push(ar.to_string());
         }
         if spec.channels > 0 {
             resample.push("-ac".to_string());
@@ -96,7 +110,6 @@ pub fn plan(spec: &ConvertSpec, audio: Option<&AudioStream>, has_chapters: bool)
         }
     }
     let map_chapters = formats::supports_chapters(&spec.format);
-    let mut dropped = Vec::new();
     if has_chapters && !map_chapters {
         dropped.push("章節".to_string());
     }
@@ -248,6 +261,27 @@ mod tests {
         assert_eq!(p.resample, vec!["-ar", "44100", "-ac", "1"]);
         assert!(p.needs_measure && !p.map_chapters);
         assert_eq!(p.dropped, vec!["章節"]);
+    }
+
+    #[test]
+    fn sample_rate_is_always_explicit_when_re_encoding() {
+        // 沿用來源 = probe 到的 48k；loudnorm 不會偷偷變 192k
+        let p = plan(&ConvertSpec { target_lufs: Some(-16.0), ..spec("wav") }, Some(&aac()), false).unwrap();
+        assert_eq!(p.resample, vec!["-ar", "48000"]);
+        // 沒 probe 到又要正規化 → 48k
+        let p = plan(&ConvertSpec { target_lufs: Some(-16.0), ..spec("wav") }, None, false).unwrap();
+        assert_eq!(p.resample, vec!["-ar", "48000"]);
+        // 沒 probe 到、不正規化 → 交給 ffmpeg 沿用
+        let p = plan(&spec("mp3"), None, false).unwrap();
+        assert!(p.resample.is_empty());
+        // Opus 44.1k → 48k 並明講
+        let p = plan(&ConvertSpec { sample_rate: 44_100, ..spec("opus") }, Some(&aac()), false).unwrap();
+        assert_eq!(p.resample, vec!["-ar", "48000"]);
+        assert_eq!(p.dropped.len(), 1);
+        assert!(p.dropped[0].contains("44100"));
+        let p = plan(&ConvertSpec { sample_rate: 24_000, ..spec("opus") }, Some(&aac()), false).unwrap();
+        assert_eq!(p.resample, vec!["-ar", "24000"]);
+        assert!(p.dropped.is_empty());
     }
 
     #[test]

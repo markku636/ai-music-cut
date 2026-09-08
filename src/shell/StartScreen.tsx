@@ -1,11 +1,14 @@
 import { FileAudio, FileJson, FolderOpen, Music, X } from "lucide-react";
+import { MEDIA_EXTENSIONS, VIDEO_EXTENSIONS } from "../brand";
 import { openMedia } from "../commands/appActions";
 import { command, runCommand, useCommandTick } from "../commands/registry";
 import { useT } from "../i18n";
 import { baseName, kindOf, removeRecent } from "../project/recent";
+import { openDialog } from "../store/dialogs";
 import { useProject } from "../store/project";
 import { useSettings } from "../store/settings";
 import { useUi, type UiMode } from "../store/ui";
+import { pickOpenFiles } from "../ui";
 import Icon from "../ui/Icon";
 import { Button } from "../ui/index";
 import { START_CARDS } from "./startCards";
@@ -28,6 +31,15 @@ export default function StartScreen({ variant }: { variant: UiMode }) {
     // 錄音不需要先開檔：直接開錄音對話框
     if (card?.id === "record" && card.after) {
       void runCommand(card.after, "startcard");
+      return;
+    }
+    // 轉檔也不開進專案：選檔 → 直接帶進對話框（以前會先開進專案、再開一個空的轉檔框）
+    if (card?.pickInto) {
+      const list = await pickOpenFiles([
+        { name: t("音訊 / 影片"), extensions: MEDIA_EXTENSIONS },
+        { name: t("影片"), extensions: VIDEO_EXTENSIONS },
+      ]);
+      if (list.length) openDialog(card.pickInto, { paths: list });
       return;
     }
     const before = useProject.getState().activeMediaId;
@@ -59,21 +71,39 @@ export default function StartScreen({ variant }: { variant: UiMode }) {
           <div>
             <div className="text-lg font-semibold text-fg/90 mb-3">{t("你想做什麼？")}</div>
             <div className="grid grid-cols-2 gap-3">
-              {cards.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  data-card={c.id}
-                  onClick={() => void pick(c)}
-                  className="text-left rounded-lg border border-fg/10 bg-elevated p-4 hover:bg-fg/5 hover:border-accent/40 transition-colors focus-visible:outline-2 focus-visible:outline-accent/60"
-                >
-                  <div className="flex items-center gap-2 text-fg/90 font-medium">
-                    <Icon icon={c.icon} size={18} className="text-accent" />
-                    {t(c.title)}
+              {cards.map((c) => {
+                const secondary = c.secondary && command(c.secondary.command) ? c.secondary : null;
+                return (
+                  // 外框是 div：卡片本體與下方的第二個動作（合併…）都是 button，button 不能套 button
+                  <div key={c.id} className="flex flex-col rounded-lg border border-fg/10 bg-elevated hover:bg-fg/5 hover:border-accent/40 transition-colors">
+                    <button
+                      type="button"
+                      data-card={c.id}
+                      onClick={() => void pick(c)}
+                      className="flex-1 text-left rounded-lg p-4 focus-visible:outline-2 focus-visible:outline-accent/60"
+                    >
+                      <div className="flex items-center gap-2 text-fg/90 font-medium">
+                        <Icon icon={c.icon} size={18} className="text-accent" />
+                        {t(c.title)}
+                      </div>
+                      <div className="mt-1 text-[12px] text-fg/50 leading-relaxed">{t(c.line)}</div>
+                    </button>
+                    {secondary && (
+                      <button
+                        type="button"
+                        data-card={`${c.id}-secondary`}
+                        onClick={() => {
+                          setProfile(c.profile);
+                          void runCommand(secondary.command, "startcard");
+                        }}
+                        className="text-left px-4 pb-3 text-[12px] text-accent hover:underline focus-visible:outline-2 focus-visible:outline-accent/60"
+                      >
+                        {t(secondary.label)}
+                      </button>
+                    )}
                   </div>
-                  <div className="mt-1 text-[12px] text-fg/50 leading-relaxed">{t(c.line)}</div>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}

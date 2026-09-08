@@ -9,6 +9,7 @@ import SetupBanner from "./SetupBanner";
 import Sidebar from "./Sidebar";
 import Splitter from "./Splitter";
 import StatusBar from "./StatusBar";
+import MenuBar from "./MenuBar";
 import Toolbar from "./Toolbar";
 import WorkflowStrip from "./WorkflowStrip";
 import { useResizable } from "./useResizable";
@@ -29,6 +30,7 @@ export default function ProShell() {
 
   return (
     <>
+      <MenuBar />
       <Toolbar />
       <WorkflowStrip />
       <SetupBanner />

@@ -16,6 +16,7 @@ import { useProject } from "../store/project";
 import { useTranscript } from "../store/transcript";
 import { ensureLocalAnalysis } from "./waveform";
 import { alignForSync } from "./align";
+import type { LocalAnalysis } from "../analysis/peaks";
 
 export interface MicSyncRow {
   mediaId: string;
@@ -75,6 +76,8 @@ export async function combineMics(rows: MicSyncRow[], crosstalkDb?: number, drif
   const paths: string[] = [];
   // 漂移校正：非基準軌先用 DTW 扭到基準軌的時間軸（_aligned.wav），之後 delay 一律 0
   let delays = rows.map((r) => Math.max(0, Math.round(r.delayMs)));
+  // 漂移校正後，講者指派要用**對齊後**的分析（它們已經在基準軌的時間軸上，延遲一律 0）
+  const trackOverride = new Map<number, { analysis: LocalAnalysis; delayMs: number }>();
   if (driftCorrect) {
     delays = rows.map(() => 0);
     for (let i = 0; i < rows.length; i++) {
@@ -82,10 +85,17 @@ export async function combineMics(rows: MicSyncRow[], crosstalkDb?: number, drif
       if (!m) throw new Error(t("找不到媒體：{name}", { name: rows[i].name }));
       if (i === 0) {
         paths.push(m.path);
+        const base = useTranscript.getState().local[rows[0].mediaId];
+        if (base) trackOverride.set(0, { analysis: base, delayMs: 0 });
         continue;
       }
       const a = await alignForSync(rows[0].mediaId, rows[i].mediaId);
       paths.push(a.path);
+      try {
+        trackOverride.set(i, { analysis: await ensureLocalAnalysis(a.mediaId), delayMs: 0 });
+      } catch {
+        /* 對齊檔沒分析到就少這一軌的講者標籤，不影響合併 */
+      }
     }
   } else {
     for (const r of rows) {
@@ -101,7 +111,7 @@ export async function combineMics(rows: MicSyncRow[], crosstalkDb?: number, drif
   await api.mediaCombine(paths, delays, outPath, gates);
   const id = await useProject.getState().openMedia(outPath);
   useProject.getState().setActive(id);
-  const sp = speakersFrom(rows);
+  const sp = speakersFrom(rows, driftCorrect ? trackOverride : undefined);
   if (sp) useDecisions.getState().setSpeakers(id, sp, t("多麥克風講者指派"));
   return outPath;
 }
@@ -114,16 +124,18 @@ export async function combineMics(rows: MicSyncRow[], crosstalkDb?: number, drif
  *
  * 分析不在手上就回 null（不要把「沒資料」變成「大家都沒講話」的空標籤）。
  */
-function speakersFrom(rows: MicSyncRow[]): SpeakerState | null {
+function speakersFrom(rows: MicSyncRow[], override?: Map<number, { analysis: LocalAnalysis; delayMs: number }>): SpeakerState | null {
   const local = useTranscript.getState().local;
   const list: Speaker[] = [];
   const tracks: MicTrack[] = [];
   rows.forEach((r, i) => {
-    const a = local[r.mediaId];
+    // 漂移校正時只用對齊後的分析：原始分析加舊延遲會落在另一條時間軸上，講者邊界整個偏掉
+    const ov = override?.get(i);
+    const a = override ? ov?.analysis : local[r.mediaId];
     if (!a) return;
     const id = `sp${i}`;
     list.push({ id, label: speakerLabelFromName(r.name), colorIndex: i });
-    tracks.push({ speakerId: id, analysis: a, delayMs: Math.max(0, Math.round(r.delayMs)) });
+    tracks.push({ speakerId: id, analysis: a, delayMs: ov ? ov.delayMs : Math.max(0, Math.round(r.delayMs)) });
   });
   if (tracks.length < 2) return null;
   const turns = attributeTurns(tracks);

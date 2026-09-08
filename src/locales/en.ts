@@ -55,7 +55,7 @@ const en: Catalog = {
   "下一個接縫": "Next seam",
   "重播這個接縫": "Replay this seam",
   "這刀不要": "Undo this cut",
-  "留白": "room tone",
+  "留白": "gap",
   "預覽已渲染（與成品同一套剪接）": "Preview rendered (same splicer as the export)",
   "沒有可預覽的內容（還沒分析或沒有保留段）": "Nothing to preview (not analysed, or nothing kept)",
   "已改判保留（預覽需要重新渲染）": "Changed to keep (preview needs re-rendering)",
@@ -1681,6 +1681,24 @@ const en: Catalog = {
   "播原句給你聽…": "Playing the original line…",
   "新錄的比原句長很多（{take}s vs {slot}s）：不會硬拉伸。直接放上去會蓋到下一句，或者再錄一次。": "The new take is much longer than the original ({take}s vs {slot}s): it won't be stretched. Placing it as is will cover the next line, or record again.",
   "還原重錄": "Undo re-record",
+  "只輸出這一段": "Export just this part",
+  "把選的這段單獨存成一個檔（原檔不動）": "Save the selected part as its own file (source untouched)",
+  "已加修復：{label}（輸出時套用）": "Repair added: {label} (applied on export)",
+  "已加修復": "Repair added",
+  "一鍵修": "Fix it",
+  "修：去削波 {n} 處": "Fix: declip {n} spot(s)",
+  "修：DC 偏移": "Fix: DC offset",
+  // R9 選取區間單獨匯入 / 選單列
+  "把音檔放進選取區間…": "Place an audio file into the selection…",
+  "放一段音檔進來": "Drop in an audio file",
+  "選一個音檔，放進選的這一段（原檔不動，可復原）": "Pick an audio file and place it in the selected part (source untouched, undoable)",
+  "已放進選取的位置（素材比選取長，只放前 {s} 秒）": "Placed at the selection (the clip is longer than the selection; only the first {s} s is used)",
+  "已放進選取的位置": "Placed at the selection",
+  "匯入到選取區間": "Import into selection",
+  // R9 review fixes
+  "最短的檔只有 {len}，交越縮成 {ms} ms（不能超過它的一半）": "Shortest file is only {len}; crossfade reduced to {ms} ms (at most half of it)",
+  "自動（{n}）": "Auto ({n})",
+  "選取太短（不到 80 ms），淡入淡出做不出來，拉長一點再試": "Selection is too short (under 80 ms) for a fade in/out; select a bit more and try again",
 };
 
 

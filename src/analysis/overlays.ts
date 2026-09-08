@@ -24,6 +24,13 @@ export interface Overlay {
   srcOutMs: number;
   /** 成品時間軸上的起點。 */
   outStartMs: number;
+  /**
+   * 錨在**來源時間**的 overlay（重錄這句、放進選取區間）：位置跟著它蓋住的那句話走。
+   * 有這個欄位時 outStartMs 只是快取，實際位置每次都從 EDL 重算（見 effectiveOutStartMs）——
+   * 之後再剪掉前面一個贅字，原句會移、take 也要跟著移。配樂沒有這個欄位（釘成品時間）。
+   * 使用者手動拖動它就會解除錨定（回到釘成品時間）。
+   */
+  anchorSrcMs?: number;
   gainDb: number;
   fadeInMs: number;
   fadeOutMs: number;
@@ -42,6 +49,23 @@ export function overlayId(lane: OverlayLane, outStartMs: number): string {
 
 export function overlayLengthMs(o: Overlay): number {
   return Math.max(0, o.srcOutMs - o.srcInMs);
+}
+
+/** 錨在來源時間的 overlay：以現在的 keeps 換算成品位置；其他的照存的 outStartMs。 */
+export function effectiveOutStartMs(o: Overlay, keeps: readonly { srcStartMs: number; srcEndMs: number; outStartMs: number; outEndMs: number }[]): number {
+  if (o.anchorSrcMs == null || !keeps.length) return o.outStartMs;
+  // 與 analysis/edl/map.ts 的 mapSrcToOut 同一條規則（剪除區靠到下一段）；這裡不 import 它，避免 overlays ↔ edl 互相引用
+  for (const k of keeps) {
+    if (o.anchorSrcMs >= k.srcStartMs && o.anchorSrcMs <= k.srcEndMs) return k.outStartMs + (o.anchorSrcMs - k.srcStartMs);
+  }
+  for (const k of keeps) if (o.anchorSrcMs < k.srcStartMs) return k.outStartMs;
+  const last = keeps[keeps.length - 1];
+  return last.outEndMs;
+}
+
+/** 把錨定的 overlay 換算成「outStartMs 已是實際位置」的複本（畫面 / 試聽 / 輸出前先過這一層）。 */
+export function resolveOverlays(list: readonly Overlay[], keeps: readonly { srcStartMs: number; srcEndMs: number; outStartMs: number; outEndMs: number }[]): Overlay[] {
+  return list.map((o) => (o.anchorSrcMs == null ? o : { ...o, outStartMs: effectiveOutStartMs(o, keeps) }));
 }
 
 export const LANE_LABEL: Record<OverlayLane, string> = {

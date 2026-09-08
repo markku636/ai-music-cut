@@ -154,7 +154,7 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
     setPhase("count");
     for (const n of [3, 2, 1]) {
       setCount(n);
-      await new Promise((r) => setTimeout(r, 700));
+      await new Promise((r) => setTimeout(r, 1000));
     }
     setCount(0);
     await startRecording();
@@ -162,10 +162,9 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
 
   const processRetake = async (done: RecordDone) => {
     if (!slot || !active) return;
-    const mainId = active.id;
     setStatus(t("分析新錄的…"));
-    const takeId = await useProject.getState().openMedia(done.path);
-    useProject.getState().setActive(mainId);
+    // take 只加進清單、不切 active：切過去再切回來會讓主角重載、播放頭歸零、預覽清掉
+    const takeId = await useProject.getState().openMedia(done.path, { activate: false });
     const takeLocal = await ensureLocalAnalysis(takeId);
     const trim = trimTake(takeLocal);
     const fit = fitDecision(trim.endMs - trim.startMs, slotMs);
@@ -189,8 +188,7 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
       if (align) {
         setStatus(t("對齊回原位…"));
         const a = await analyzeAlignment(mainId, takeId, { mode: "adr", guideRange: slot, dubRange: trim, tightness: 60 });
-        const r = await renderAlignment(a, { verify: false });
-        useProject.getState().setActive(mainId);
+        const r = await renderAlignment(a, { verify: false, activate: false });
         takeMediaId = r.mediaId;
         takeRange = { startMs: slot.startMs, endMs: slot.endMs };
       }

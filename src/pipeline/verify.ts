@@ -12,6 +12,8 @@ import { useProject } from "../store/project";
 import { useVerify } from "../store/verify";
 import { toast } from "../ui";
 import { edlOutDurationMs } from "../analysis/edl/joins";
+import { mapSrcToOut } from "../analysis/edl/map";
+import { resolveOverlays } from "../analysis/overlays";
 import { edlFor } from "./rules";
 import { withVramRetry } from "./gpu";
 import { isAbort, sleep, withBackoff } from "./retry";
@@ -79,8 +81,11 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
         const buf = await api.mediaAnalyzeLocal(newJobId(), opts.outPath, fp, outProbe.duration_ms);
         // 成品混了配樂時，波形相似度本來就不會像來源 —— 只看位置，不然會對好成品報假警報
         const hasOverlays = (useDecisions.getState().overlays[mediaId] ?? []).length > 0;
-        // 反轉 / 變調過的區段波形本來就對不上來源，只比位置
-        const skipCorrOutSpans = (useVerify.getState().lastOutput[mediaId]?.fxSpans ?? []).filter((s) => !s.correlated);
+        // 反轉 / 變調過的區段波形本來就對不上來源，只比位置；被靜音的段落（重錄這句 / 提起）也是
+        const mutedOut = (useDecisions.getState().effects[mediaId] ?? [])
+          .filter((e) => e.kind === "mute")
+          .map((e) => ({ startMs: mapSrcToOut(edl.keeps, e.startMs), endMs: mapSrcToOut(edl.keeps, e.endMs) }));
+        const skipCorrOutSpans = [...(useVerify.getState().lastOutput[mediaId]?.fxSpans ?? []).filter((s) => !s.correlated), ...mutedOut];
         splice = auditSplice(srcLocal, parseAnalysis(buf), edl, { mixedWithOverlays: hasOverlays, skipCorrOutSpans });
         useVerify.getState().setSplice(mediaId, { ...splice, outPath: opts.outPath, at: new Date().toISOString() });
       } catch {
@@ -125,6 +130,15 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
       // 用 keptMs 的話每刀差約 20 ms，2–3 刀就會誤報「時長不符」。
       expectedDurationMs: useVerify.getState().lastOutput[mediaId]?.expectedOutMs ?? edlOutDurationMs(edl),
     });
+    // 重錄的段落：成品裡是新錄的 take，逐字稿還是舊的那一句 —— 多出來的字不算「該剪沒剪」，降成低信心
+    const redubSpans = resolveOverlays(useDecisions.getState().overlays[mediaId] ?? [], edl.keeps)
+      .filter((o) => o.role === "redub")
+      .map((o) => ({ startMs: o.outStartMs - 300, endMs: o.outStartMs + (o.srcOutMs - o.srcInMs) + 300 }));
+    if (redubSpans.length) {
+      for (const f of report.findings) {
+        if (f.kind === "extra" && redubSpans.some((s) => f.outMs >= s.startMs && f.outMs <= s.endMs)) f.lowConfidence = true;
+      }
+    }
     useVerify.getState().setReport(mediaId, { ...report, outPath: opts.outPath, at: new Date().toISOString() });
     const hard = report.findings.filter((f) => (f.kind === "missing" || f.kind === "extra") && !f.lowConfidence).length;
     jobs.upsert({ id: jobId, status: "done", step: t("完成"), pct: 100, message: report.summary, endedAt: Date.now() });

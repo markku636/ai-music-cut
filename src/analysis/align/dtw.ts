@@ -82,7 +82,8 @@ export function bandedDtw(n: number, m: number, opts: DtwOptions): DtwResult {
         // (i-1, j-2)：dub 快
         const kf = kOf(i - 1, j - 2);
         if (kf >= 0 && kf < width && rowB[kf] < INF) {
-          const c = rowB[kf] + d * pen;
+          // 跳過的 (i, j-1) 也要付費：一步斜步走過兩格，不能比兩步對角便宜（開放端會偏向 0.5×/2× 漂走）
+          const c = rowB[kf] + (d + opts.dist(i, j - 1)) * pen;
           if (c < best) {
             best = c;
             mv = MOVE_FAST;
@@ -92,7 +93,7 @@ export function bandedDtw(n: number, m: number, opts: DtwOptions): DtwResult {
         if (i >= 2) {
           const ks = kOf(i - 2, j - 1);
           if (ks >= 0 && ks < width && rowA[ks] < INF) {
-            const c = rowA[ks] + d * pen;
+            const c = rowA[ks] + (d + opts.dist(i - 1, j)) * pen;
             if (c < best) {
               best = c;
               mv = MOVE_SLOW;

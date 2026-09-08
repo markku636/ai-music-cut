@@ -289,6 +289,14 @@
 - 停用要給 `why`（zh key）。畫面上不會灰掉不解釋：tooltip、toast、命令面板右側都是同一句。
 - 兩個 store（`useCommands`、`useDialogs`）要從 `window.__aicut` 拿（見 dev 鉤子），不要手動 `import()`：HMR 之後那是另一個實例。
 
+## 選單列 / 一鍵修 / 來源時間錨定（v0.107）
+
+- `shell/MenuBar.tsx`：專業模式專用，`groupMenu(g, "menu")` 把註冊表裡 file / edit / select / playback / effect / repair / tool / ai / view / help 十個群組各長成一個 `MenuPanel`；滑過去（mouseover）就切換開著的選單；簡易模式不掛。
+- `analysis/fx/repairs.ts`：`repairsForQc(findings, durationMs)` 把輸出前檢查的削波 / DC 找到的位置換成 `declip`（±100 ms 合併）/ `dc`（整檔）效果，`origin: "qc"`；`RenderDialog` 每條檢查旁的「一鍵修」= `addEffects` + `toast.undo`。
+- `analysis/overlays.ts`：`Overlay.anchorSrcMs?` —— 有值的 overlay 位置每次都用 `effectiveOutStartMs(o, keeps)` 從 EDL 重算（`resolveOverlays` 給 render / 監聽 / 車道 / 驗收四個消費者）。重錄這句（`punchIn.planRedub`）與「放一段音檔進來」（`commands/clipCommands.ts importIntoSelection`）都錨在來源時間；`decisions.updateOverlay` 收到手動 `outStartMs` 就解除錨定。
+- `store/project.ts openMedia(path, { activate: false })`：只加進清單不切 active。take / 對齊檔 / 匯入素材都走這條 —— 切過去再切回來會讓主角重載、播放頭歸零、預覽清掉（React 在 await 之前就 commit 了那一瞬間）。
+- `store/dialogs.ts open()`：同 id 重開時 props 相同才保留 key；props 不同（另一段選取、另一句要重錄）換 key 重掛。
+
 ## 祕密與隱私
 
 - ttls API key：Settings → `ttls_key_set` → OS keychain（service `ai-music-cut`）。唯一讀取點 `ttls::api_key()`；沒有任何 command 回傳它；專案檔 / 設定檔 / log 不含金鑰（`format.test.ts` 與 `store.rs` 測試斷言）。

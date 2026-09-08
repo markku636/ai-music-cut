@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyTightness, pathToWarp, resampleOnly, simplifyWarp, straightenSilence, summarizeWarp, warpAt, warpSegments, type WarpPoint } from "./warp";
+import { applyTightness, pathToWarp, resampleOnly, simplifyWarp, straightenSilence, summarizeWarp, warpAt, warpSegments, type WarpPoint, DEFAULT_SEGMENTS } from "./warp";
 
 const pts = (list: [number, number][]): WarpPoint[] => list.map(([dubMs, guideMs]) => ({ dubMs, guideMs }));
 
@@ -93,6 +93,14 @@ describe("straightenSilence / simplifyWarp", () => {
 });
 
 describe("warpSegments", () => {
+  it("預設量化留得住 2 s/h 的時鐘漂移（不會全量成 1.0）", () => {
+    const list: WarpPoint[] = [];
+    for (let s = 0; s <= 3600; s += 60) list.push({ dubMs: s * 1000, guideMs: Math.round(s * 1000 * (1 + 2 / 3600)) });
+    const segs = warpSegments(list, DEFAULT_SEGMENTS);
+    expect(segs.length).toBeGreaterThan(0);
+    expect(segs.every((s) => s.rate === 1)).toBe(false);
+    expect(Math.abs(segs[0].rate - 1.000556)).toBeLessThan(0.0006);
+  });
   it("速率 = Δguide/Δdub，短段併進前一段重算、量化、夾限、相鄰同速率合併", () => {
     const list = pts([[0, 0], [1000, 1100], [2000, 2200], [2100, 2400], [3000, 3300]]);
     const segs = warpSegments(list, { minSegMs: 250, rateQuant: 0.005, clamp: [0.5, 2] });

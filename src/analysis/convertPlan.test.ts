@@ -12,6 +12,12 @@ describe("outPathFor", () => {
     expect(outPathFor("C:\\a\\ep3.wav", "mp3", null, taken)).toBe("C:\\a\\ep3.mp3");
     expect(outPathFor("C:\\a\\EP3.flac", "mp3", null, taken)).toBe("C:\\a\\EP3_2.mp3");
     expect(outPathFor("/x/song.flac", "opus", "/out", new Set())).toBe("/out/song.opus");
+  });
+  it("輸出不會蓋到同一批裡別的來源（a.wav → mp3 時 a.mp3 也在批次裡）", () => {
+    const sources = new Set(["c:\\a\\a.wav", "c:\\a\\a.mp3"]);
+    const taken = new Set<string>();
+    expect(outPathFor("C:\\a\\a.wav", "mp3", null, taken, sources)).toBe("C:\\a\\a_converted.mp3");
+    expect(outPathFor("C:\\a\\a.mp3", "mp3", null, taken, sources)).toBe("C:\\a\\a_2.mp3");
     expect(outPathFor("/x/song.flac", "opus", "/out/", new Set())).toBe("/out/song.opus");
   });
 });

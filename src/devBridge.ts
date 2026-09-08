@@ -30,6 +30,7 @@ import * as prompts from "./analysis/prompts";
 import { useSettings } from "./store/settings";
 import { useCleanup } from "./store/cleanup";
 import { chunkedSource, setDevStubSource, startCapture } from "./recording/capture";
+import { importIntoSelection } from "./commands/clipCommands";
 import { useHighlights } from "./store/highlights";
 import { useShowNotes } from "./store/showNotes";
 import { useTranscript } from "./store/transcript";
@@ -78,6 +79,8 @@ export interface DevBridge {
   skimTo: typeof skimTo;
   cleanup: typeof useCleanup;
   recording: { startCapture: typeof startCapture; chunkedSource: typeof chunkedSource; setDevStubSource: typeof setDevStubSource };
+  /** 把音檔放進選取區間（帶路徑就不開 OS 檔案選擇器，探針用）。 */
+  importIntoSelection: typeof importIntoSelection;
   highlights: typeof useHighlights;
   showNotes: typeof useShowNotes;
   lang: typeof useLang;
@@ -168,6 +171,7 @@ export function installDevBridge() {
     // 量出來像是功能壞了，其實是在對一個平行世界說話。
     cleanup: useCleanup,
     recording: { startCapture, chunkedSource, setDevStubSource },
+    importIntoSelection,
     highlights: useHighlights,
     showNotes: useShowNotes,
     lang: useLang,

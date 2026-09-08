@@ -68,6 +68,8 @@ export function planRedub(input: RedubInput): RedubPlan {
     srcInMs: input.takeRange.startMs,
     srcOutMs: input.takeRange.endMs,
     outStartMs,
+    // 錨在原句的來源時間：之後剪掉前面的字，原句移到哪 take 就跟到哪（outStartMs 只是快取）
+    anchorSrcMs: slot.startMs,
     gainDb: Math.max(-12, Math.min(12, Math.round((input.gainDb ?? 0) * 10) / 10)),
     fadeInMs: 10,
     fadeOutMs: 10,

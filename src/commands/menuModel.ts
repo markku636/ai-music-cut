@@ -108,7 +108,7 @@ export interface SelectionMenuCtx {
 }
 
 /**
- * 簡易模式的右鍵：固定 7 格，每格一串候選指令 id，取第一個已註冊的。
+ * 簡易模式的右鍵：固定 9 格，每格一串候選指令 id，取第一個已註冊的。
  * 例如「去雜音」在範圍降噪（R4）進來之前退回整檔降噪。
  */
 const SIMPLE_SELECTION: string[][] = [
@@ -119,6 +119,10 @@ const SIMPLE_SELECTION: string[][] = [
   ["effect.gain.preset.p6"],
   ["effect.gain.preset.m6"],
   ["effect.fadeBoth"],
+  // 選取區間單獨匯出：小白最常要的「把這一段存成一個檔」
+  ["file.exportRange"],
+  // 選取區間單獨匯入：把一個音檔放進選的這一段
+  ["edit.importIntoSelection"],
 ];
 
 /** 波形上有選取時的右鍵選單。 */

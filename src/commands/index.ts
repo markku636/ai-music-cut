@@ -4,6 +4,7 @@ import { installCommandReactivity } from "./guards";
 import { registerCommands, setCommandHost } from "./registry";
 import { CORE_COMMANDS } from "./core";
 import { EFFECT_COMMANDS } from "./effectCommands";
+import { CLIP_COMMANDS } from "./clipCommands";
 import { registerEffectSpec } from "../effects/registry";
 import { gainSpec } from "../effects/specs/gain";
 import { fadesSpec, invertSpec } from "../effects/specs/fades";
@@ -19,6 +20,8 @@ export function installCommands(): () => void {
   registerCommands([
     ...CORE_COMMANDS,
     ...EFFECT_COMMANDS,
+    // 選取區間單獨匯入（把音檔放進選的這一段）
+    ...CLIP_COMMANDS,
     ...registerEffectSpec(gainSpec),
     ...registerEffectSpec(peakNormalizeSpec),
     ...registerEffectSpec(matchLoudnessSpec),

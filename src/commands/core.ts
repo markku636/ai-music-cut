@@ -165,7 +165,11 @@ export const CORE_COMMANDS: Command[] = [
     group: "file",
     section: "輸出",
     icon: Share2,
-    surfaces: ["menu", "palette", "context"],
+    surfaces: ["menu", "palette", "context", "simple"],
+    simple: true,
+    simpleLabel: "只輸出這一段",
+    simpleHint: "把選的這段單獨存成一個檔（原檔不動）",
+    keywords: ["export selection", "clip", "extract"],
     enabled: needsSelection,
     run: () => {
       const sel = useTimeline.getState().selection;

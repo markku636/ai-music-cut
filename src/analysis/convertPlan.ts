@@ -31,17 +31,20 @@ export function baseOf(p: string): string {
  * 輸出路徑：來源旁邊、換副檔名；撞到來源本身（同副檔名）就加 `_converted`。
  * `taken` 是這一批已經分配掉的路徑（Windows 大小寫不分，用小寫比）—— 兩個來源同名不同副檔名時第二個要再加序號。
  */
-export function outPathFor(src: string, format: RenderFormat, outDir: string | null, taken: Set<string>): string {
+export function outPathFor(src: string, format: RenderFormat, outDir: string | null, taken: Set<string>, sources?: ReadonlySet<string>): string {
   const dir = outDir ? outDir + (outDir.endsWith("\\") || outDir.endsWith("/") ? "" : sepOf(outDir || src)) : dirOf(src);
   const base = baseOf(src);
+  const lc = (s: string) => s.toLowerCase();
+  // `sources` 是這一批**所有來源**（小寫）：a.wav → mp3 時同批還有 a.mp3，輸出不能把它蓋掉
+  const isSource = (c: string) => lc(c) === lc(src) || (sources?.has(lc(c)) ?? false);
   let candidate = `${dir}${base}.${format}`;
-  if (candidate.toLowerCase() === src.toLowerCase()) candidate = `${dir}${base}_converted.${format}`;
+  if (isSource(candidate)) candidate = `${dir}${base}_converted.${format}`;
   let n = 2;
-  while (taken.has(candidate.toLowerCase())) {
+  while (taken.has(lc(candidate)) || isSource(candidate)) {
     candidate = `${dir}${base}_${n}.${format}`;
     n++;
   }
-  taken.add(candidate.toLowerCase());
+  taken.add(lc(candidate));
   return candidate;
 }
 

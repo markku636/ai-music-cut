@@ -29,7 +29,8 @@ interface ProjectStore {
   /** 各媒體的分析產物（逐字稿等），由 pipeline 寫入；存檔時原樣序列化。 */
   analysis: Record<string, MediaAnalysisV1>;
 
-  openMedia: (path: string) => Promise<string>;
+  /** 開檔加進清單。`activate: false` = 只加進清單、不切 active（素材 / take / 對齊檔用，避免主角閃一下重載）。 */
+  openMedia: (path: string, opts?: { activate?: boolean }) => Promise<string>;
   setActive: (id: string | null) => void;
   updateMedia: (id: string, patch: Partial<MediaItem>) => void;
   removeMedia: (id: string) => void;
@@ -71,21 +72,22 @@ export const useProject = create<ProjectStore>((set, get) => ({
   leveling: true,
   analysis: {},
 
-  openMedia: async (path) => {
+  openMedia: async (path, opts) => {
+    const activate = opts?.activate !== false;
     const existing = get().media.find((m) => m.path === path);
     if (existing) {
-      set({ activeMediaId: existing.id });
+      if (activate) set({ activeMediaId: existing.id });
       return existing.id;
     }
     const probe = await api.mediaProbe(path);
     const id = probe.fingerprint.slice(0, 16);
     const dup = get().media.find((m) => m.id === id);
     if (dup) {
-      set({ activeMediaId: dup.id });
+      if (activate) set({ activeMediaId: dup.id });
       return dup.id;
     }
     const item: MediaItem = { id, path, name: fileName(path), fingerprint: probe.fingerprint, probe, analysis: "none" };
-    set((s) => ({ media: [...s.media, item], activeMediaId: id, dirty: true }));
+    set((s) => ({ media: [...s.media, item], ...(activate ? { activeMediaId: id } : {}), dirty: true }));
     return id;
   },
   setActive: (id) => set({ activeMediaId: id }),

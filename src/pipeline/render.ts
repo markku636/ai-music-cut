@@ -17,7 +17,7 @@ import {
   REEL_FADE_OUT_MS,
   type ReelRange,
 } from "../analysis/reel";
-import { outputDurationWithOverlays } from "../analysis/overlays";
+import { outputDurationWithOverlays, resolveOverlays } from "../analysis/overlays";
 import { overlayRole } from "../analysis/roles";
 import { mapSrcToOut } from "../analysis/edl/map";
 import { effectiveXfMs, planOutDurationMs } from "../analysis/edl/joins";
@@ -205,7 +205,8 @@ export function buildRenderPlan(mediaId: string, opts: RenderOptions): BuiltPlan
   // 墊樂 / 音效。**先夾再轉成 RenderOverlay** —— 夾的邏輯用的是 store 的欄位名，
   // 而且只輸出一段時要連來源進出點一起移（不然音樂會從頭重播）。
   // 配樂的位置是成品時間，所以要先知道選取起點落在成品的哪裡。
-  const storeOverlays = useDecisions.getState().overlays[mediaId] ?? [];
+  // 錨在來源時間的 overlay（重錄這句 / 放進選取）先依現在的 EDL 換算成成品位置
+  const storeOverlays = resolveOverlays(useDecisions.getState().overlays[mediaId] ?? [], edl.keeps);
   const outOffsetMs = opts.rangeMs ? mapSrcToOut(edl.keeps, opts.rangeMs.startMs) : 0;
   // 合輯不帶配樂：範圍是散落的，「這段音樂該落在合輯的哪裡」沒有定義。
   // 硬帶會得到一堆被切碎、對不上任何東西的片段 —— 不如明確地不帶。

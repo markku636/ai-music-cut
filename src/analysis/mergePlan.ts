@@ -11,6 +11,26 @@ export interface MergeItem {
   /** 量到的整體響度（LUFS）；沒分析就 null。 */
   lufs: number | null;
   gainDb: number;
+  /** probe 到的聲道數；不知道就 undefined（當 1）。 */
+  channels?: number;
+}
+
+/**
+ * 交越實際能用的長度：不能超過**最短檔的一半**。Rust 的 acrossfade 不會自己夾，
+ * 交越比檔還長時那個檔會被整個吃掉 —— 所以夾在這裡，送去 Rust 的 join_ms 就是這個值。
+ */
+export function effectiveJoinMs(items: readonly { durationMs: number }[], join: MergeJoin, joinMs: number): number {
+  const j = Math.max(0, Math.round(joinMs));
+  if (join !== "crossfade" || items.length < 2) return j;
+  const shortest = Math.min(...items.map((i) => Math.max(0, i.durationMs)));
+  return Math.max(0, Math.min(j, Math.floor(shortest / 2)));
+}
+
+/** 輸出聲道：auto = 輸入裡最多的那個（有立體聲就立體聲）。 */
+export type MergeChannelChoice = "auto" | "1" | "2";
+export function mergeChannels(items: readonly { channels?: number }[], choice: MergeChannelChoice): 1 | 2 {
+  if (choice !== "auto") return choice === "2" ? 2 : 1;
+  return items.some((i) => (i.channels ?? 1) >= 2) ? 2 : 1;
 }
 
 /**

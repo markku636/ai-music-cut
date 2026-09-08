@@ -203,7 +203,7 @@ export interface AlignRenderResult {
 }
 
 /** 渲染對齊檔（dub 扭到 guide 時間軸）、加進媒體清單、跑殘差驗收。 */
-export async function renderAlignment(a: AlignAnalysis, opts: { verify?: boolean } = {}): Promise<AlignRenderResult> {
+export async function renderAlignment(a: AlignAnalysis, opts: { verify?: boolean; activate?: boolean } = {}): Promise<AlignRenderResult> {
   const proj = useProject.getState();
   const dub = proj.media.find((m) => m.id === a.dubId);
   const guideM = proj.media.find((m) => m.id === a.guideId);
@@ -225,7 +225,7 @@ export async function renderAlignment(a: AlignAnalysis, opts: { verify?: boolean
     jobs.upsert({ id: jobId, status: "error", step: t("失敗"), error: String(e), endedAt: Date.now() });
     throw e;
   }
-  const mediaId = await useProject.getState().openMedia(outPath);
+  const mediaId = await useProject.getState().openMedia(outPath, { activate: opts.activate !== false });
   let verdict: AlignVerdict | null = null;
   if (opts.verify !== false) {
     try {
@@ -241,10 +241,8 @@ export async function renderAlignment(a: AlignAnalysis, opts: { verify?: boolean
 
 /** 多麥同步用：以 base 為 guide 校正另一軌的時鐘漂移，回對齊檔路徑（不驗收、不切 active）。 */
 export async function alignForSync(baseId: string, otherId: string): Promise<{ path: string; mediaId: string; confidence: number; summary: WarpSummary }> {
-  const prevActive = useProject.getState().activeMediaId;
   const a = await analyzeAlignment(baseId, otherId, { mode: "drift" });
-  const r = await renderAlignment(a, { verify: false });
-  if (prevActive) useProject.getState().setActive(prevActive);
+  const r = await renderAlignment(a, { verify: false, activate: false });
   return { path: r.outPath, mediaId: r.mediaId, confidence: a.confidence, summary: a.summary };
 }
 

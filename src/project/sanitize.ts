@@ -198,7 +198,9 @@ export function sanitizeOverlays(v: unknown, r: SanitizeReport): Overlay[] {
       continue;
     }
     const points = Array.isArray(o.points) ? o.points.filter((p) => { const q = rec(p); return q && fin(q.ms) && fin(q.db); }) : [];
-    out.push({ ...(x as Overlay), gainDb: fin(o.gainDb) ? (o.gainDb as number) : 0, points } as Overlay);
+    // anchorSrcMs（錨在來源時間）不是數字就拿掉，退回釘成品時間
+    const anchor = o.anchorSrcMs == null ? {} : fin(o.anchorSrcMs) ? {} : { anchorSrcMs: undefined };
+    out.push({ ...(x as Overlay), ...anchor, gainDb: fin(o.gainDb) ? (o.gainDb as number) : 0, points } as Overlay);
   }
   return out;
 }

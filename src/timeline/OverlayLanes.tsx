@@ -4,11 +4,11 @@
 // **成品時間**上的（剪完之後的節目）。所以存的是 outStartMs，畫的時候用 mapOutToSrc
 // 換回來源時間 —— 這樣音樂條會跟它實際蓋住的內容對齊，而不是漂在一個看不懂的位置。
 // 拖曳時反過來，落點的來源時間用 mapSrcToOut 換成成品時間再存。
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type WaveSurfer from "wavesurfer.js";
 import type { Edl } from "../analysis/edl/build";
 import { mapOutToSrc } from "../analysis/edl/map";
-import { envDbToY, envYToDb, LANE_LABEL, overlayLengthMs, type Overlay, type OverlayLane } from "../analysis/overlays";
+import { envDbToY, envYToDb, LANE_LABEL, overlayLengthMs, resolveOverlays, type Overlay, type OverlayLane } from "../analysis/overlays";
 import { useT } from "../i18n";
 import { useTimeline } from "../store/timeline";
 import { formatMs } from "../time";
@@ -41,7 +41,7 @@ interface DragState {
 export default function OverlayLanes({
   ws,
   edl,
-  overlays,
+  overlays: rawOverlays,
   nameOf,
   onChange,
   onMenu,
@@ -54,6 +54,8 @@ export default function OverlayLanes({
   onMenu: (o: Overlay, x: number, y: number) => void;
 }) {
   const t = useT();
+  // 錨在來源時間的 overlay（重錄這句 / 放進選取）：畫的位置每次都從 EDL 重算，剪掉前面的字它會跟著移
+  const overlays = useMemo(() => resolveOverlays(rawOverlays, edl?.keeps ?? []), [rawOverlays, edl]);
   const pxPerSec = useTimeline((s) => s.pxPerSec);
   const fitPx = useTimeline((s) => s.fitPxPerSec);
   const [scroll, setScroll] = useState(0);
@@ -139,7 +141,7 @@ export default function OverlayLanes({
         const items = overlays.filter((o) => o.lane === lane);
         return (
           <div key={lane} className="absolute inset-x-0" style={{ top: li * LANE_H, height: LANE_H }}>
-            <div className="absolute inset-0 border-t border-fg/5 bg-bg/35" />
+            <div className="absolute inset-0 border-t border-fg/5 bg-app/35" />
             {items.length === 0 && (
               <span className="absolute left-1 top-0.5 text-[9px] text-fg/25 select-none">{t(LANE_LABEL[lane])}</span>
             )}
@@ -251,7 +253,7 @@ export default function OverlayLanes({
         );
       })}
       {drag && (
-        <div className="absolute -top-5 left-1/2 -translate-x-1/2 rounded-sm bg-accent px-1 text-[10px] mono text-bg tabular-nums" style={{ pointerEvents: "none" }}>
+        <div className="absolute -top-5 left-1/2 -translate-x-1/2 rounded-sm bg-accent px-1 text-[10px] mono text-on-accent tabular-nums" style={{ pointerEvents: "none" }}>
           {drag.deltaMs >= 0 ? "+" : ""}
           {Math.round(drag.deltaMs)} ms
         </div>

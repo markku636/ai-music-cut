@@ -14,15 +14,18 @@ describe("dialogs store", () => {
     expect(useDialogs.getState().stack.map((e) => e.id)).toEqual(["prompts"]);
     expect(useDialogs.getState().isOpen("settings")).toBe(false);
   });
-  it("重開同一個：換 props、移到最上層、key 不變（不重掛）", () => {
+  it("重開同一個：同 props → 移到最上層、key 不變（不重掛）；props 不同 → key 遞增（重掛）", () => {
     const d = useDialogs.getState();
     d.open("render", { range: null });
     const k = useDialogs.getState().stack[0].key;
     d.open("about");
-    d.open("render", { range: { startMs: 1, endMs: 2 } });
-    const st = useDialogs.getState().stack;
+    d.open("render", { range: null });
+    let st = useDialogs.getState().stack;
     expect(st.map((e) => e.id)).toEqual(["about", "render"]);
     expect(st[1].key).toBe(k);
+    d.open("render", { range: { startMs: 1, endMs: 2 } });
+    st = useDialogs.getState().stack;
+    expect(st[1].key).not.toBe(k);
     expect(st[1].props).toEqual({ range: { startMs: 1, endMs: 2 } });
   });
   it("關掉再開：key 遞增 = 重新掛載", () => {

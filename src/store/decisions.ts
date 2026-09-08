@@ -496,7 +496,9 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
     updateOverlay: (mediaId, id, p, label = "調整配樂") => {
       const list = get().overlays[mediaId] ?? [];
       if (!list.some((x) => x.id === id)) return;
-      const next = list.map((x) => (x.id === id ? { ...x, ...p } : x)).sort((a, b) => a.outStartMs - b.outStartMs);
+      // 使用者親手移動了錨在來源時間的 overlay（重錄這句）→ 解除錨定，改回釘成品時間
+      const unpin = p.outStartMs != null && !("anchorSrcMs" in p) ? { anchorSrcMs: undefined } : {};
+      const next = list.map((x) => (x.id === id ? { ...x, ...p, ...(x.anchorSrcMs != null ? unpin : {}) } : x)).sort((a, b) => a.outStartMs - b.outStartMs);
       commit(mediaId, label, { overlays: next });
     },
     removeOverlay: (mediaId, id) => {

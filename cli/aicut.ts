@@ -396,7 +396,9 @@ async function verifyOutput(a: Analysis, edl: Edl, outFile: string, ff: Ffmpeg, 
   log("驗證：把成品送回 ttls 重新轉寫…");
   const { transcript: outTr } = await getTranscript(outFile, ff, { ...flags, "no-cache": true });
   const probe = await ff.probe(outFile);
-  const r = verifyEdit(expectedWords(a.transcript, edl), actualWords(outTr), edl, {
+  // 被靜音（重錄這句 / 提起）的字成品裡本來就聽不到，不算漏字 —— 與 App 的 runVerify 同一條規則
+  const muted = (a.effects ?? []).filter((e) => e.kind === "mute");
+  const r = verifyEdit(expectedWords(a.transcript, edl, muted), actualWords(outTr), edl, {
     outDurationMs: probe.durationMs,
     // 這裡刻意用 keptMs 而不是 edl.stats.outMs：CLI 的剪接器是 ffmpeg 的 atrim + concat，
     // 沒有 crossfade、沒有 room tone gap，成品長度天生就等於保留段總長。

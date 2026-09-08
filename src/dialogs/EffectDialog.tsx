@@ -15,7 +15,7 @@ import { toast } from "../ui";
  * 簡易模式只畫 primary 那一根滑桿，進階整段藏起來。長什麼樣由 EffectSpec 決定，這裡只是畫。
  */
 export default function EffectDialog({
-  mediaId,
+  mediaId: mediaIdProp,
   specId,
   initial,
   range: rangeProp,
@@ -30,7 +30,8 @@ export default function EffectDialog({
   const t = useT();
   const simple = useUi((s) => s.mode === "simple");
   const spec = effectSpec(specId);
-  // 開對話框當下的範圍就定下來 —— 使用者中途改選取不該讓「套用」跑到別的地方
+  // 開對話框當下的媒體與範圍就定下來 —— 使用者中途切檔 / 改選取不該讓「套用」跑到別的地方
+  const [mediaId] = useState(mediaIdProp);
   const [ctx] = useState(() => effectContext(mediaId));
   const [range] = useState(() => rangeProp ?? (spec ? rangeFor(spec, ctx) : null));
   const syncSuggestion = useMemo(() => (spec && range ? (spec.suggest?.(ctx, range) ?? null) : null), [spec, ctx, range]);

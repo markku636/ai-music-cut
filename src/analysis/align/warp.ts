@@ -190,7 +190,8 @@ export interface SegmentOptions {
   clamp: [number, number];
 }
 
-export const DEFAULT_SEGMENTS: SegmentOptions = { minSegMs: 250, rateQuant: 0.005, clamp: [0.5, 2] };
+// rateQuant 0.0005：Rust 端 tempo 印 4 位小數；再粗（0.005）會把 2 s/h 的時鐘漂移（0.056%）整個量成 1.0
+export const DEFAULT_SEGMENTS: SegmentOptions = { minSegMs: 250, rateQuant: 0.0005, clamp: [0.5, 2] };
 
 /** 點 → 分段固定速率。合併太短的段（併進前一段重算速率）、量化、夾限。 */
 export function warpSegments(points: readonly WarpPoint[], opts: SegmentOptions = DEFAULT_SEGMENTS): WarpSegment[] {

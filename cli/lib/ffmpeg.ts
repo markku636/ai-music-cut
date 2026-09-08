@@ -3,6 +3,8 @@ import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+// 編碼參數與 App 同一張表（analysis/formats.ts ↔ Rust formats.rs）
+import { codecArgs, FORMATS, type RenderFormat } from "../../src/analysis/formats";
 
 export interface Probe {
   durationMs: number;

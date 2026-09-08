@@ -9,7 +9,7 @@ import { useEffect } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Edl } from "../analysis/edl/build";
 import { mapSrcToOut } from "../analysis/edl/map";
-import type { Overlay } from "../analysis/overlays";
+import { resolveOverlays, type Overlay } from "../analysis/overlays";
 import { rolesInUse } from "../analysis/roles";
 import { usePlayback } from "../store/playback";
 import { useProject } from "../store/project";
@@ -51,13 +51,15 @@ export function useOverlayMonitor(overlays: Overlay[], edl: Edl | null) {
       return;
     }
     const keeps = edl?.keeps ?? [];
+    // 錨在來源時間的 overlay（重錄這句）位置跟著 EDL 走，試聽也要用換算後的位置
+    const resolved = resolveOverlays(overlays, keeps);
     // 排在效果增益之後：這一層只讀播放位置，不碰主聲軌的音量
     const un = subscribeTick(() => {
       const el = getPlayer();
       if (!el) return;
       const srcMs = el.currentTime * 1000;
       const outMs = keeps.length ? mapSrcToOut(keeps, srcMs) : srcMs;
-      tickOverlays(overlays, { outMs, playing: !el.paused, rate: el.playbackRate || 1, mix: useRoleMix.getState().mix });
+      tickOverlays(resolved, { outMs, playing: !el.paused, rate: el.playbackRate || 1, mix: useRoleMix.getState().mix });
     }, TICK_PRIORITY.effects + 1);
     return () => {
       un();

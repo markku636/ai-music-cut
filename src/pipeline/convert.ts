@@ -20,7 +20,8 @@ export interface ConvertBatchOptions extends ConvertOptions {
 /** 這一批會輸出到哪些路徑（UI 預告用；與實際跑的分配同一條規則）。 */
 export function planOutPaths(srcs: readonly string[], opts: ConvertBatchOptions): string[] {
   const taken = new Set<string>();
-  return srcs.map((s) => outPathFor(s, opts.format, opts.outDir, taken));
+  const sources = new Set(srcs.map((s) => s.toLowerCase()));
+  return srcs.map((s) => outPathFor(s, opts.format, opts.outDir, taken, sources));
 }
 
 export async function runConvertBatch(srcs: readonly string[], opts: ConvertBatchOptions, onProgress?: (i: number, r: ConvertResult) => void): Promise<ConvertResult[]> {

@@ -72,7 +72,10 @@ export const EFFECT_COMMANDS: Command[] = [
       const sel = useTimeline.getState().selection;
       if (!id || !sel) return;
       const len = Math.min(FADE_MAX_MS, Math.floor((sel.endMs - sel.startMs) / 4));
-      if (len < 20) return;
+      if (len < 20) {
+        toast.info(t("選取太短（不到 80 ms），淡入淡出做不出來，拉長一點再試"));
+        return;
+      }
       const list: AudioEffect[] = [
         { id: effectId("fade_in", sel.startMs, sel.startMs + len), kind: "fade_in", startMs: sel.startMs, endMs: sel.startMs + len },
         { id: effectId("fade_out", sel.endMs - len, sel.endMs), kind: "fade_out", startMs: sel.endMs - len, endMs: sel.endMs },

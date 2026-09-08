@@ -1393,8 +1393,20 @@ export const TOOLS: ToolSpec[] = [
       const ctx = effectContext(media.id);
       const range = rangeFor(spec, ctx);
       if (!range) throw new ToolError("這個效果要先選一段（set_selection）");
-      const sug = spec.suggest?.(ctx, range) ?? null;
-      const overrides = (a.values && typeof a.values === "object" ? (a.values as Record<string, ParamValue>) : {}) as Partial<Record<string, ParamValue>>;
+      // 同步的 suggest 沒有就跑非同步的 analyze（去嗡聲要真的量頻譜）—— 跟對話框走同一條路，不用預設值硬套
+      const sug = spec.suggest?.(ctx, range) ?? (spec.analyze ? await spec.analyze(ctx, range) : null);
+      const raw = (a.values && typeof a.values === "object" ? (a.values as Record<string, ParamValue>) : {}) as Partial<Record<string, ParamValue>>;
+      const overrides: Partial<Record<string, ParamValue>> = {};
+      for (const [k, v] of Object.entries(raw)) {
+        const p = spec.params.find((x) => x.id === k);
+        if (!p) throw new ToolError(`${spec.id} 沒有參數 ${k}（有：${spec.params.map((x) => x.id).join(", ") || "無"}）`);
+        if (p.kind === "select") {
+          // select 的值是字串（"50" / "60"）；數字進來就轉成字串，不在選項裡就報錯而不是默默用預設
+          const sv = String(v);
+          if (!p.options?.some((o) => o.value === sv)) throw new ToolError(`${k} 只能是 ${p.options?.map((o) => o.value).join(" / ")}`);
+          overrides[k] = sv;
+        } else overrides[k] = v;
+      }
       const values = resolveValues(spec, null, { ...(sug?.values ?? {}), ...overrides });
       const err = spec.validate?.(values, ctx);
       if (err) throw new ToolError(err);

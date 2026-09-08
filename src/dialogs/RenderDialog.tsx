@@ -24,6 +24,7 @@ import {
 } from "../analysis/exportPresets";
 import { hasBlocker, preflight, summarize } from "../analysis/preflight";
 import { qcFor } from "../pipeline/audioQc";
+import { alreadyRepaired, repairsForQc, type RepairPlan } from "../analysis/fx/repairs";
 import type { Overlay } from "../analysis/overlays";
 import type { Candidate, DecisionMap, Marker } from "../analysis/types";
 import { useTranscript } from "../store/transcript";
@@ -141,6 +142,21 @@ export default function RenderDialog({
   );
   const blocked = hasBlocker(findings);
   const counts = summarize(findings);
+  // 聲音體檢的一鍵修：削波 → 去削波效果、DC → 整檔 DC 修正（輸出時才套，可 undo）
+  const storedEffects = useDecisions((st) => st.effects[mediaId] ?? []);
+  const repairPlans = useMemo(() => (qc ? repairsForQc(qc.findings, media?.probe?.duration_ms ?? 0) : []), [qc, media]);
+  const repairFor = (id: string): RepairPlan | undefined => repairPlans.find((p) => (id === "qc-clipping" ? p.kind === "clipping" : id === "qc-dc" ? p.kind === "dc_offset" : false));
+  const applyRepair = (plan: RepairPlan) => {
+    const d = useDecisions.getState();
+    const before = d.past.length;
+    d.addEffects(mediaId, plan.effects, plan.label);
+    const after = useDecisions.getState().past.length;
+    toast.undo(t("已加修復：{label}（輸出時套用）", { label: plan.label }), () => {
+      const cur = useDecisions.getState();
+      if (cur.past.length === after && after > before) cur.undo();
+      else toast.info(t("後面還有別的修改，請用「復原」一步一步退回"));
+    });
+  };
 
   const stats = built?.edl.stats;
   const gainRange = useMemo(() => {
@@ -290,6 +306,15 @@ export default function RenderDialog({
                     >
                       {t("去聽 {at}", { at: formatMs(f.atMs, { millis: false }) })}
                     </button>
+                  )}
+                  {(f.id === "qc-clipping" || f.id === "qc-dc") && repairFor(f.id) && (
+                    alreadyRepaired(f.id === "qc-clipping" ? "clipping" : "dc_offset", repairFor(f.id), storedEffects) ? (
+                      <span className="ml-1.5 text-[10px] text-emerald-400">{t("已加修復")}</span>
+                    ) : (
+                      <button type="button" className="ml-1.5 text-[10px] text-accent hover:underline" onClick={() => applyRepair(repairFor(f.id)!)} data-testid={`repair-${f.id}`}>
+                        {t("一鍵修")}
+                      </button>
+                    )
                   )}
                   {f.detail && <span className="block text-fg/40">{t(f.detail)}</span>}
                 </span>

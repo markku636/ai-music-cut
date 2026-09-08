@@ -82,8 +82,11 @@ export const useDialogs = create<DialogsStore>((set, get) => ({
     set((s) => {
       const rest = s.stack.filter((e) => e.id !== id);
       const prev = s.stack.find((e) => e.id === id);
-      // 已經開著：換 props、移到最上層，但保留 key（不重掛，使用者填一半的東西不會消失）
-      const entry: DialogEntry = { id, props: (props ?? {}) as Record<string, unknown>, key: prev ? prev.key : seq++ };
+      // 已經開著：同樣的 props → 移到最上層、保留 key（不重掛，使用者填一半的東西不會消失）；
+      // props 不同（另一段選取、另一句要重錄）→ 換 key 重掛，不然對話框抱著開啟當下定下來的舊範圍
+      const nextProps = (props ?? {}) as Record<string, unknown>;
+      const same = prev != null && JSON.stringify(prev.props) === JSON.stringify(nextProps);
+      const entry: DialogEntry = { id, props: nextProps, key: prev && same ? prev.key : seq++ };
       return { stack: [...rest, entry] };
     });
   },

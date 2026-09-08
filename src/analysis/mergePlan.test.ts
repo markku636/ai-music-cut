@@ -1,7 +1,23 @@
 import { describe, expect, it } from "vitest";
-import { mergeOutPath, mergeTotalMs, moveItem, normalizeGains, type MergeItem } from "./mergePlan";
+import { effectiveJoinMs, mergeChannels, mergeOutPath, mergeTotalMs, moveItem, normalizeGains, type MergeItem } from "./mergePlan";
 
 const item = (id: string, durationMs: number, lufs: number | null = null): MergeItem => ({ id, path: `${id}.wav`, name: id, durationMs, lufs, gainDb: 0 });
+
+describe("effectiveJoinMs / mergeChannels", () => {
+  it("交越夾在最短檔的一半；留白不夾", () => {
+    const items = [item("a", 10_000), item("b", 1_000), item("c", 8_000)];
+    expect(effectiveJoinMs(items, "crossfade", 3000)).toBe(500);
+    expect(effectiveJoinMs(items, "crossfade", 120)).toBe(120);
+    expect(effectiveJoinMs(items, "gap", 3000)).toBe(3000);
+    expect(effectiveJoinMs([item("a", 10_000)], "crossfade", 3000)).toBe(3000);
+  });
+  it("聲道 auto：有立體聲就 2，否則 1", () => {
+    expect(mergeChannels([{ channels: 1 }, {}], "auto")).toBe(1);
+    expect(mergeChannels([{ channels: 1 }, { channels: 2 }], "auto")).toBe(2);
+    expect(mergeChannels([{ channels: 2 }], "1")).toBe(1);
+    expect(mergeChannels([{ channels: 1 }], "2")).toBe(2);
+  });
+});
 
 describe("mergeTotalMs", () => {
   it("gap 加 (N−1)·gap，crossfade 減 (N−1)·交越", () => {

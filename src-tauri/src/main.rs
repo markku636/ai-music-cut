@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    ai_music_cut_lib::run()
+    ai_podcast_cut_lib::run()
 }

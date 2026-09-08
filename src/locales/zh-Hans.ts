@@ -1130,7 +1130,7 @@ const zhHans: Catalog = {
   "貼到播放線": "贴到播放线",
   "把選取搬到播放線（剪下 + 貼上）": "把选取搬到播放线（剪下 + 贴上）",
   // R1 殼層：指令註冊表 / 命令面板 / 對話框 store
-  "AI Music Cut 專案": "AI Music Cut 项目",
+  "AI Podcast Cut 專案": "AI Podcast Cut 项目",
   "AI 與交付": "AI 与交付",
   "上一個候選": "上一个候选",
   "上一個換人處": "上一个换人处",

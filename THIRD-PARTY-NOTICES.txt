@@ -1,11 +1,11 @@
-AI Music Cut - Third-Party Notices
+AI Podcast Cut - Third-Party Notices
 ==================================
 
 This installer contains software from third parties. Their licenses are
-reproduced below. AI Music Cut itself is distributed under the MIT license.
+reproduced below. AI Podcast Cut itself is distributed under the MIT license.
 
 
-1. AI Music Cut
+1. AI Podcast Cut
 ---------------
 
 MIT License
@@ -40,8 +40,8 @@ Binaries: https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026
 Build:    https://github.com/BtbN/FFmpeg-Builds/releases/tag/autobuild-2026-09-04-14-01
 
 This build of FFmpeg is configured with LGPL-only components and is linked
-DYNAMICALLY (shared libraries). It is used by AI Music Cut as a separate
-process and via its own DLLs; AI Music Cut does not link FFmpeg into its own
+DYNAMICALLY (shared libraries). It is used by AI Podcast Cut as a separate
+process and via its own DLLs; AI Podcast Cut does not link FFmpeg into its own
 executable and is not a derivative work of FFmpeg.
 
 Written offer / how to get the source:
@@ -53,7 +53,7 @@ Written offer / how to get the source:
     https://github.com/BtbN/FFmpeg-Builds
 
 You may replace the bundled binaries with your own build of FFmpeg: put
-ffmpeg and ffprobe (same directory) anywhere you like and point AI Music Cut
+ffmpeg and ffprobe (same directory) anywhere you like and point AI Podcast Cut
 at them in Settings -> ffmpeg path, or simply overwrite the files in the
 application's resources/ffmpeg directory. The application also prefers any
 ffmpeg found on your PATH over the bundled copy.

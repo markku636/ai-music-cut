@@ -1,4 +1,6 @@
-# AI Music Cut
+# AI Podcast Cut
+
+> v0.108 起改名 **AI Podcast Cut**（原名 AI Music Cut）。GitHub repo 網址、部落格工具頁、設定與 API key 的存放位置都沒變；Windows 安裝資料夾與安裝檔檔名跟著新名字走。
 
 **繁體中文** · [English](README.en.md)
 

@@ -2,7 +2,7 @@ This directory holds the bundled FFmpeg (LGPL, dynamically linked) that ships
 with the Windows installer: ffmpeg.exe, ffprobe.exe and their av*/sw* DLLs.
 
 You may replace them with your own build of FFmpeg - keep ffmpeg and ffprobe
-in the same directory. AI Music Cut also prefers any ffmpeg found on your PATH
+in the same directory. AI Podcast Cut also prefers any ffmpeg found on your PATH
 over this copy, and Settings -> ffmpeg path overrides both.
 
 See THIRD-PARTY-NOTICES.txt for the license and where to get the source.

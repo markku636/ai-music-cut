@@ -18,8 +18,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "ai-music-cut"
-version = "0.107.0"
+name = "ai-podcast-cut"
+version = "0.108.0"
 dependencies = [
  "axum",
  "base64 0.22.1",

@@ -42,7 +42,7 @@ export default function PromptsDialog({ onClose }: { onClose: () => void }) {
   };
 
   const exportAll = async () => {
-    const payload = JSON.stringify({ app: "ai-music-cut", kind: "prompts", overrides }, null, 2);
+    const payload = JSON.stringify({ app: "ai-music-cut" /* 匯出檔的識別字串，改名後刻意不動（舊匯出檔要能再匯入） */, kind: "prompts", overrides }, null, 2);
     await copyToClipboard(payload, t("已複製提示詞設定（JSON）"));
   };
 

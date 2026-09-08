@@ -1,4 +1,6 @@
-export const APP_NAME = "AI Music Cut";
+// 產品名 v0.108 起改成 AI Podcast Cut（原名 AI Music Cut）。GitHub repo 網址、部落格工具頁 slug、
+// bundle identifier、keychain service 都刻意留舊值：改了會讓舊連結失效、使用者的設定 / API key 找不到。
+export const APP_NAME = "AI Podcast Cut";
 export const REPO_URL = "https://github.com/markku636/ai-music-cut";
 
 /**

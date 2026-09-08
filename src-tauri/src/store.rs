@@ -11,6 +11,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::error::{AppError, AppResult};
 
+// 改名 AI Podcast Cut 之後 service 名刻意不動：換了名字舊使用者的 API key 就找不到了。
 const KEYCHAIN_SERVICE: &str = "ai-music-cut";
 pub const SETTINGS_FILE: &str = "settings.json";
 pub const TTLS_KEY_ACCOUNT: &str = "ttls-api-key";

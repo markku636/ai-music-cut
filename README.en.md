@@ -1,4 +1,6 @@
-# AI Music Cut
+# AI Podcast Cut
+
+> Renamed to **AI Podcast Cut** in v0.108 (formerly AI Music Cut). The GitHub repo URL, the blog tool page, and where settings / API keys are stored are unchanged; the Windows install folder and installer file names follow the new name.
 
 [繁體中文](README.md) · **English**
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// aicut — AI Music Cut 的命令列版：不開視窗也能轉寫 / 找贅字 / AI 判讀 / 剪接輸出 / 去人聲。
+// aicut — AI Podcast Cut 的命令列版：不開視窗也能轉寫 / 找贅字 / AI 判讀 / 剪接輸出 / 去人聲。
 // 與 App 共用 src/analysis/*（規則、EDL、LLM 判讀、效果包絡）；I/O 改走 ffmpeg 子程序、fetch、claude CLI。
 //
 //   aicut transcribe <音檔> [--json out.json]
@@ -329,7 +329,7 @@ async function cmdAnalyze(args: Args): Promise<void> {
     const id = `cli-${Date.now().toString(36)}`;
     const doc = {
       schemaVersion: 1,
-      app: { name: "AI Music Cut CLI", version: VERSION },
+      app: { name: "AI Podcast Cut CLI", version: VERSION },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       media: [{ id, path: path.resolve(file), name: path.basename(file), fingerprint: "", probe: null, analysis: "ready" }],

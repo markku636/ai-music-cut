@@ -26,7 +26,7 @@ use crate::proc;
 /// 寫到設定目錄的 sidecar。輸出**刻意做成與 ttls `/v1/transcribe` 同一個形狀**，
 /// 這樣前端 `normalizeTranscript` 一行都不用改。
 const SIDECAR: &str = r#"# -*- coding: utf-8 -*-
-# 由 AI Music Cut 在執行期寫出；請勿手動編輯（每次啟動都會覆寫）。
+# 由 AI Podcast Cut 在執行期寫出；請勿手動編輯（每次啟動都會覆寫）。
 # 輸出格式與 ttls /v1/transcribe 相同，前端才不必分兩套解析。
 import json, sys
 

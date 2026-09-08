@@ -3,6 +3,7 @@
 // 純前端：直打 GitHub API（其回應帶 Access-Control-Allow-Origin: *，且 tauri.conf.json 的
 // security.csp = null，故 packaged webview 的跨網域 fetch 可通過）。任何失敗一律安靜略過，不擋啟動。
 
+// GitHub repo slug 沒跟著產品改名（AI Podcast Cut）：GitHub 對改名的 repo 會轉址，舊值永遠有效
 export const REPO = "markku636/ai-music-cut";
 const CACHE_KEY = "aicut:update";
 const TTL_MS = 24 * 60 * 60 * 1000; // 每天最多打一次 API（避開 GitHub 匿名 60 次/小時限制）

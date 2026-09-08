@@ -32,7 +32,7 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             http: reqwest::Client::builder()
-                .user_agent(concat!("ai-music-cut/", env!("CARGO_PKG_VERSION")))
+                .user_agent(concat!("ai-podcast-cut/", env!("CARGO_PKG_VERSION")))
                 .build()
                 .expect("http client"),
             ffmpeg: Arc::new(Mutex::new(None)),

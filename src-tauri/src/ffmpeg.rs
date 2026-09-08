@@ -276,9 +276,9 @@ mod tests {
     #[test]
     fn bundled_candidate_matches_tauri_resource_layout() {
         // bundle.resources 保留來源目錄結構 → <resource_dir>/resources/ffmpeg
-        let got = bundled_candidate(Path::new("C:/Program Files/AI Music Cut"));
+        let got = bundled_candidate(Path::new("C:/Program Files/AI Podcast Cut"));
         assert!(got.ends_with(Path::new("resources").join("ffmpeg")), "{got:?}");
-        assert!(got.starts_with("C:/Program Files/AI Music Cut"));
+        assert!(got.starts_with("C:/Program Files/AI Podcast Cut"));
     }
 
     #[tokio::test]

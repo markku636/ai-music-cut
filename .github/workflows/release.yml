@@ -73,7 +73,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "AI Music Cut ${{ github.ref_name }}"
+          releaseName: "AI Podcast Cut ${{ github.ref_name }}"
           releaseBody: "Windows installer bundles FFmpeg (LGPL); macOS/Linux still need ffmpeg on PATH. See README for ttls API key and Claude Code CLI setup."
           releaseDraft: false
           prerelease: false

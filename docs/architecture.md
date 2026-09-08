@@ -1,7 +1,7 @@
 # 架構
 
 ```
-┌─ ai-music-cut (Tauri 2 desktop) ─────────────────────────────────────────────┐
+┌─ ai-podcast-cut (Tauri 2 desktop) ─────────────────────────────────────────────┐
 │ React 18 + zustand（無 router）                                                │
 │   shell/   Toolbar · Sidebar(媒體+工作) · MainArea · StatusBar                  │
 │   timeline/ wavesurfer 7.12.11 + Regions/Timeline/Hover（peaks 由 Rust 預算）    │

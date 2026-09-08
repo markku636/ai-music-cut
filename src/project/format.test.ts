@@ -10,7 +10,7 @@ const snap = {
 
 describe("project format", () => {
   it("round-trips", () => {
-    const f = buildProjectFile(snap, { name: "AI Music Cut", version: "0.1.0" }, null, new Date("2026-09-04T00:00:00Z"));
+    const f = buildProjectFile(snap, { name: "AI Podcast Cut", version: "0.1.0" }, null, new Date("2026-09-04T00:00:00Z"));
     const back = parseProjectFile(JSON.parse(JSON.stringify(f)));
     expect(back.media[0].path).toBe("D:\\pod\\ep1.mp3");
     expect(back.settings.aggressiveness).toBe(60);

@@ -1282,7 +1282,7 @@ const en: Catalog = {
   "貼到播放線": "Paste at the playhead",
   "把選取搬到播放線（剪下 + 貼上）": "Move the selection to the playhead (cut + paste)",
   // R1 殼層：指令註冊表 / 命令面板 / 對話框 store
-  "AI Music Cut 專案": "AI Music Cut project",
+  "AI Podcast Cut 專案": "AI Podcast Cut project",
   "AI 與交付": "AI & delivery",
   "上一個候選": "Previous candidate",
   "上一個換人處": "Previous speaker change",

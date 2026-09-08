@@ -1,13 +1,13 @@
 [package]
-name = "ai-music-cut"
-version = "0.107.0"
-description = "AI Music Cut — Smart podcast editing desktop tool"
+name = "ai-podcast-cut"
+version = "0.108.0"
+description = "AI Podcast Cut — Smart podcast editing desktop tool"
 license = "MIT"
 edition = "2021"
 rust-version = "1.80"
 
 [lib]
-name = "ai_music_cut_lib"
+name = "ai_podcast_cut_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

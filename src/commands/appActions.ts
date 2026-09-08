@@ -65,7 +65,7 @@ export async function saveProject(opts?: { as?: boolean }): Promise<void> {
     let target = opts?.as ? null : st.path;
     if (!target) {
       const name = defaultProjectFileName(selectActiveMedia(st)?.name ?? null);
-      target = await pickSaveFile(name, [{ name: t("AI Music Cut 專案"), extensions: ["json"] }]);
+      target = await pickSaveFile(name, [{ name: t("AI Podcast Cut 專案"), extensions: ["json"] }]);
       if (!target) return;
     }
     await st.saveTo(target, enrichAnalysis);

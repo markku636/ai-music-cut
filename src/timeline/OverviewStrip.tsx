@@ -161,10 +161,10 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
     >
       <canvas ref={canvasRef} className="block h-full w-full" />
       {/* 標籤壓在波形上會讀不出來，給一點底 */}
-      <span className="pointer-events-none absolute left-0.5 top-0.5 rounded-sm bg-bg/70 px-1 text-[9px] leading-[11px] text-fg/40">
+      <span className="pointer-events-none absolute left-0.5 top-0.5 rounded-sm bg-app/70 px-1 text-[9px] leading-[11px] text-fg/40">
         {t("總覽")}
       </span>
-      <span className="pointer-events-none absolute right-0.5 top-0.5 rounded-sm bg-bg/70 px-1 text-[9px] leading-[11px] tabular-nums text-fg/40">
+      <span className="pointer-events-none absolute right-0.5 top-0.5 rounded-sm bg-app/70 px-1 text-[9px] leading-[11px] tabular-nums text-fg/40">
         {Math.round((vp.endMs - vp.startMs) / 1000)}s / {Math.round(durationMs / 1000)}s
       </span>
     </div>

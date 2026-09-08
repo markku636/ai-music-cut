@@ -88,7 +88,7 @@ export default function TranscriptSearch({
   };
 
   return (
-    <div className="shrink-0 border-b border-line/60 bg-bg2/40 px-3 py-2">
+    <div className="shrink-0 border-b border-fg/10 bg-panel px-3 py-2">
       <div className="flex items-center gap-2">
         <Search size={14} className="text-fg/40 shrink-0" />
         <input

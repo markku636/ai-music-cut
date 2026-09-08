@@ -84,7 +84,7 @@ export default function ModelMenu({ onOpenSettings }: { onOpenSettings: () => vo
       </button>
 
       {open && (
-        <div className="absolute bottom-7 left-0 z-40 w-72 rounded-md border border-fg/10 bg-bg shadow-lg p-1.5 text-[12px]">
+        <div className="absolute bottom-7 left-0 z-40 w-72 rounded-md border border-fg/10 bg-elevated shadow-lg p-1.5 text-[12px]">
           <div className="px-1.5 pb-1 text-[10px] uppercase tracking-wide text-fg/35">{t("結構化產出的後端")}</div>
           <div className="flex gap-1 px-0.5">
             {(["claude", "codex"] as const).map((b) => {

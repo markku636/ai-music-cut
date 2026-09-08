@@ -61,7 +61,7 @@ export default function SnapMenu({ hasGrid }: { hasGrid: boolean }) {
         ▾
       </button>
       {open && (
-        <div className="absolute top-8 right-0 z-30 w-60 rounded-md border border-fg/10 bg-bg shadow-lg p-1.5 text-[12px]">
+        <div className="absolute top-8 right-0 z-30 w-60 rounded-md border border-fg/10 bg-elevated shadow-lg p-1.5 text-[12px]">
           <div className="px-1.5 pb-1 text-[10px] uppercase tracking-wide text-fg/35">{t("吸附到")}</div>
           {KINDS.map((k) => {
             const unavailable = k.key === "beats" && !hasGrid;

@@ -152,7 +152,7 @@ export default function TrimHandles({ ws, height, seams, onOpenMenu }: { ws: Wav
               <>
                 <div className="absolute top-0 bottom-0 w-px bg-accent" style={{ left: (drag.deltaMs / 1000) * px }} />
                 <div
-                  className="absolute -top-5 whitespace-nowrap rounded-sm bg-accent px-1 text-[10px] mono text-bg tabular-nums"
+                  className="absolute -top-5 whitespace-nowrap rounded-sm bg-accent px-1 text-[10px] mono text-on-accent tabular-nums"
                   style={{ left: (drag.deltaMs / 1000) * px - 18 }}
                 >
                   {drag.deltaMs >= 0 ? "+" : ""}

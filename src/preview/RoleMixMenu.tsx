@@ -61,7 +61,7 @@ export default function RoleMixMenu() {
         onClick={() => setOpen((v) => !v)}
       />
       {open && (
-        <div className="absolute bottom-8 right-0 z-30 w-56 rounded-md border border-fg/10 bg-bg p-1.5 text-[12px] shadow-lg">
+        <div className="absolute bottom-8 right-0 z-30 w-56 rounded-md border border-fg/10 bg-elevated p-1.5 text-[12px] shadow-lg">
           <div className="px-1.5 pb-1 text-[10px] uppercase tracking-wide text-fg/35">{t("角色監聽")}</div>
           {rows.map((r) => {
             const on = isAudible(r, mix);

@@ -351,6 +351,22 @@ fn emit(app: &AppHandle, job_id: &str, kind: &str, step: Option<&str>, line: Opt
     );
 }
 
+/// 轉寫失敗時要給使用者看什麼。
+///
+/// 兩件事以前做錯了：
+/// 1. 丟掉腳本自己講的原因（`faster-whisper 未安裝：No module named ...`），只印結束碼 ——
+///    使用者看到「以結束碼 Some(2) 退出」只能去猜。
+/// 2. **無論什麼原因都附上 `pip install faster-whisper`**。腳本的 2 才是「套件沒裝」，
+///    3 是「模型載入失敗」（顯存不夠、模型檔壞掉、網路抓不到）—— 對後者建議去 pip install，
+///    是把人帶去修一個根本沒壞的東西。
+pub fn transcribe_error_message(code: Option<i32>, detail: Option<&str>) -> String {
+    let hint = if code == Some(2) { format!("　→ {}", install_command()) } else { String::new() };
+    match detail {
+        Some(m) => format!("本機辨識失敗：{m}{hint}"),
+        None => format!("本機辨識以結束碼 {code:?} 退出{hint}"),
+    }
+}
+
 /// 跑一個子行程，把 stdout / stderr 逐行送到前端；回傳結束碼。
 async fn run_streaming(app: &AppHandle, job_id: &str, step: &str, py: &str, args: &[String]) -> AppResult<Option<i32>> {
     emit(app, job_id, "step", Some(step), None, None, None);
@@ -440,14 +456,23 @@ pub async fn transcribe(app: AppHandle, job_id: String, audio_path: String, mode
         .kill_on_drop(true);
     let mut child = cmd.spawn().map_err(|e| AppError::Agent(format!("啟動 python 失敗：{e}")))?;
 
+    // 腳本自己會說清楚哪裡錯了（"faster-whisper 未安裝：No module named ..."）。
+    // 收下來，失敗時用它當錯誤訊息 —— 只丟一個結束碼給使用者，等於要他去猜。
+    let last_error: std::sync::Arc<parking_lot::Mutex<Option<String>>> = Default::default();
     if let Some(stdout) = child.stdout.take() {
         let app2 = app.clone();
         let jid = job_id.clone();
+        let errbox = last_error.clone();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = lines.next_line().await {
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
                 let ev = v.get("event").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                if ev == "error" {
+                    if let Some(m) = v.get("message").and_then(|x| x.as_str()) {
+                        *errbox.lock() = Some(m.to_string());
+                    }
+                }
                 let _ = app2.emit(
                     "local-asr",
                     AsrEvent {
@@ -464,7 +489,8 @@ pub async fn transcribe(app: AppHandle, job_id: String, audio_path: String, mode
     let status = child.wait().await.map_err(|e| AppError::Agent(format!("本機辨識失敗：{e}")))?;
     if !status.success() {
         let _ = tokio::fs::remove_file(&out).await;
-        return Err(AppError::Agent(format!("本機辨識以結束碼 {:?} 退出（{}）", status.code(), install_command())));
+        let detail = last_error.lock().clone();
+        return Err(AppError::Agent(transcribe_error_message(status.code(), detail.as_deref())));
     }
     let text = tokio::fs::read_to_string(&out).await.map_err(|e| AppError::Io(format!("讀不到本機辨識結果：{e}")))?;
     let _ = tokio::fs::remove_file(&out).await;
@@ -540,6 +566,31 @@ mod tests {
     fn bigger_model_needs_more_vram() {
         let v: Vec<u32> = MODELS.iter().map(|m| m.vram_int8_mb).collect();
         assert!(v.windows(2).all(|w| w[0] < w[1]), "顯存要隨模型變大而遞增：{v:?}");
+    }
+
+    #[test]
+    fn transcribe_error_prefers_what_the_script_said() {
+        // 腳本講了原因就用它，不要只丟結束碼
+        let m = transcribe_error_message(Some(2), Some("faster-whisper 未安裝：No module named 'faster_whisper'"));
+        assert!(m.contains("faster-whisper 未安裝"), "{m}");
+        assert!(m.contains("pip install faster-whisper"), "套件沒裝時要給安裝指令：{m}");
+    }
+
+    #[test]
+    fn pip_hint_only_when_the_package_is_actually_missing() {
+        // 3 = 模型載入失敗（顯存不夠 / 模型檔壞掉）。這時叫人去 pip install 是把他帶去修沒壞的東西。
+        let m = transcribe_error_message(Some(3), Some("模型載入失敗：CUDA out of memory"));
+        assert!(m.contains("CUDA out of memory"), "{m}");
+        assert!(!m.contains("pip install"), "模型載入失敗不該建議重裝套件：{m}");
+    }
+
+    #[test]
+    fn falls_back_to_the_exit_code_when_the_script_said_nothing() {
+        let m = transcribe_error_message(Some(9), None);
+        assert!(m.contains("9"), "{m}");
+        assert!(!m.contains("pip install"), "{m}");
+        // 被訊號砍掉時 code() 是 None，也不能 panic
+        assert!(!transcribe_error_message(None, None).is_empty());
     }
 
     #[test]

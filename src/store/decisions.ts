@@ -132,6 +132,9 @@ interface DecisionsStore {
   addSpeaker: (mediaId: string, label: string) => string;
   updateOverlay: (mediaId: string, id: string, patch: Partial<Omit<Overlay, "id">>, label?: string) => void;
   removeOverlay: (mediaId: string, id: string) => void;
+  /** 重錄這句：mute 原句 + 疊上 take，**一個 commit**（一筆 undo 同時收回兩者）。 */
+  applyRedub: (mediaId: string, plan: { effect: AudioEffect; overlay: Overlay }, label: string) => void;
+  removeRedub: (mediaId: string, effectId: string, overlayId: string) => void;
   addEffect: (mediaId: string, e: AudioEffect) => void;
   /** 一次加好幾個效果（淡入 + 淡出）＝一筆 undo。不可以拿 addEffect 跑迴圈：那會塞 N 筆。 */
   addEffects: (mediaId: string, list: AudioEffect[], label: string) => void;
@@ -502,6 +505,22 @@ export const useDecisions = create<DecisionsStore>((set, get) => {
       commit(mediaId, "移除配樂", { overlays: list.filter((x) => x.id !== id) });
     },
 
+    applyRedub: (mediaId, plan, label) => {
+      const effects = (get().effects[mediaId] ?? []).filter((x) => x.id !== plan.effect.id);
+      const overlays = (get().overlays[mediaId] ?? []).filter((x) => x.id !== plan.overlay.id);
+      commit(mediaId, label, {
+        decisions: get().decisions[mediaId] ?? {},
+        effects: [...effects, plan.effect].sort((a, b) => a.startMs - b.startMs),
+        overlays: [...overlays, plan.overlay].sort((a, b) => a.outStartMs - b.outStartMs),
+      });
+    },
+    removeRedub: (mediaId, effectId, overlayId) => {
+      commit(mediaId, "還原重錄", {
+        decisions: get().decisions[mediaId] ?? {},
+        effects: (get().effects[mediaId] ?? []).filter((x) => x.id !== effectId),
+        overlays: (get().overlays[mediaId] ?? []).filter((x) => x.id !== overlayId),
+      });
+    },
     addEffect: (mediaId, e) => {
       const list = (get().effects[mediaId] ?? []).filter((x) => x.id !== e.id);
       commit(mediaId, `效果：${effectLabel(e)}`, { decisions: get().decisions[mediaId] ?? {}, effects: [...list, e].sort((a, b) => a.startMs - b.startMs) });

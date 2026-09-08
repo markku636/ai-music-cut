@@ -15,6 +15,7 @@ mod mix;
 mod media;
 mod proc;
 mod project;
+mod record;
 mod render;
 mod spectrum;
 mod store;
@@ -114,6 +115,10 @@ pub fn run() {
             commands::merge_files,
             commands::align_render,
             commands::align_preview,
+            commands::record_start,
+            commands::record_write,
+            commands::record_stop,
+            commands::record_cancel,
             commands::project_save,
             commands::write_text_file,
             commands::project_load,

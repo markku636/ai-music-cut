@@ -24,6 +24,8 @@ pub struct AppState {
     pub mcp: Arc<crate::mcp::McpBridge>,
     /// 安裝檔內建的 ffmpeg 目錄（setup 時從 resource_dir 算出；dev / 未內建時為 None）。
     pub bundled_ffmpeg: Arc<RwLock<Option<std::path::PathBuf>>>,
+    /// 進行中的錄音（key = job_id）：WebView 逐包送 PCM，這裡寫 wav。
+    pub record_jobs: Arc<crate::record::RecordRegistry>,
 }
 
 impl AppState {
@@ -39,6 +41,7 @@ impl AppState {
             agent_jobs: Arc::new(Mutex::new(HashMap::new())),
             mcp: Arc::new(crate::mcp::McpBridge::new()),
             bundled_ffmpeg: Arc::new(RwLock::new(None)),
+            record_jobs: Arc::new(crate::record::RecordRegistry::default()),
         }
     }
 
@@ -539,6 +542,39 @@ pub async fn align_preview(app: AppHandle, state: State<'_, AppState>, guide: St
         crate::align::preview_pair(&bins, &guide, &other, start_ms, dur_ms, split, &out).await?;
     }
     Ok(out.to_string_lossy().into_owned())
+}
+
+// ---------------- 錄音 ----------------
+
+#[tauri::command]
+pub fn record_start(state: State<'_, AppState>, job_id: String, out_path: String, sample_rate: u32, channels: u32) -> AppResult<()> {
+    crate::record::start(&state.record_jobs, &job_id, &out_path, sample_rate, channels)
+}
+
+/// 一包 f32le PCM（raw body），job id 在 `x-job` header。回累計 frame 數。
+#[tauri::command]
+pub fn record_write(state: State<'_, AppState>, request: tauri::ipc::Request<'_>) -> AppResult<u64> {
+    let job = request
+        .headers()
+        .get("x-job")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| AppError::Invalid("缺 x-job header".into()))?
+        .to_string();
+    let body = match request.body() {
+        tauri::ipc::InvokeBody::Raw(b) => b.as_slice(),
+        _ => return Err(AppError::Invalid("record_write 要 raw body".into())),
+    };
+    crate::record::write(&state.record_jobs, &job, body)
+}
+
+#[tauri::command]
+pub fn record_stop(state: State<'_, AppState>, job_id: String) -> AppResult<crate::record::RecordDone> {
+    crate::record::stop(&state.record_jobs, &job_id)
+}
+
+#[tauri::command]
+pub fn record_cancel(state: State<'_, AppState>, job_id: String) {
+    crate::record::cancel(&state.record_jobs, &job_id)
 }
 
 #[tauri::command]

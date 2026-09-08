@@ -49,6 +49,7 @@ const REG: Record<DialogId, { comp: AnyComp; needs: Needs }> = {
   convert: { comp: dlg(() => import("../dialogs/ConvertDialog")), needs: "none" },
   merge: { comp: dlg(() => import("../dialogs/MergeDialog")), needs: "none" },
   align: { comp: dlg(() => import("../dialogs/AlignDialog")), needs: "media" },
+  record: { comp: dlg(() => import("../dialogs/RecordDialog")), needs: "none" },
 };
 
 export default function DialogHost() {

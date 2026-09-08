@@ -65,6 +65,7 @@ const KIND_LABEL: Record<JobKind, string> = {
   convert: "轉檔",
   merge: "合併",
   align: "對齊",
+  record: "錄音",
 };
 
 export default function Sidebar({ width }: { width: number }) {

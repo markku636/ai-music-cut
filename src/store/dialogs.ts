@@ -41,12 +41,14 @@ export type DialogId =
   | "introOutro"
   | "convert"
   | "merge"
-  | "align";
+  | "align"
+  | "record";
 
 /** 有參數的對話框；沒列在這裡的就是沒有參數。 */
 export interface DialogPropMap {
   settings: { focus?: SettingsFocus };
   convert: { paths?: string[] };
+  record: { mode: "new" | "retake"; range?: { startMs: number; endMs: number } | null };
   render: { range?: { startMs: number; endMs: number } | null; reel?: ReelRange[] | null; reelBed?: string | null };
   verify: { outPath: string | null; outDurationMs: number | null };
   style: { startMs: number; endMs: number };

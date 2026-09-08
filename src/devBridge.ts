@@ -29,6 +29,7 @@ import * as fillerStats from "./analysis/fillerStats";
 import * as prompts from "./analysis/prompts";
 import { useSettings } from "./store/settings";
 import { useCleanup } from "./store/cleanup";
+import { chunkedSource, setDevStubSource, startCapture } from "./recording/capture";
 import { useHighlights } from "./store/highlights";
 import { useShowNotes } from "./store/showNotes";
 import { useTranscript } from "./store/transcript";
@@ -76,6 +77,7 @@ export interface DevBridge {
   skimStatus: typeof skimStatus;
   skimTo: typeof skimTo;
   cleanup: typeof useCleanup;
+  recording: { startCapture: typeof startCapture; chunkedSource: typeof chunkedSource; setDevStubSource: typeof setDevStubSource };
   highlights: typeof useHighlights;
   showNotes: typeof useShowNotes;
   lang: typeof useLang;
@@ -165,6 +167,7 @@ export function installDevBridge() {
     // 另一個模組實例（熱更新之後 App 用的是帶 ?t= 的網址），寫進去的值 App 根本讀不到 ——
     // 量出來像是功能壞了，其實是在對一個平行世界說話。
     cleanup: useCleanup,
+    recording: { startCapture, chunkedSource, setDevStubSource },
     highlights: useHighlights,
     showNotes: useShowNotes,
     lang: useLang,

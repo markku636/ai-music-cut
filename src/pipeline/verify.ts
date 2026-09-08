@@ -118,7 +118,8 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
     const server = (await api.ttlsTranscribeResult(ttlsJobId)) as ServerTranscript;
     step(t("逐字比對"));
     const outTr = normalizeTranscript(server);
-    const report = verifyEdit(expectedWords(tr, edl), actualWords(outTr), edl, {
+    const muted = (useDecisions.getState().effects[mediaId] ?? []).filter((e) => e.kind === "mute");
+    const report = verifyEdit(expectedWords(tr, edl, muted), actualWords(outTr), edl, {
       outDurationMs: actualOutMs,
       // 成品時間軸的期望值要含接點帳（crossfade 扣重疊、gap 加 room tone）。
       // 用 keptMs 的話每刀差約 20 ms，2–3 刀就會誤報「時長不符」。

@@ -182,6 +182,10 @@ AI Podcast / 音訊智慧剪輯桌面工具（Tauri 2 + React 18），也有 CLI
    > 渲染在 Rust（`align.rs`）：**單趟、一個 `atempo`、`asendcmd` 驅動** —— `asetnsamples=240` 讓指令落在 5 ms 格線上，指令檔每段一行 `t atempo tempo r;`，避開 asplit fan-out（晚開始的分支會在 FIFO 裡累積整個後半段）與幾百段串接的 32 k 命令列。指令檔放 temp、用安全的檔名並切工作目錄，因為 Windows 路徑的 `:` 與 `\` 在濾鏡語法裡兩個都是分隔字元、跳脫層級一錯就整條鏈解析失敗（第一版真的錯了）。三段速率 0.9 / 1.1 / 1.0 的往返測試：輸出長度 == Σ(len / tempo) ± 20 ms。
    > **不在這一版**：音高（SmartPitch / formant / transpose —— 沒有音高追蹤、LGPL 沒 rubberband）、Sync Points 與 Protected Areas 的畫面操作（引擎已支援保護區、MCP 可傳）、疊錄用的 8 帶分頻特徵（先用能量包絡，長音裡的路徑可能較鬆，對話框會說）。
 
+44. **麥克風錄音 + 「重錄這句」**（GoldWave 的 Record，加上 VocALign 式的 punch-in）：開始畫面多了「錄音」卡，簡易面板第 7 顆是**重錄這句**。在波形上選一段講壞的 → 按下去 → 先播一次原句給你聽 → 3-2-1 → 錄 → 講完不出聲 1.5 秒自動停 → 修掉頭尾靜音 → 用「對齊」引擎（ADR 模式，Guide 只看原句）把新錄的扭回原位 → **mute 原句 + 把 take 疊上去**，一筆 undo 同時收回兩者。新錄的比原句長 30% 以上不會硬拉伸，會問你「直接放上去（會蓋到下一句）」還是「重錄」；短的原速放。take 存成 `<檔名>_take<N>.wav`，對齊後多一個 `_aligned.wav`，原檔永遠不動；驗收不會把被 mute 的原句當漏字。
+   > 擷取走 WebView2 的 `getUserMedia` + AudioWorklet（`public/pcm-worklet.js`），4096 frame 一包透過 Tauri raw-body IPC 給 Rust 用 hound 寫 24-bit wav（`record.rs`：每包長度必須是 4 × 聲道數的倍數，否則是錯誤；寫 `.part`、停止才 rename、取消刪掉）。關掉瀏覽器的回音消除 / 降噪 / AGC（那是視訊會議用的），要降噪有我們自己的。不用 MediaRecorder（webm/opus 有損、時戳飄）也不用 dshow（裝置名在地化、延遲、無法監聽）。寫入跟不上會提示，但**不丟包**。
+   > 擷取層可以換來源（`source: AsyncIterable<Float32Array>`）：探針用原檔切出來的一句當假麥克風跑完整條 punch-in 流程（mute 5.0–8.0 s、overlay 落在成品 5.0 s、增益差 +0.3 dB、一次 Ctrl+Z 全收回），麥克風權限那個 OS 提示不會擋住自動化。
+
 ![screenshot](docs/screenshot.png)
 
 *上圖：分析完成後的樣子 —— 左邊媒體清單、中間波形（紫色是候選、下方是逐字稿，被剪掉的字畫上刪除線）、右邊決策面板逐筆列出理由與類型，底下狀態列顯示 ffmpeg / ttls / claude 的即時狀態與目前模型。*

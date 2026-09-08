@@ -25,6 +25,11 @@ export default function StartScreen({ variant }: { variant: UiMode }) {
 
   const pick = async (card?: (typeof START_CARDS)[number]) => {
     if (card) setProfile(card.profile);
+    // 錄音不需要先開檔：直接開錄音對話框
+    if (card?.id === "record" && card.after) {
+      void runCommand(card.after, "startcard");
+      return;
+    }
     const before = useProject.getState().activeMediaId;
     await openMedia();
     const after = useProject.getState().activeMediaId;

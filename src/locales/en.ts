@@ -1761,6 +1761,10 @@ const en: Catalog = {
   "本機辨識中…": "Transcribing locally…",
   "本機辨識": "Local transcription",
   "在你電腦上辨識{est}，不上傳、不需要金鑰；波形已可先聽、先手動剪。": "Transcribed on your own machine{est} — nothing uploaded, no key needed. The waveform already plays and can be cut by hand.",
+  // about dialog — donate
+  "這個工具免費且開源。如果它幫你省下時間，可以請我喝杯咖啡。": "This tool is free and open source. If it saved you time, buy me a coffee.",
+  "其他金額": "Other amount",
+  "以 PayPal 贊助 US${usd}": "Donate US${usd} via PayPal",
 };
 
 

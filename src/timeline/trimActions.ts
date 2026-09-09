@@ -128,7 +128,20 @@ export function trimSeam(afterKeepId: number, deltaMs: number, mode: TrimMode, s
   // 硬做的話下面找剪除區那一行會因為 srcAfterMs < srcBeforeMs 而恆真，
   // 於是改到一個完全不相干的候選 —— 使用者拖了一下接縫，別的地方安靜地變了。
   if (seam.rearranged) return false;
-  const bounds = { minMs: 0, maxMs: c.durationMs };
+  // 邊界不是「整個檔案」，是**左右兩段剪除區之間**。
+  //
+  // 捲動修剪唯一的存在理由是「成品總長不變」，但捲進隔壁那一段的話 buildEdl 會把
+  // 兩段合併，合併後的總剪除量就不等於原本兩段相加。實測：兩段各 500 ms、中間留
+  // 500 ms，往左捲 800 ms 之後成品從 18952 變成 19276 —— 使用者只是捲一刀，
+  // 整集長了 324 ms。漣漪也一樣（往外吃到隔壁就會合併）。
+  //
+  // 邊界改成相鄰剪除區的內緣，兩種模式都自然被夾住。
+  const sortedRemovals = edl.removals.slice().sort((a, b) => a.startMs - b.startMs);
+  const here = sortedRemovals.findIndex((r) => r.startMs <= seam.srcBeforeMs + 1 && r.endMs >= seam.srcAfterMs - 1);
+  const bounds = {
+    minMs: here > 0 ? sortedRemovals[here - 1].endMs : 0,
+    maxMs: here >= 0 && here + 1 < sortedRemovals.length ? sortedRemovals[here + 1].startMs : c.durationMs,
+  };
   const d = useDecisions.getState();
 
   // 切點的接縫：那裡還沒有剪除區
@@ -144,7 +157,7 @@ export function trimSeam(afterKeepId: number, deltaMs: number, mode: TrimMode, s
   }
 
   // 一般接縫：改造成它的那段剪除區（可能是好幾個候選合併出來的）
-  const removal = edl.removals.find((r) => r.startMs <= seam.srcBeforeMs + 1 && r.endMs >= seam.srcAfterMs - 1);
+  const removal = here >= 0 ? sortedRemovals[here] : undefined;
   const ids = new Set(removal?.candidateIds ?? []);
   const cands: TrimCandidate[] = (d.candidates[c.mediaId] ?? []).filter((x) => ids.has(x.id)).map((x) => ({ id: x.id, startMs: x.startMs, endMs: x.endMs }));
   const next = planTrim(cands, deltaMs, mode, side, bounds);

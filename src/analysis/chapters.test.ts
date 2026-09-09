@@ -14,7 +14,7 @@ const edl: Edl = {
     { id: 1, srcStartMs: 5000, srcEndMs: 10000, outStartMs: 2000, outEndMs: 7000, gainDb: 0 },
   ],
   joins: [],
-  stats: { removedMs: 3000, keptMs: 7000, outMs: 7000, cutCount: 1, byKind: {} },
+  stats: { removedMs: 3000, srcMs: 60_000, keptMs: 7000, outMs: 7000, cutCount: 1, byKind: {} },
   downgrades: [],
   removals: [{ startMs: 2000, endMs: 5000, candidateIds: ["c"], speech: true, userRange: false }],
   rearranged: false

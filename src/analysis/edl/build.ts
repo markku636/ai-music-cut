@@ -113,7 +113,15 @@ export interface Join {
 
 export interface EdlStats {
   removedMs: number;
-  /** 保留段的來源總長（不含接點重疊與 room tone）—— 不是成品長度。 */
+  /**
+   * 來源錄音有多長。
+   *
+   * 下游要算「剪掉了幾成」，以前是自己拼 `keptMs + removedMs` —— 那在剪下貼上之後
+   * 會膨脹（同一段來源被算兩次），比率就跟著失真。來源長度是 EDL 的輸入，
+   * 直接帶出來就不會有人再拼錯一次。
+   */
+  srcMs: number;
+  /** 保留段的來源總長（不含接點重疊與 room tone）；貼上會讓同一段來源算兩次，所以它可能大於 srcMs。 */
   keptMs: number;
   /** 成品長度：keptMs 扣掉 crossfade 重疊、加上 gap 的 room tone。 */
   outMs: number;
@@ -408,7 +416,7 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
   const cutCount = joins.filter((j) => !j.splitId).length;
   // 一次算好，下游不必各自去猜（而且猜的方式各不相同就是 bug 的來源）
   const rearranged = pastes.length > 0 || keeps.some((k, i) => i > 0 && k.srcStartMs < keeps[i - 1].srcStartMs);
-  return { keeps, joins, stats: { removedMs, keptMs, outMs, cutCount, byKind }, downgrades, removals, rearranged };
+  return { keeps, joins, stats: { removedMs, srcMs: Math.max(0, input.durationMs), keptMs, outMs, cutCount, byKind }, downgrades, removals, rearranged };
 }
 
 function hasKeptWordBetween(words: Word[], cutWordIds: Set<number>, fromMs: number, toMs: number): boolean {

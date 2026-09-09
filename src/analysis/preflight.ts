@@ -190,6 +190,8 @@ export function preflight(ctx: PreflightContext): PreflightFinding[] {
     }
   }
 
+  // 剪下貼上會讓成品比來源**還長**，這時候 ratio 是負的、這條就不會觸發 —— 那是對的。
+  // 不要「修」成 Math.abs：那會把「多了 7%」講成「剪掉了 7%」，剛好講反。
   const ratio = ctx.srcMs > 0 ? 1 - ctx.outMs / ctx.srcMs : 0;
   if (ratio > CUT_RATIO_NOTE + RATIO_EPS) {
     out.push({

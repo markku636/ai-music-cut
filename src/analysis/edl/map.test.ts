@@ -14,7 +14,7 @@ const EDL: Edl = {
     { afterKeepId: 0, kind: "crossfade", ms: 20, removedCandidateIds: ["c1"] },
     { afterKeepId: 1, kind: "gap", ms: 150, removedCandidateIds: ["c2", "c3"] },
   ],
-  stats: { removedMs: 700, keptMs: 4300, outMs: 4430, cutCount: 2, byKind: {} },
+  stats: { removedMs: 700, srcMs: 60_000, keptMs: 4300, outMs: 4430, cutCount: 2, byKind: {} },
   downgrades: [],
   removals: [], rearranged: false,
 };

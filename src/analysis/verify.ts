@@ -75,27 +75,41 @@ export const SEAM_WINDOW_MS = 600;
 /** 字級信心低於此值 → 標成 ASR 不確定，不算硬錯。 */
 export const LOW_PROB = 0.45;
 
-/** EDL 的保留段 → 預期留下來的字（含成品時間軸位置與接縫標記）。 */
+/**
+ * EDL 的保留段 → 預期留下來的字（含成品時間軸位置與接縫標記）。
+ *
+ * **走保留段、不走字。** 舊寫法是每個字用 `keeps.find` 找「第一個包住它的保留段」，
+ * 剪下貼上之後同一段來源會出現兩次，`find` 只會回成品裡最早的那一份 ——
+ * 於是貼上的那一份完全不在預期清單裡，成品逐字稿卻真的有，對齊之後每一個字
+ * 都會被報成**「該剪沒剪」**。使用者看到的是一份自己貼上去的內容被指控成漏剪。
+ *
+ * 從保留段走就自然對了：同一段來源出現兩次就被走兩次，`wordId` 也會重複
+ * （那是對的 —— 同一個來源的字，在成品裡真的有兩份）。
+ */
 export function expectedWords(tr: Transcript, edl: Edl, muted: readonly { startMs: number; endMs: number }[] = []): ExpectedWord[] {
   const out: ExpectedWord[] = [];
   const keeps = edl.keeps;
-  for (const w of tr.words) {
-    const mid = (w.startMs + w.endMs) / 2;
-    const k = keeps.find((x) => mid >= x.srcStartMs && mid <= x.srcEndMs);
-    if (!k) continue;
-    if (!w.norm) continue;
-    // 被靜音（重錄這句會 mute 原句）的字成品裡本來就聽不到，不算漏字
-    if (muted.some((m) => mid >= m.startMs && mid < m.endMs)) continue;
-    out.push({
-      wordId: w.id,
-      text: w.text,
-      norm: w.norm,
-      srcStartMs: w.startMs,
-      srcEndMs: w.endMs,
-      outStartMs: k.outStartMs + (w.startMs - k.srcStartMs),
-      // 這個字是這段裡最後一個字 → 後面就是接縫（最後一段除外）
-      seamAfter: w.endMs > k.srcEndMs - 120 && k !== keeps[keeps.length - 1],
-    });
+  const last = keeps[keeps.length - 1];
+  for (const k of keeps) {
+    for (const w of tr.words) {
+      if (!w.norm) continue;
+      const mid = (w.startMs + w.endMs) / 2;
+      // 半開區間，跟 `wordSurvives` / 字幕同一套判斷 ——
+      // 兩邊都閉的話，刀片切點兩側的保留段會把邊界上的字算兩次。
+      if (mid < k.srcStartMs || mid >= k.srcEndMs) continue;
+      // 被靜音（重錄這句會 mute 原句）的字成品裡本來就聽不到，不算漏字
+      if (muted.some((m) => mid >= m.startMs && mid < m.endMs)) continue;
+      out.push({
+        wordId: w.id,
+        text: w.text,
+        norm: w.norm,
+        srcStartMs: w.startMs,
+        srcEndMs: w.endMs,
+        outStartMs: k.outStartMs + (w.startMs - k.srcStartMs),
+        // 這個字是這段裡最後一個字 → 後面就是接縫（最後一段除外）
+        seamAfter: w.endMs > k.srcEndMs - 120 && k !== last,
+      });
+    }
   }
   return out.sort((a, b) => a.outStartMs - b.outStartMs);
 }

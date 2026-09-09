@@ -22,7 +22,7 @@ const EDL: Edl = {
     { id: 1, srcStartMs: 2000, srcEndMs: 3000, outStartMs: 1000, outEndMs: 2000, gainDb: 0 },
   ],
   joins: [],
-  stats: { removedMs: 1000, keptMs: 2000, outMs: 2000, cutCount: 1, byKind: {} },
+  stats: { removedMs: 1000, srcMs: 60_000, keptMs: 2000, outMs: 2000, cutCount: 1, byKind: {} },
   downgrades: [],
   removals: [], rearranged: false,
 };
@@ -95,5 +95,66 @@ describe("verify", () => {
     const b = [...Array.from({ length: 300 }, () => "z"), ...a];
     const ops = bandedAlign(a, b, 8);
     expect(ops.filter((o) => o.op === "ins").length).toBeGreaterThanOrEqual(300);
+  });
+});
+
+describe("expectedWords：亂序的 EDL（剪下貼上 / 搬移）", () => {
+  const SRC2 = tr([
+    ["甲", 0, 400],
+    ["乙", 500, 900],
+    ["丙", 2000, 2400],
+    ["丁", 2500, 2900],
+  ]);
+
+  it("貼上：同一段來源在成品出現兩次，預期字也要出現兩次", () => {
+    // 成品＝甲乙（來源 0–1000）、丙丁（2000–3000）、丙丁再一次（貼上）
+    const edl: Edl = {
+      keeps: [
+        { id: 0, srcStartMs: 0, srcEndMs: 1000, outStartMs: 0, outEndMs: 1000, gainDb: 0 },
+        { id: 1, srcStartMs: 2000, srcEndMs: 3000, outStartMs: 1000, outEndMs: 2000, gainDb: 0 },
+        { id: 2, srcStartMs: 2000, srcEndMs: 3000, outStartMs: 2000, outEndMs: 3000, gainDb: 0 },
+      ],
+      joins: [], stats: { removedMs: 1000, srcMs: 60_000, keptMs: 3000, outMs: 3000, cutCount: 1, byKind: {} },
+      downgrades: [], removals: [], rearranged: true,
+    };
+    const exp = expectedWords(SRC2, edl);
+    expect(exp.map((w) => w.text)).toEqual(["甲", "乙", "丙", "丁", "丙", "丁"]);
+    // 成品時間必須遞增，而且第二份在後面
+    expect(exp.map((w) => w.outStartMs)).toEqual([0, 500, 1000, 1500, 2000, 2500]);
+  });
+
+  it("貼上的內容不會被驗收報成「該剪沒剪」", () => {
+    const edl: Edl = {
+      keeps: [
+        { id: 0, srcStartMs: 0, srcEndMs: 1000, outStartMs: 0, outEndMs: 1000, gainDb: 0 },
+        { id: 1, srcStartMs: 0, srcEndMs: 1000, outStartMs: 1000, outEndMs: 2000, gainDb: 0 },
+      ],
+      joins: [], stats: { removedMs: 0, srcMs: 60_000, keptMs: 2000, outMs: 2000, cutCount: 0, byKind: {} },
+      downgrades: [], removals: [], rearranged: true,
+    };
+    // 成品逐字稿：甲乙甲乙（真的講了兩次，因為使用者貼了兩份）
+    const out = tr([["甲", 0, 400], ["乙", 500, 900], ["甲", 1000, 1400], ["乙", 1500, 1900]]);
+    const rep = verifyEdit(expectedWords(SRC2, edl), actualWords(out), edl);
+    // 「該剪沒剪」在報告裡的種類是 extra（成品聽到、預期裡沒有）
+    const extra = rep.findings.filter((f) => f.kind === "extra");
+    expect(extra).toEqual([]);
+    expect(rep.matchRate).toBe(1);
+    // 舊寫法只認得一份（expectedChars 2），成品卻有 4 個字 —— 多出來的兩個
+    // 就是被指控成「該剪沒剪」的那兩個
+    expect(rep.expectedChars).toBe(4);
+    expect(rep.actualChars).toBe(4);
+  });
+
+  it("搬移：預期字照成品順序排", () => {
+    // 成品＝丙丁（來源 2000–3000）在前、甲乙（0–1000）在後
+    const edl: Edl = {
+      keeps: [
+        { id: 0, srcStartMs: 2000, srcEndMs: 3000, outStartMs: 0, outEndMs: 1000, gainDb: 0 },
+        { id: 1, srcStartMs: 0, srcEndMs: 1000, outStartMs: 1000, outEndMs: 2000, gainDb: 0 },
+      ],
+      joins: [], stats: { removedMs: 1000, srcMs: 60_000, keptMs: 2000, outMs: 2000, cutCount: 1, byKind: {} },
+      downgrades: [], removals: [], rearranged: true,
+    };
+    expect(expectedWords(SRC2, edl).map((w) => w.text)).toEqual(["丙", "丁", "甲", "乙"]);
   });
 });

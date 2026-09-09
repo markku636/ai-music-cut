@@ -129,7 +129,7 @@ export default function RenderDialog({
         conflicts: candidates.reduce((n, c) => n + (decisions[c.id]?.conflict ? 1 : 0), 0),
         openTodos: markers.reduce((n, mk) => n + (mk.kind === "todo" && !mk.done ? 1 : 0), 0),
         chapters: markers.reduce((n, mk) => n + (mk.kind === "chapter" ? 1 : 0), 0),
-        srcMs: built ? built.edl.stats.keptMs + built.edl.stats.removedMs : 0,
+        srcMs: built?.edl.stats.srcMs ?? 0,
         outMs: built?.expectedOutMs ?? 0,
         overlays: overlays.length,
         musicWithoutDuck: overlays.filter((o) => o.lane === "music" && !(o.points?.length ?? 0)).length,

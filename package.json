@@ -1,7 +1,7 @@
 {
   "name": "ai-podcast-cut",
   "private": true,
-  "version": "0.127.0",
+  "version": "0.128.0",
   "type": "module",
   "license": "MIT",
   "description": "Smart podcast editing desktop tool — filler/stutter removal, loudness leveling, AI review suggestions",
@@ -11,6 +11,9 @@
     "lint": "eslint src",
     "preview": "vite preview",
     "test": "vitest run",
+    "measure:breath": "node scripts/measure/breath.mjs",
+    "measure:snap": "node scripts/measure/snap.mjs",
+    "measure:render": "node scripts/measure/render-length.mjs",
     "check": "tsc --noEmit && eslint src && vitest run && node scripts/check-theme-tokens.mjs && node scripts/check-i18n.mjs && node scripts/check-secrets.mjs",
     "tauri": "tauri",
     "make:app-icon": "node scripts/make-app-icon.mjs",

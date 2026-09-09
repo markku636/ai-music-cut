@@ -10,6 +10,7 @@
 | `breath.mjs` | 剪完之後留白該多長？ | 「段落」原本靠句號判斷，而中文每句都有句號 —— 被判成段落的地方實際只停 140 ms，App 卻在那裡塞 575 ms（v0.127） |
 | `snap.mjs` | 吸附吸得準不準？ | 瞄著既有接縫拖，36/100 被更近的字界搶走；但掃描成本每次只有 0.06 ms，**不是**效能問題（v0.124） |
 | `render-length.mjs` | 計畫的長度就是拿到的長度嗎？ | v0.97 只驗了 TS 端的計畫就發版，實際渲染少了 16 秒而且不報錯 |
+| `rules.mjs` | 贅字規則在這份錄音上長什麼樣？ | 激進度 0/50/100 分別自動剪 2/3/15 個（17 個候選）——滑桿有真實幅度；但語境保留的那幾條（句首「然後」、問句後的「對」）在那份 90 秒樣本裡一條都沒觸發，所以**不能**拿它去調常數 |
 
 ## 怎麼跑
 
@@ -26,6 +27,7 @@ npm run tauri dev
 npm run measure:breath
 npm run measure:snap
 npm run measure:render
+npm run measure:rules
 ```
 
 Windows PowerShell 設環境變數是 `$env:AICUT_DEV_OPEN = "..."`，不是 `VAR=x cmd`。
@@ -34,6 +36,8 @@ Windows PowerShell 設環境變數是 `$env:AICUT_DEV_OPEN = "..."`，不是 `VA
 
 - `breath` / `snap` 會在數字明顯不對時標 `⚠` 並指出該回頭看哪個檔案。
 - `render-length` 對不上會以非 0 結束碼退出 —— 那是會**安靜**交出壞檔的那種錯。
+- `rules` 會把「沒過門檻」跟「語境刻意保留」分開講。前者是滑桿的事，後者才是規則的智慧 ——
+  混在一起看會以為規則很聰明，其實只是門檻高。
 
 ## 兩個會讓你白量的坑
 

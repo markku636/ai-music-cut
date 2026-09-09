@@ -67,3 +67,50 @@ export function quietShare(line: Float32Array, targetLufs: number, marginLu = 3)
   }
   return voiced ? quiet / voiced : 0;
 }
+
+/**
+ * 逐段平衡會對每個像素加多少 dB。
+ *
+ * 「93% 偏小聲」講完之後，使用者的下一個問題一定是「那我該怎麼辦」。
+ * 逐段平衡就是答案，但它預設開著、而且要輸出之後才聽得到 ——
+ * 所以把它的結果**直接畫在同一張圖上**：一條是現在的樣子，一條是輸出之後的樣子。
+ *
+ * 用的是 `planGains` 算出來的那一份，跟輸出時 Rust 真的套的是同一組數字，
+ * 不是另外估一次（估一次就是第二份公式，兩邊會慢慢漂開）。
+ *
+ * @param units  響度單元（來源時間）
+ * @param gainDb 對應每個單元的增益，長度要跟 `units` 一樣
+ * @returns 長度 = width；那一像素不在任何單元裡（剪掉了 / 靜音）時是 `NaN`
+ */
+export function gainLine(
+  units: readonly { startMs: number; endMs: number }[],
+  gainDb: readonly number[],
+  durationMs: number,
+  width: number,
+): Float32Array {
+  const w = Math.max(1, Math.floor(width));
+  const out = new Float32Array(w).fill(NaN);
+  if (!units.length || durationMs <= 0) return out;
+  for (let x = 0; x < w; x++) {
+    // 取像素中心對應的時刻：用左緣的話，單元邊界剛好落在像素上時會歸錯邊
+    const t = ((x + 0.5) / w) * durationMs;
+    for (let i = 0; i < units.length; i++) {
+      if (t >= units[i].startMs && t < units[i].endMs) {
+        out[x] = gainDb[i] ?? 0;
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+/** 兩條線相加（來源響度 + 平衡增益）。任一邊是 NaN 就是 NaN。 */
+export function addLines(a: Float32Array, b: Float32Array): Float32Array {
+  const out = new Float32Array(a.length).fill(NaN);
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (Number.isFinite(x) && Number.isFinite(y)) out[i] = x + y;
+  }
+  return out;
+}

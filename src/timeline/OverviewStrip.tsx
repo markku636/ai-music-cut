@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cutSpansOf, overviewBars, scrollTargetMs, spansToRects, viewportOf, xFromMs } from "../analysis/overview";
-import { loudnessFraction, loudnessLine, quietShare } from "../analysis/loudnessLine";
+import { addLines, gainLine, loudnessFraction, loudnessLine, quietShare } from "../analysis/loudnessLine";
+import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
+import { splitUnits } from "../analysis/loudness/units";
 import { useT } from "../i18n";
 import { edlFor } from "../pipeline/rules";
 import { useDecisions } from "../store/decisions";
@@ -46,6 +48,7 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
   const currentMs = usePlayback((s) => s.currentMs);
   const showLoudness = useTimeline((s) => s.showLoudness);
   const targetLufs = useProject((s) => s.targetLufs);
+  const leveling = useProject((s) => s.leveling);
   const local = useTranscript((s) => (mediaId ? s.local[mediaId] : undefined));
   const markers = useDecisions((s) => (mediaId ? s.markers[mediaId] : undefined));
   // 訂閱決策：剪掉哪裡要跟著更新。EDL 每次重算不便宜，所以只在這兩者變動時重算。
@@ -75,6 +78,20 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
   // 整集的響度形狀。資料本來就在 analysis.bin（每 100 ms 一個視窗），這裡只是壓到帶寬。
   const loud = useMemo(() => (showLoudness && local && w > 0 ? loudnessLine(local.win, local.nWin, w) : null), [showLoudness, local, w]);
   const quiet = useMemo(() => (loud ? quietShare(loud, targetLufs) : 0), [loud, targetLufs]);
+  // 「93% 偏小聲」講完，下一個問題一定是「那我該怎麼辦」。逐段平衡就是答案，
+  // 但它要輸出之後才聽得到 —— 所以把它的結果畫在同一張圖上。
+  // 用的是輸出時真的會套的那一組增益（planGains），不是另外估一次。
+  const after = useMemo(() => {
+    if (!loud || !leveling || !local || !mediaId || w <= 0) return null;
+    const edl = edlFor(mediaId);
+    if (!edl?.keeps.length) return null;
+    const tr = useTranscript.getState().byMedia[mediaId];
+    const units = splitUnits(edl.keeps, tr?.vad ?? []);
+    if (!units.length) return null;
+    const gains = planGains(measureUnits(units, local), { ...DEFAULT_GAIN_OPTIONS, targetLufs });
+    return addLines(loud, gainLine(units, gains.map((g) => g.gainDb), durationMs, w));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loud, leveling, local, mediaId, w, durationMs, targetLufs, decisions, candidates, splits, pastes]);
 
   const cuts = useMemo(() => {
     if (!mediaId || w <= 0 || !durationMs) return [];
@@ -130,7 +147,15 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
       g.lineTo(w, ty);
       g.stroke();
       g.setLineDash([]);
-      // 響度線。低於目標 3 LU 以上的那幾格換色 —— 那正是「這一段偏小聲」。
+      // 平衡後的樣子（先畫，才不會蓋住現況那條）
+      if (after) {
+        g.fillStyle = cssRgb("--c-accent", 0.5);
+        for (let x = 0; x < after.length; x++) {
+          const v = after[x];
+          if (Number.isFinite(v)) g.fillRect(x, Math.max(0, yOf(v) - 0.5), 1, 1);
+        }
+      }
+      // 現況。低於目標 3 LU 以上的那幾格換色 —— 那正是「這一段偏小聲」。
       for (let x = 0; x < loud.length; x++) {
         const v = loud[x];
         if (!Number.isFinite(v)) continue;
@@ -155,7 +180,7 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
     g.strokeRect(vp.x + 0.5, 0.5, Math.max(2, vp.w - 1), HEIGHT - 1);
     g.fillStyle = cssRgb("--c-fg", 0.1);
     g.fillRect(vp.x, 0, vp.w, HEIGHT);
-  }, [bars, cuts, markers, currentMs, vp, w, durationMs, loud, targetLufs]);
+  }, [bars, cuts, markers, currentMs, vp, w, durationMs, loud, after, targetLufs]);
 
   // 整段適配時這條跟上面的波形是同一張圖，留著只是佔高度
   if (!mediaId || !durationMs || vp.full) return null;
@@ -192,7 +217,11 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
         {t("總覽")}
       </span>
       <span className="pointer-events-none absolute right-0.5 top-0.5 rounded-sm bg-app/70 px-1 text-[9px] leading-[11px] tabular-nums text-fg/40">
-        {loud && quiet > 0.05 ? t("{p}% 偏小聲", { p: Math.round(quiet * 100) }) : `${Math.round((vp.endMs - vp.startMs) / 1000)}s / ${Math.round(durationMs / 1000)}s`}
+        {loud && quiet > 0.05
+          ? after
+            ? t("{p}% 偏小聲 → 平衡後 {q}%", { p: Math.round(quiet * 100), q: Math.round(quietShare(after, targetLufs) * 100) })
+            : t("{p}% 偏小聲", { p: Math.round(quiet * 100) })
+          : `${Math.round((vp.endMs - vp.startMs) / 1000)}s / ${Math.round(durationMs / 1000)}s`}
       </span>
     </div>
   );

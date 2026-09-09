@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loudnessFraction, loudnessLine, quietShare, SILENT_LUFS } from "./loudnessLine";
+import { addLines, gainLine, loudnessFraction, loudnessLine, quietShare, SILENT_LUFS } from "./loudnessLine";
 
 /** 造 n 個視窗，第 i 個的 shortTerm 由 f(i) 決定。 */
 function win(n: number, f: (i: number) => number): Float32Array {
@@ -82,5 +82,47 @@ describe("quietShare", () => {
 
   it("整段沒有聲音時回 0，不要除以 0", () => {
     expect(quietShare(Float32Array.from([NaN, NaN]), -16)).toBe(0);
+  });
+});
+
+describe("gainLine", () => {
+  const units = [
+    { startMs: 0, endMs: 1000 },
+    { startMs: 1000, endMs: 2000 },
+  ];
+
+  it("每個像素拿到它所屬單元的增益", () => {
+    const g = gainLine(units, [3, -2], 2000, 4);
+    expect([...g]).toEqual([3, 3, -2, -2]);
+  });
+
+  it("取像素中心而不是左緣 —— 邊界落在像素上時不會歸錯邊", () => {
+    // 兩個單元、寬度 2：像素中心是 500 與 1500，各自落在正確的單元裡
+    expect([...gainLine(units, [5, -5], 2000, 2)]).toEqual([5, -5]);
+  });
+
+  it("沒有單元覆蓋的像素是 NaN（剪掉了 / 靜音）", () => {
+    const g = gainLine([{ startMs: 0, endMs: 500 }], [4], 2000, 4);
+    expect(g[0]).toBe(4);
+    expect(Number.isNaN(g[1])).toBe(true);
+    expect(Number.isNaN(g[3])).toBe(true);
+  });
+
+  it("空的 / 長度 0 不會爆", () => {
+    expect([...gainLine([], [], 1000, 3)].every(Number.isNaN)).toBe(true);
+    expect([...gainLine(units, [1, 2], 0, 3)].every(Number.isNaN)).toBe(true);
+  });
+
+  it("增益少給的話當成 0，不要變成 undefined", () => {
+    expect([...gainLine(units, [3], 2000, 2)]).toEqual([3, 0]);
+  });
+});
+
+describe("addLines", () => {
+  it("相加；任一邊 NaN 就是 NaN", () => {
+    const r = addLines(Float32Array.from([-22, -20, NaN]), Float32Array.from([6, NaN, 3]));
+    expect(r[0]).toBe(-16);
+    expect(Number.isNaN(r[1])).toBe(true);
+    expect(Number.isNaN(r[2])).toBe(true);
   });
 });

@@ -1016,6 +1016,8 @@ const en: Catalog = {
   "總覽": "Overview",
   "成品": "output",
   "成品順序": "Arrangement",
+  "已略過 {n} 個建議": "{n} suggestions skipped",
+  "重新顯示": "show again",
   "{p}% 偏小聲 → 平衡後 {q}%": "{p}% below target → {q}% after leveling",
   "顯示響度（即時表 + 整集形狀）": "Show loudness (live meter + whole episode)",
   "{p}% 偏小聲": "{p}% below target",

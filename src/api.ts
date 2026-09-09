@@ -31,6 +31,8 @@ export interface AppSettings {
   project_templates: string[];
   /** 使用者親手做過的贅字裁決，一集一筆 JSON（形狀由 analysis/fillerLearn.ts 定義）。 */
   filler_observations: string[];
+  /** 按過「不要」的詞表建議（norm）。不存的話下次打開又會跳出同一條。 */
+  filler_dismissed: string[];
 }
 
 export interface FfmpegStatus {

@@ -67,7 +67,14 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
   // 建議：從**你親手做過的判斷**長出來的詞表提案（fillerLearn.ts）
   const observationsRaw = useSettings((s) => s.s.filler_observations);
   const media = useProject((s) => s.media.find((m) => m.id === mediaId) ?? null);
-  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  // 「不要」要**存下來**。放在元件 state 的話，關掉對話框再打開同一條又跳出來 ——
+  // 那會把使用者訓練成不看內容就按掉，連真的該看的也一起按掉。
+  const dismissedList = useSettings((s) => s.s.filler_dismissed ?? []);
+  const dismissed = useMemo(() => new Set(dismissedList), [dismissedList]);
+  const dismiss = async (norm: string) => {
+    if (dismissed.has(norm)) return;
+    await save({ filler_dismissed: [...dismissedList, norm] });
+  };
 
   const observations = useMemo(() => parseObservations(observationsRaw), [observationsRaw]);
   const suggestions = useMemo(
@@ -86,13 +93,13 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
     if (!pendingObs) return;
     const next = putObservation(observations, pendingObs);
     await save({ filler_observations: serializeObservations(next) });
-    setDismissed(new Set());
     toast.success(t("記住了這一集的 {n} 個判斷", { n: pendingCount }));
   };
 
   const applySuggestion = async (norm: string, mode: FillerMode) => {
     await setRule(norm, mode);
-    setDismissed(new Set([...dismissed, norm]));
+    // 套用之後這條建議就沒有意義了（`suggestRules` 本來就會跳過已經有規則的詞），
+    // 但把它記進「不要」會讓使用者之後想改回來時再也收不到建議 —— 所以不記。
   };
 
 
@@ -221,7 +228,7 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
                   <Button size="sm" variant="primary" icon={Check} onClick={() => void applySuggestion(x.norm, x.mode)}>
                     {x.mode === "always" ? t("設成一律剪") : t("設成永不剪")}
                   </Button>
-                  <Button size="sm" variant="ghost" icon={X} onClick={() => setDismissed(new Set([...dismissed, x.norm]))}>
+                  <Button size="sm" variant="ghost" icon={X} onClick={() => void dismiss(x.norm)}>
                     {t("略過")}
                   </Button>
                 </span>
@@ -230,6 +237,19 @@ export default function FillersDialog({ mediaId, onClose }: { mediaId: string | 
             {suggestions.length > 6 && (
               <div className="text-[11px] text-fg/40">{t("還有 {n} 個建議", { n: suggestions.length - 6 })}</div>
             )}
+          </div>
+        )}
+
+        {/*
+          「略過」是存下來的，所以按錯就再也看不到那一條 —— 要有一條回頭路。
+          只在真的略過過東西時才出現，不然是多一行沒有用的字。
+        */}
+        {tab === "lexicon" && dismissedList.length > 0 && (
+          <div className="flex items-center gap-2 text-[11px] text-fg/40">
+            {t("已略過 {n} 個建議", { n: dismissedList.length })}
+            <button type="button" className="underline hover:text-fg/70" onClick={() => void save({ filler_dismissed: [] })}>
+              {t("重新顯示")}
+            </button>
           </div>
         )}
 

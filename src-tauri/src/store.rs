@@ -92,6 +92,12 @@ pub struct AppSettings {
     /// 前端會**蓋掉同一集的舊紀錄並限制筆數**，所以這裡不會無限長。
     #[serde(default)]
     pub filler_observations: Vec<String>,
+    /// 使用者按過「不要」的詞表建議（norm）。
+    ///
+    /// 不存的話「不要」只在對話框關掉之前算數，下次打開同一條又跳出來 ——
+    /// 那會把使用者訓練成不看內容就按掉，連真的該看的也一起按掉。
+    #[serde(default)]
+    pub filler_dismissed: Vec<String>,
 }
 
 impl Default for AppSettings {
@@ -116,6 +122,7 @@ impl Default for AppSettings {
             export_presets: Vec::new(),
             project_templates: Vec::new(),
             filler_observations: Vec::new(),
+            filler_dismissed: Vec::new(),
         }
     }
 }

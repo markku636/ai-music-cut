@@ -13,6 +13,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   export_presets: [],
   project_templates: [],
   filler_observations: [],
+  filler_dismissed: [],
   claude_review_model: "haiku",
   judge_roles: "editor+reviewer",
   default_aggressiveness: 50,

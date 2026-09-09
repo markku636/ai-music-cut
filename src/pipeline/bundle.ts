@@ -5,7 +5,7 @@
 // 其他都是純文字，音檔沒成功就沒必要產一包只有文字的東西。
 import { buildCues, renderCaptions, type CaptionFormat } from "../analysis/captions";
 import { buildChapters } from "../analysis/chapters";
-import { planBundle, bundleStem, renderChapterList, renderManifest, type BundleItem } from "../analysis/bundle";
+import { planBundle, bundleStem, reconcileBundleItems, renderChapterList, renderManifest, type BundleItem } from "../analysis/bundle";
 import { hasBlocker, preflight } from "../analysis/preflight";
 import { qcFor } from "./audioQc";
 import { checkCompliance, explainMiss } from "../analysis/loudness/compliance";
@@ -163,6 +163,11 @@ export async function buildBundle(mediaId: string, opts: BundleOptions, onStep?:
     qc: bundleQc?.summary,
     qcAt: bundleQc?.at,
   });
+  // 對帳：每一項都必須落在「寫出來了」或「產生失敗」其中一邊。
+  // 掉在中間的話清單會把它列成正常項目，但那個檔案根本不存在 ——
+  // 而清單正是使用者拿去對「這包裡有什麼」的東西。
+  failed.push(...reconcileBundleItems(items, written, failed, t("沒有產生（缺少必要資料）")));
+
   // 產不出來的也算「沒帶到」，清單要看得出來
   const finalItems = items.map((i) => {
     const f = failed.find((x) => x.fileName === i.fileName);

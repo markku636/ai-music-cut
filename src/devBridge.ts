@@ -5,6 +5,7 @@
 // 這是 AICUT_DEV_* 煙霧鉤子的延伸：那些只能「開檔 / 跑分析」，這裡可以量到毫秒。
 import { edlFor } from "./pipeline/rules";
 import { buildRenderPlan, runRender } from "./pipeline/render";
+import { buildBundle } from "./pipeline/bundle";
 import { getPlayer, isRangePlaying, lastRangeStop, playRange, seekTo, stopRange, togglePlay } from "./preview/playerRef";
 import { currentGain } from "./preview/previewGain";
 import { tickCount, tickRunning } from "./preview/ticker";
@@ -68,6 +69,7 @@ export interface DevBridge {
   ticker: () => { count: number; running: boolean; gain: number };
   lastRangeStop: typeof lastRangeStop;
   edlFor: typeof edlFor;
+  buildBundle: typeof buildBundle;
   buildRenderPlan: typeof buildRenderPlan;
   runRender: typeof runRender;
   /** R10 剪輯工具組：刀片 / 修剪 / 提起 / 接縫清單（CDP 量測用）。 */
@@ -157,6 +159,8 @@ export function installDevBridge() {
     edlFor,
     buildRenderPlan,
     runRender,
+    // 交付那一包也要能從這裡跑：它讀的是 store，動態 import 會拿到另一組 store 實例
+    buildBundle,
     bladeAt,
     trimSeam,
     liftSelection,

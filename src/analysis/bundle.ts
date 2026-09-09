@@ -174,3 +174,31 @@ export function renderChapterList(chapters: { outMs: number; title: string }[]):
   if (chapters.length && chapters[0].outMs > 0) lines.unshift("0:00 開頭");
   return lines.join("\n") + "\n";
 }
+
+/**
+ * 對帳：每一個「沒有被跳過」的項目，最後都必須落在**寫出來了**或**產生失敗**其中一邊。
+ *
+ * 掉在中間的話沒有任何地方會講 —— 它不在 `written`、不在 `failed`、也不在
+ * `items.filter(i => i.skipped)`，於是清單會把它列成一個**正常項目**，
+ * 但那個檔案根本不存在。而清單正是使用者拿去對「這包裡有什麼」的東西。
+ *
+ * 實際會這樣的路徑：字幕與逐字稿包在 `if (tr && edl)` 裡，但 `planBundle` 只知道
+ * `hasTranscript` —— 有逐字稿卻算不出 EDL 時，那兩項既沒被跳過也沒被嘗試。
+ *
+ * 回傳「要補記成失敗」的那些。空陣列代表對得起來。
+ *
+ * **清單自己不算**：它必須最後才寫（要先知道前面成功了什麼），對帳的時候它當然
+ * 還沒寫出來。不排除的話它會同時出現在「失敗」與「寫出來了」兩邊 ——
+ * 這個對帳本身就會變成它要防的那種錯。
+ */
+export function reconcileBundleItems(
+  items: readonly BundleItem[],
+  written: readonly BundleItem[],
+  failed: readonly { fileName: string }[],
+  reason: string,
+): { fileName: string; error: string }[] {
+  const seen = new Set([...written.map((w) => w.fileName), ...failed.map((f) => f.fileName)]);
+  return items
+    .filter((i) => i.kind !== "manifest" && !i.skipped && !seen.has(i.fileName))
+    .map((i) => ({ fileName: i.fileName, error: reason }));
+}

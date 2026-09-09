@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bundleStem, includedItems, planBundle, renderChapterList, renderManifest } from "./bundle";
+import { bundleStem, includedItems, planBundle, reconcileBundleItems, renderChapterList, renderManifest, type BundleItem, type BundleItemKind } from "./bundle";
 import type { PreflightFinding } from "./preflight";
 import { checkCompliance, explainMiss } from "./loudness/compliance";
 
@@ -183,5 +183,43 @@ describe("renderManifest：響度驗收", () => {
 
   it("沒量到響度時整段不出現（不要留一個空標題）", () => {
     expect(renderManifest({ ...base, measuredLufs: null, compliance: null, miss: null })).not.toContain("## 響度驗收");
+  });
+});
+
+describe("reconcileBundleItems", () => {
+  const item = (kind: BundleItemKind, fileName: string, skipped?: string): BundleItem => ({ kind, fileName, skipped });
+
+  it("每一項都有著落時回空陣列", () => {
+    const items = [item("audio", "a.mp3"), item("captions", "a.srt")];
+    expect(reconcileBundleItems(items, [items[0]], [{ fileName: "a.srt" }], "沒有產生")).toEqual([]);
+  });
+
+  it("被跳過的不算漏（清單上本來就會寫原因）", () => {
+    const items = [item("audio", "a.mp3"), item("notes", "a.md", "還沒產生節目筆記")];
+    expect(reconcileBundleItems(items, [items[0]], [], "沒有產生")).toEqual([]);
+  });
+
+  it("既沒跳過也沒被嘗試的要補記成失敗 —— 不然清單會列一個不存在的檔案", () => {
+    const items = [item("audio", "a.mp3"), item("captions", "a.srt"), item("transcript", "a.md")];
+    expect(reconcileBundleItems(items, [items[0]], [], "沒有產生（缺少必要資料）")).toEqual([
+      { fileName: "a.srt", error: "沒有產生（缺少必要資料）" },
+      { fileName: "a.md", error: "沒有產生（缺少必要資料）" },
+    ]);
+  });
+
+  it("已經記成失敗的不會被記第二次", () => {
+    const items = [item("audio", "a.mp3")];
+    expect(reconcileBundleItems(items, [], [{ fileName: "a.mp3" }], "沒有產生")).toEqual([]);
+  });
+});
+
+describe("reconcileBundleItems：清單自己", () => {
+  it("清單最後才寫，對帳時還沒寫出來 —— 不能把它記成失敗", () => {
+    const items: BundleItem[] = [
+      { kind: "audio", fileName: "a.mp3" },
+      { kind: "manifest", fileName: "a-README.md" },
+    ];
+    // 對帳發生在清單寫出來之前，所以 written 裡只有音檔
+    expect(reconcileBundleItems(items, [items[0]], [], "沒有產生")).toEqual([]);
   });
 });

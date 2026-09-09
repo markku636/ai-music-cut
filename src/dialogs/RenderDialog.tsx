@@ -253,7 +253,14 @@ export default function RenderDialog({
         {stats && media && (
           <div className="rounded-md border border-fg/10 p-3 text-xs text-fg/70 space-y-1">
             <div>
-              {t("來源")} {formatMs(media.probe?.duration_ms ?? 0, { millis: false })} → {t("剪後")} <b className="text-fg/90">{formatMs(stats.keptMs + built!.edl.joins.filter((j) => j.kind === "gap").reduce((s, j) => s + j.ms, 0), { millis: false })}</b>
+              {/*
+                成品長度用 `built.expectedOutMs` —— 那是**輸出真的會產出**的長度
+                （`outputDurationWithOverlays`：接點扣重疊、gap 加 room tone、
+                片尾音樂拉長的部分也算進去）。這裡本來是手算的 `keptMs + gap`，
+                那是第二份公式：漏掉 crossfade 的重疊、漏掉配樂、而且貼上時
+                `keptMs` 會把同一段來源算兩次。畫面上先講的必須跟拿到的一樣。
+              */}
+              {t("來源")} {formatMs(media.probe?.duration_ms ?? 0, { millis: false })} → {t("剪後")} <b className="text-fg/90">{formatMs(built!.expectedOutMs, { millis: false })}</b>
               {" · "}
               {t("剪掉 {s} 秒、{n} 刀", { s: (stats.removedMs / 1000).toFixed(1), n: stats.cutCount })}
             </div>

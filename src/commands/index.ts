@@ -1,6 +1,6 @@
 import { errMessage } from "../api";
 import { t } from "../i18n";
-import { setLocalAsrNotReadyHandler } from "../pipeline/analyze";
+import { setLocalAsrNotReadyHandler } from "../pipeline/localAsrReady";
 import { openSettings } from "./appActions";
 import { toast } from "../ui";
 import { installCommandReactivity } from "./guards";

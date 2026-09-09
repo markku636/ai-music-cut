@@ -1,6 +1,7 @@
 // 分析流程狀態機：probe → [本機波形/響度（waveform.ts，開檔時多半已好）∥ prepare → 本機轉寫] → normalize → 存 store / 專案。
 // 規則層 / LLM 判讀 / EDL 在 M3+ 接在 `afterTranscript` 之後。
-import { api, errMessage, errKind, type LocalAsrStatus } from "../api";
+import { api, errMessage, errKind } from "../api";
+import { ensureLocalAsrReady, localAsrNotReadyJob, LocalAsrNotReady, notifyLocalAsrNotReady } from "./localAsrReady";
 import { normalizeTranscript, type ServerTranscript } from "../analysis/normalize";
 import type { Transcript } from "../analysis/types";
 import { t } from "../i18n";
@@ -13,30 +14,6 @@ import { restoreDecisions, type StoredAnalysis } from "./persist";
 import { ensureLocalAnalysis } from "./waveform";
 import { runRulesFor } from "./rules";
 import { isAbort } from "./retry";
-
-/**
- * 本機辨識還沒裝好。
- *
- * 這不是「失敗」，是「還沒準備好」—— 所以工作列不標紅、不留錯誤訊息，
- * 直接把安裝面板打開讓人接著做。
- */
-export class LocalAsrNotReady extends Error {
-  constructor(readonly status: LocalAsrStatus) {
-    super("local-asr-not-ready");
-    this.name = "LocalAsrNotReady";
-  }
-}
-
-/**
- * 殼層注入「還沒裝好時要開什麼」。
- *
- * pipeline 這一層不直接認得 UI —— 直接 import 對話框的話，測試載這個檔就會把
- * 半個 App 拖進來，而且 pipeline 與 UI 的相依方向就反了。
- */
-let onLocalAsrNotReady: ((s: LocalAsrStatus) => void) | null = null;
-export function setLocalAsrNotReadyHandler(fn: ((s: LocalAsrStatus) => void) | null): void {
-  onLocalAsrNotReady = fn;
-}
 
 export interface AnalyzeOptions {
   /** 忽略逐字稿快取，重新轉寫。 */
@@ -113,8 +90,7 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
       // **先問裝好了沒。** 沒裝的話 sidecar 會以結束碼 2 退出，使用者看到的是一則
       // 錯誤訊息 —— 而這是簡易模式八顆按鈕裡的**第一顆**，第一次剪 Podcast 的人
       // 按下去就撞牆，還得自己找到設定裡的安裝面板。與其報錯，不如直接把安裝面板打開。
-      const ready = await api.localAsrDetect().catch(() => null);
-      if (ready && (!ready.python || !ready.faster_whisper)) throw new LocalAsrNotReady(ready);
+      await ensureLocalAsrReady();
       step(t("本機辨識中…（第一次會先下載模型）"), null, "", "transcribe");
       const doc = (await api.localAsrTranscribe(jobId, prep.upload_path, settings.asr_model, settings.asr_language)) as ServerTranscript;
       await api.mediaCacheWriteTranscript(fp, doc).catch(() => {});
@@ -143,14 +119,9 @@ export async function runAnalyze(mediaId: string, opts: AnalyzeOptions = {}): Pr
     }
     if (e instanceof LocalAsrNotReady) {
       useProject.getState().updateMedia(mediaId, { analysis: "none" });
-      jobs.upsert({
-        id: jobId,
-        status: "canceled",
-        step: e.status.python ? t("還沒裝語音辨識") : t("還沒裝 Python"),
-        message: e.status.python ? e.status.install_hint : t("需要 Python 3.9 以上；App 不會替你裝 Python"),
-        endedAt: Date.now(),
-      });
-      onLocalAsrNotReady?.(e.status);
+      const j = localAsrNotReadyJob(e.status);
+      jobs.upsert({ id: jobId, status: "canceled", step: t(j.step), message: t(j.message), endedAt: Date.now() });
+      notifyLocalAsrNotReady(e.status);
       return;
     }
     const msg = errMessage(e);

@@ -1,6 +1,7 @@
 // ASR 驗收：把剛輸出的成品用本機 faster-whisper 重新轉寫，跟 EDL 預期保留的字逐字比對。
 // 人機協作的最後一哩：AI 剪完、人只需要聽「機器覺得可疑」的那幾個接縫。
 import { api, errKind, errMessage } from "../api";
+import { ensureLocalAsrReady, localAsrNotReadyJob, LocalAsrNotReady, notifyLocalAsrNotReady } from "./localAsrReady";
 import { normalizeTranscript, type ServerTranscript } from "../analysis/normalize";
 import { parseAnalysis } from "../analysis/peaks";
 import { auditSplice, type SpliceAuditReport } from "../analysis/spliceAudit";
@@ -101,6 +102,9 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
     const prep = await api.mediaPrepare(opts.outPath, fp);
     if (canceled) throw new Error("canceled");
 
+    // 驗收也是本機辨識。v0.117 只在分析那條路加了這道門，這裡照樣丟結束碼 2 ——
+    // 而「用 ASR 驗收」就在輸出完成的那顆按鈕旁邊，剛做完第一集的人很容易按下去。
+    await ensureLocalAsrReady();
     step(t("本機辨識中…"));
     const server = (await api.localAsrTranscribe(jobId, prep.upload_path, settings.asr_model, settings.asr_language)) as ServerTranscript;
     step(t("逐字比對"));
@@ -131,6 +135,12 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
     const msg = errMessage(e);
     if (canceled || isAbort(e) || errKind(e) === "canceled" || msg === "canceled") {
       jobs.upsert({ id: jobId, status: "canceled", step: t("已取消"), endedAt: Date.now() });
+      throw e;
+    }
+    if (e instanceof LocalAsrNotReady) {
+      const j = localAsrNotReadyJob(e.status);
+      jobs.upsert({ id: jobId, status: "canceled", step: t(j.step), message: t(j.message), endedAt: Date.now() });
+      notifyLocalAsrNotReady(e.status);
       throw e;
     }
     jobs.upsert({ id: jobId, status: "error", step: t("失敗"), error: msg, endedAt: Date.now() });

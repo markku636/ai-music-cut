@@ -163,7 +163,7 @@ export interface TimelineProps {
   /** 拉候選邊界後。 */
   onRangeChange: (id: string, startMs: number, endMs: number) => void;
   onRetry: () => void;
-  onOpenSettings: (focus?: "key" | "ffmpeg") => void;
+  onOpenSettings: (focus?: "asr" | "ffmpeg") => void;
   /** 目前 EDL 的接縫（修剪把手 / 切點記號）。 */
   seams: SeamInfo[];
   /** 右鍵接縫。 */

@@ -1,6 +1,5 @@
 import {
   AudioLines,
-  Mic,
   BookMarked,
   BrainCircuit,
   Captions,
@@ -12,6 +11,7 @@ import {
   Cog,
   Copy,
   Crop,
+  Download,
   FileMusic,
   FilePlus,
   FileText,
@@ -28,11 +28,12 @@ import {
   ListTree,
   Magnet,
   MessageSquareOff,
+  Mic,
   MicOff,
+  MousePointer2,
   Move,
   MoveHorizontal,
   Music,
-  MousePointer2,
   Package,
   Palette,
   Play,
@@ -42,8 +43,8 @@ import {
   Scissors,
   ScrollText,
   Search,
-  ShieldCheck,
   Share2,
+  ShieldCheck,
   SkipBack,
   SkipForward,
   Slice,
@@ -432,6 +433,23 @@ export const CORE_COMMANDS: Command[] = [
       }
       A.analyzeWithPreflight();
     },
+  },
+  {
+    // 安裝面板一直在（設定 → 逐字稿），但只有知道它在那裡的人找得到。
+    // 第一次用的人是從「自動剪掉贅字」失敗才知道有這件事的，那時候他要的是
+    // 「怎麼裝」，不是「哪個分頁」。
+    id: "ai.localAsrSetup",
+    title: "安裝本機語音辨識（faster-whisper）…",
+    group: "ai",
+    section: "聲音",
+    icon: Download,
+    surfaces: ["menu", "palette", "simple"],
+    simple: true,
+    simpleLabel: "安裝語音辨識",
+    simpleHint: "「自動剪掉贅字」要用它；第一次用要先裝，會先給你看指令",
+    keywords: ["install", "whisper", "faster-whisper", "asr", "setup", "python"],
+    enabled: () => OK,
+    run: () => A.openSettings("asr"),
   },
   { id: "ai.separate", title: "去人聲", group: "ai", section: "聲音", icon: MicOff, enabled: needsMedia, run: () => openDialog("separate") },
   {

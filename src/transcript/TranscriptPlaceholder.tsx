@@ -8,7 +8,7 @@ import { formatDuration } from "../time";
 export interface TranscriptPlaceholderProps {
   mediaId: string | null;
   onAnalyze: () => void;
-  onOpenSettings: (focus?: "key" | "ffmpeg") => void;
+  onOpenSettings: (focus?: "asr" | "ffmpeg") => void;
 }
 
 const PHASES: JobPhase[] = ["prepare", "transcribe", "normalize", "rules"];

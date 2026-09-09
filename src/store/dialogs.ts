@@ -10,7 +10,8 @@ import type { ReelRange } from "../analysis/reel";
  * 掛載交給 DialogHost。
  */
 
-export type SettingsFocus = "key" | "ffmpeg" | null;
+/** 開設定時要把焦點 / 高亮放在哪一段。`"key"` 在 v0.110 拿掉金鑰之後就沒有對應的欄位了。 */
+export type SettingsFocus = "asr" | "ffmpeg" | null;
 
 export type DialogId =
   | "settings"

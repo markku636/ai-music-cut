@@ -9,7 +9,7 @@ export interface TimelinePlaceholderProps {
   mediaId: string | null;
   height: number;
   onRetry: () => void;
-  onOpenSettings: (focus?: "key" | "ffmpeg") => void;
+  onOpenSettings: (focus?: "asr" | "ffmpeg") => void;
 }
 
 /** 假波形骨架的高度（確定性偽隨機，避免每次 render 跳動）。 */

@@ -155,7 +155,10 @@ pub async fn detect() -> LocalAsrStatus {
         .stderr(Stdio::null())
         .kill_on_drop(true);
     let has = matches!(tokio::time::timeout(std::time::Duration::from_secs(20), c2.status()).await, Ok(Ok(st)) if st.success());
-    LocalAsrStatus { python: true, python_version: version, faster_whisper: has, install_hint: hint }
+    // `python: true` 的條件是「`--version` 真的問得出來」，不是「PATH 上有這個名字」。
+    // AICUT_PYTHON 指到一個壞掉的路徑時，前者會失敗、後者不會 ——
+    // 回 true 的話畫面上會寫「Python 有了，只是還沒裝套件」，但其實 python 就是不能跑。
+    LocalAsrStatus { python: version.is_some(), python_version: version, faster_whisper: has, install_hint: hint }
 }
 
 async fn write_sidecar(app: &AppHandle) -> AppResult<PathBuf> {

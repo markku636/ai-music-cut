@@ -6,7 +6,7 @@ beforeEach(() => useDialogs.getState().closeAll());
 describe("dialogs store", () => {
   it("open 疊上去、close 拿掉、isOpen 反映", () => {
     const d = useDialogs.getState();
-    d.open("settings", { focus: "key" });
+    d.open("settings", { focus: "asr" });
     d.open("prompts");
     expect(useDialogs.getState().stack.map((e) => e.id)).toEqual(["settings", "prompts"]);
     expect(useDialogs.getState().isOpen("settings")).toBe(true);

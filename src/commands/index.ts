@@ -1,4 +1,7 @@
 import { errMessage } from "../api";
+import { t } from "../i18n";
+import { setLocalAsrNotReadyHandler } from "../pipeline/analyze";
+import { openSettings } from "./appActions";
 import { toast } from "../ui";
 import { installCommandReactivity } from "./guards";
 import { registerCommands, setCommandHost } from "./registry";
@@ -17,6 +20,12 @@ import { TONE_SPECS } from "../effects/specs/tone";
  */
 export function installCommands(): () => void {
   setCommandHost({ info: toast.info, error: toast.error, errMessage });
+  // 「自動剪掉贅字」是簡易模式的第一顆按鈕。沒裝本機辨識時直接把安裝面板開起來，
+  // 不要只丟一句錯誤讓人自己去設定裡找。
+  setLocalAsrNotReadyHandler((s) => {
+    toast.info(s.python ? t("還沒裝語音辨識 —— 幫你打開安裝的地方了") : t("需要 Python 3.9 以上；App 不會替你裝 Python"));
+    openSettings("asr");
+  });
   registerCommands([
     ...CORE_COMMANDS,
     ...EFFECT_COMMANDS,

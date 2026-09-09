@@ -22,7 +22,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export type SettingsFocus = "key" | "ffmpeg" | null;
+export type SettingsFocus = "asr" | "ffmpeg" | null;
 
 export default function SettingsDialog({
   focus = null,
@@ -38,7 +38,8 @@ export default function SettingsDialog({
     useDialogs.getState().open("prompts");
   };
   const t = useT();
-  const keyInputRef = useRef<HTMLInputElement>(null);
+  // v0.110 拿掉金鑰欄之後這裡改指本機辨識那一段（第一次用的人被導過來的地方）
+  const asrSectionRef = useRef<HTMLDivElement>(null);
   const ffmpegInputRef = useRef<HTMLInputElement>(null);
   const [hotwordsOpen, setHotwordsOpen] = useState(false);
   const [highlight, setHighlight] = useState<SettingsFocus>(null);
@@ -46,7 +47,7 @@ export default function SettingsDialog({
   // 從 banner / 流程列 / 狀態列進來：等 modal 進場後捲到該欄位、聚焦並高亮 1.5 秒
   useEffect(() => {
     if (!open || !focus) return;
-    const el = focus === "key" ? keyInputRef.current : ffmpegInputRef.current;
+    const el = focus === "asr" ? asrSectionRef.current : ffmpegInputRef.current;
     const id = window.setTimeout(() => {
       el?.scrollIntoView({ block: "center" });
       el?.focus();
@@ -119,7 +120,9 @@ export default function SettingsDialog({
       <div className="space-y-4">
         <Section title={t("逐字稿（辨識）")}>
           <FormGrid>
-            <LocalAsrSetup />
+            <div ref={asrSectionRef} tabIndex={-1} className="outline-none">
+              <LocalAsrSetup />
+            </div>
             <Field label={t("辨識語言")}>
               <Select value={draft.asr_language} onChange={(e) => void commit({ asr_language: e.target.value })}>
                 <option value="zh">中文（zh/en 混講）</option>

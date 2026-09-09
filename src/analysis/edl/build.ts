@@ -310,7 +310,7 @@ export function buildEdl(input: EdlInput, candidates: Candidate[], decisions: De
       joinsMeta.push({ removal: r, gapMs: 0, context: "within" });
       continue;
     }
-    const b = planBreath(vad, sentences, words, r, breathOpts);
+    const b = planBreath(vad, sentences, r, breathOpts);
     r.startMs = b.startMs;
     r.endMs = b.endMs;
     joinsMeta.push({ removal: r, gapMs: b.gapMs, context: b.context });

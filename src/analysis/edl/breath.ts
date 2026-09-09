@@ -7,13 +7,10 @@
 //
 // 這裡改成：① 依「句中 / 句尾 / 段落」給不同的目標長度 ② 能還多少還多少（不是全有全無）
 // ③ 目標長度隨激進度縮放（激進 = 節奏緊，保守 = 留白多）。
-import type { Sentence, VadRegion, Word } from "../types";
+import type { Sentence, VadRegion } from "../types";
 
 /** 剪除區落在什麼位置。 */
 export type BreathContext = "within" | "sentence" | "paragraph";
-
-/** 句尾標點（判段落用）。Whisper 會把標點黏在字尾。 */
-export const SENTENCE_END_RE = /[。．.!！?？…]+$/;
 
 export interface BreathOptions {
   /** 句子中間：講者不換氣，留白要短。 */
@@ -63,10 +60,28 @@ export function breathFor(aggressiveness: number, base: BreathOptions = DEFAULT_
 }
 
 /**
- * 剪除區 [startMs,endMs] 接起來的是什麼樣的兩句。
- * 判斷依據是「剪除區裡面（或緊鄰）有沒有句子結束」，以及那句是不是以句號結尾。
+ * 段落交界的門檻：講者自己在這裡停了這麼久以上。
+ *
+ * **標點不能當依據。** 中文每個正常句子都以句號結尾，所以「有句號就算段落」等於
+ * 「每一句都是段落」；反過來 Whisper 又常常漏掉句號，於是真正的段落被當成普通句尾。
+ * 兩個方向都錯，而且錯法由辨識器的一個 coin flip 決定 ——
+ * 相鄰的兩個句尾可能差 235 ms，聽起來卻沒有任何理由。
+ *
+ * 真正指向「這是一個段落」的訊號是**講者本人停了很久**。實機量過一段 90 秒的
+ * 中文錄音（366 字 / 16 句）：句尾的自然停頓中位 420 ms、p75 500 ms，
+ * 而真正的段落停頓是 5190 ms —— 兩者差一個數量級。門檻取 700 ms（p75 之上、
+ * 離真正的段落還很遠），寧可把可疑的算成句尾。
+ *
+ * 樣本只有一段錄音，所以這是個保守的起點而不是定論；真要調的話該先多量幾份。
  */
-export function breathContextAt(sentences: Sentence[], words: Word[], startMs: number, endMs: number, tolMs = 120): BreathContext {
+export const PARAGRAPH_GAP_MS = 700;
+
+/**
+ * 剪除區 [startMs,endMs] 接起來的是什麼樣的兩句。
+ *
+ * 依據是「剪除區裡面（或緊鄰）有沒有句子結束」，以及**講者在那裡原本停了多久**。
+ */
+export function breathContextAt(sentences: Sentence[], startMs: number, endMs: number, tolMs = 120): BreathContext {
   let ctx: BreathContext = "within";
   for (let i = 0; i < sentences.length; i++) {
     const s = sentences[i];
@@ -74,10 +89,15 @@ export function breathContextAt(sentences: Sentence[], words: Word[], startMs: n
     if (s.endMs > endMs + tolMs) break;
     // 這一句在剪除區裡結束 → 至少是句尾
     ctx = "sentence";
-    const lastId = s.wordIds[s.wordIds.length - 1];
-    const text = words[lastId]?.text ?? "";
-    // 有句號 / 問號 / 驚嘆號，而且後面還有下一句 → 視為段落交界
-    if (SENTENCE_END_RE.test(text.trim()) && sentences[i + 1]) return "paragraph";
+    const next = sentences[i + 1];
+    if (!next) continue;
+    // 段落 = 講者本人在這裡停了 700 ms 以上。
+    //
+    // **標點連必要條件都不是。** 走到這裡已經知道「有一句在這裡結束、而且後面還有下一句」，
+    // 剩下要分的只是「換一口氣」還是「換一段」——那由停頓長度決定。
+    // 把標點當必要條件會漏掉真正的段落：實機那段錄音裡最長的一個停頓是 5190 ms
+    // （毫無疑問的段落），但 Whisper 沒在那一句尾吐句號，於是它被當成普通句尾。
+    if (next.startMs - s.endMs >= PARAGRAPH_GAP_MS) return "paragraph";
   }
   return ctx;
 }
@@ -128,11 +148,10 @@ function silentRun(vad: VadRegion[], from: number, wantMs: number, dir: 1 | -1, 
 export function planBreath(
   vad: VadRegion[],
   sentences: Sentence[],
-  words: Word[],
   removal: { startMs: number; endMs: number; speech: boolean },
   opts: BreathOptions,
 ): BreathPlan {
-  const context = breathContextAt(sentences, words, removal.startMs, removal.endMs);
+  const context = breathContextAt(sentences, removal.startMs, removal.endMs);
   if (!removal.speech) {
     // 剪的是純靜音 / 雜音，本來就沒有「接起來會不會太趕」的問題
     return { startMs: removal.startMs, endMs: removal.endMs, restoredMs: 0, gapMs: 0, context };

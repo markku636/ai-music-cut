@@ -109,3 +109,24 @@ describe("seamNear / seamWindow", () => {
     expect(seamWindow(seams[1], 500)).toEqual({ startMs: 1980, endMs: 2980 });
   });
 });
+
+describe("seamsOf：編排接縫不謊報「剪掉多久」", () => {
+  const edlOf = (keeps: KeepSegment[], joins: Edl["joins"]): Edl =>
+    ({ keeps, joins, removals: [], stats: { outMs: keeps.length ? keeps[keeps.length - 1].outEndMs : 0 } }) as unknown as Edl;
+
+  it("一般接縫照常報中間剪掉多久", () => {
+    const e = edlOf([k(0, 0, 1000, 0, 1000), k(1, 2000, 3000, 1000, 2000)], [{ afterKeepId: 0, kind: "crossfade", ms: 24, removedCandidateIds: [] }] as never);
+    const s = seamsOf(e)[0];
+    expect(s.rearranged).toBe(false);
+    expect(s.removedMs).toBe(1000);
+  });
+
+  it("搬移的接縫：不是「剪掉 0 ms」，是「這裡沒有剪掉東西」", () => {
+    const e = edlOf([k(0, 5000, 6000, 0, 1000), k(1, 0, 1000, 1000, 2000)], [{ afterKeepId: 0, kind: "seam", ms: 0, removedCandidateIds: [] }] as never);
+    const s = seamsOf(e)[0];
+    expect(s.rearranged).toBe(true);
+    // 舊版是 Math.max(0, 0 - 6000) = 0，畫面上就寫著「剪掉 0.00s」——
+    // 旗標存在才分得出「剛好沒剪到」與「這裡根本不是一刀」
+    expect(s.removedMs).toBe(0);
+  });
+});

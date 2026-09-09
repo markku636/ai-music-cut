@@ -558,7 +558,11 @@ export const TOOLS: ToolSpec[] = [
           at: formatMs(s.srcBeforeMs, { millis: true }),
           srcBeforeMs: Math.round(s.srcBeforeMs),
           srcAfterMs: Math.round(s.srcAfterMs),
-          removedMs: Math.round(s.srcAfterMs - s.srcBeforeMs),
+          // 編排接縫（貼上 / 搬移）沒有「剪掉多久」—— 相減是負數，報出去只會讓 agent
+          // 以為那裡「剪掉了 -13 秒」然後想去修它，但 trim_seam 對它是拒絕的。
+          removedMs: s.rearranged ? null : Math.round(s.srcAfterMs - s.srcBeforeMs),
+          rearranged: s.rearranged,
+          trimmable: !s.rearranged,
           kind: s.kind,
           isBlade: !!s.splitId,
           pauseMs: Math.round(s.gapMs),

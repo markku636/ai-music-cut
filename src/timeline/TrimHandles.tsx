@@ -82,14 +82,19 @@ export default function TrimHandles({ ws, height, seams, onOpenMenu }: { ws: Wav
           ? s.gapMs > 0
             ? t("切點 · 留白 {ms} ms", { ms: Math.round(s.gapMs) })
             : t("切點 {at}", { at: formatMs(s.srcBeforeMs, { millis: true }) })
-          : t("接縫 {at} · 剪掉 {ms} ms", { at: formatMs(s.srcBeforeMs, { millis: false }), ms: Math.round(s.srcAfterMs - s.srcBeforeMs) });
+          : s.rearranged
+            // 編排接縫兩邊來自來源的兩個地方，中間沒有剪掉東西 ——
+            // 相減出來是負數，以前這裡就寫著「剪掉 -13000 ms」。
+            ? t("編排接縫（貼上 / 搬移）· 這裡不能修剪，改用成品順序帶", { at: formatMs(s.srcBeforeMs, { millis: false }) })
+            : t("接縫 {at} · 剪掉 {ms} ms", { at: formatMs(s.srcBeforeMs, { millis: false }), ms: Math.round(s.srcAfterMs - s.srcBeforeMs) });
 
         return (
           <div key={s.afterKeepId} className="absolute top-0" style={{ left: x, height }}>
             {/* 切點的線常駐；一般接縫只有修剪工具作用中才畫，不然會跟候選色塊的邊界打架 */}
-            {(isSplit || trimming) && (
+            {(isSplit || s.rearranged || trimming) && (
               <div
-                className={`absolute top-0 bottom-0 w-px ${isSplit ? (s.gapMs > 0 ? "bg-amber-400/70" : "bg-accent/60") : "bg-fg/25"}`}
+                title={s.rearranged ? label : undefined}
+                className={`absolute top-0 bottom-0 w-px ${isSplit ? (s.gapMs > 0 ? "bg-amber-400/70" : "bg-accent/60") : s.rearranged ? "bg-accent/70" : "bg-fg/25"}`}
                 style={{ left: -0.5 }}
               />
             )}
@@ -99,7 +104,7 @@ export default function TrimHandles({ ws, height, seams, onOpenMenu }: { ws: Wav
                 style={{ left: -3 }}
               />
             )}
-            {trimming && (
+            {trimming && !s.rearranged && (
               <>
                 <button
                   type="button"

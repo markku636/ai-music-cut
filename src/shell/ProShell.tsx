@@ -23,9 +23,11 @@ export default function ProShell() {
   const railCands = useDecisions((s) => (active ? s.candidates[active.id] : undefined));
   const railDecs = useDecisions((s) => (active ? s.decisions[active.id] : undefined));
   const railSplits = useDecisions((s) => (active ? s.splits[active.id] : undefined));
+  // pastes 也是 keeps 的輸入 —— 漏了它，索引分頁的接縫清單會停在貼上之前
+  const railPastes = useDecisions((s) => (active ? s.pastes[active.id] : undefined));
   const railEffects = useDecisions((s) => (active ? s.effects[active.id] ?? EMPTY_FX : EMPTY_FX));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const railSeams = useMemo(() => seamsOfEdl(currentEdl()), [active?.id, railCands, railDecs, railSplits]);
+  const railSeams = useMemo(() => seamsOfEdl(currentEdl()), [active?.id, railCands, railDecs, railSplits, railPastes]);
   const sidebar = useResizable({ storageKey: "aicut:sidebarW", initial: 272, min: 200, max: () => window.innerWidth * 0.4, axis: "x" });
 
   return (

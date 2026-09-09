@@ -16,6 +16,23 @@ export function isRearrangedKeeps(keeps: readonly KeepSegment[]): boolean {
   return (keeps as readonly ArrangedKeep[]).some((k) => k.pasteId != null);
 }
 
+/**
+ * 這個接縫是「編排」造成的（剪下貼上 / 搬移），不是「剪掉一段」。
+ *
+ * 兩者長得像但完全不是同一件事，而且分不出來的後果是**安靜改錯東西**：
+ * 一般接縫的兩邊在來源上相鄰，中間那段就是被剪掉的內容，所以修剪＝改那段剪除區；
+ * 編排接縫的兩邊來自來源的兩個地方，中間**沒有**被剪掉的東西 ——
+ * 拿 `srcBeforeMs` / `srcAfterMs` 去找剪除區時，因為 `srcAfterMs < srcBeforeMs`，
+ * 比對條件會變成恆真，於是找到一個完全不相干的剪除區、改掉它的候選。
+ *
+ * 兩種情況都算：來源往回跳（搬移），或任一邊是貼上來的（貼上是**插入**，不是剪除）。
+ */
+export function isArrangementSeam(before: KeepSegment, after: KeepSegment): boolean {
+  const a = before as ArrangedKeep;
+  const b = after as ArrangedKeep;
+  return after.srcStartMs < before.srcEndMs || a.pasteId != null || b.pasteId != null;
+}
+
 /** 落在剪除區時要往哪邊靠。 */
 export type SnapDirection = "next" | "prev";
 
@@ -69,8 +86,10 @@ export interface Seam {
   /** 來源時間軸上被剪掉的那一段。 */
   srcBeforeMs: number;
   srcAfterMs: number;
-  /** 這一刀剪掉多久。 */
+  /** 這一刀剪掉多久。`rearranged` 為 true 時是 0 而且沒有意義 —— 那裡沒有剪掉東西。 */
   removedMs: number;
+  /** 編排（剪下貼上 / 搬移）造成的接縫，不是剪除。見 `isArrangementSeam`。 */
+  rearranged: boolean;
   /** 造成這個接縫的候選（可以在巡覽時當場改判保留）。 */
   candidateIds: string[];
 }
@@ -85,6 +104,7 @@ export function seamsOf(edl: Edl): Seam[] {
     const nextIdx = edl.keeps.findIndex((x) => x.id === j.afterKeepId) + 1;
     const next = edl.keeps[nextIdx];
     if (!next) continue;
+    const rearranged = isArrangementSeam(k, next);
     out.push({
       index: out.length,
       afterKeepId: j.afterKeepId,
@@ -92,7 +112,10 @@ export function seamsOf(edl: Edl): Seam[] {
       outMs: k.outEndMs,
       srcBeforeMs: k.srcEndMs,
       srcAfterMs: next.srcStartMs,
-      removedMs: Math.max(0, next.srcStartMs - k.srcEndMs),
+      // 編排接縫沒有「剪掉多久」可言。以前這裡是 Math.max(0, …)，
+      // 把負數夾成 0 之後畫面上就寫著「剪掉 0.00s」—— 那是一句謊話。
+      removedMs: rearranged ? 0 : next.srcStartMs - k.srcEndMs,
+      rearranged,
       candidateIds: j.removedCandidateIds,
     });
   }

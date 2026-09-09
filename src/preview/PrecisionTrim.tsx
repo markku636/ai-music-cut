@@ -154,7 +154,9 @@ export default function PrecisionTrim({
     setFocusSeam(seam.srcBeforeMs + (mode === "roll" || side === "left" ? delta : 0));
   };
 
-  const removedMs = Math.max(0, seam.srcAfterMs - seam.srcBeforeMs);
+  // 編排接縫（貼上 / 搬移）沒有剪掉東西；以前這裡 Math.max(0, 負數) 出來是 0，
+  // 於是畫面上什麼都不顯示，看起來像一刀「剛好沒剪到東西」的普通接縫。
+  const removedMs = seam.rearranged ? 0 : seam.srcAfterMs - seam.srcBeforeMs;
   // 接縫附近的字：看得到這一刀是不是切在字中間
   const words = (transcript?.words ?? []).filter((w) => w.endMs > seam.srcBeforeMs - WINDOW_MS && w.startMs < seam.srcAfterMs + WINDOW_MS);
 
@@ -169,6 +171,7 @@ export default function PrecisionTrim({
         <span className="mono text-[11px] text-fg/60 tabular-nums whitespace-nowrap ml-1">
           {formatMs(seam.srcBeforeMs, { millis: true })}
           {removedMs > 0 && <span className="text-red-400/70"> −{Math.round(removedMs)} ms</span>}
+          {seam.rearranged && <span className="text-accent/80"> · {t("編排接縫（不能修剪）")}</span>}
           {seam.splitId && !seam.gapMs && <span className="text-accent/70"> · {t("切點")}</span>}
           {seam.gapMs > 0 && <span className="text-amber-400/80"> · {t("留白 {ms} ms", { ms: Math.round(seam.gapMs) })}</span>}
         </span>

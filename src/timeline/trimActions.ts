@@ -2,6 +2,7 @@
 // 與 selectionActions 一樣不經 React 樹，讓快捷鍵、右鍵選單、修剪把手、MCP 工具共用同一套語意。
 import { effectId } from "../analysis/effects";
 import type { Edl } from "../analysis/edl/build";
+import { isArrangementSeam } from "../analysis/edl/map";
 import { canSplitAt } from "../analysis/edl/split";
 import { planSplitRipple, planTrim, type TrimCandidate, type TrimMode, type TrimSide } from "../analysis/edl/trim";
 import { edlFor } from "../pipeline/rules";
@@ -32,6 +33,13 @@ export interface SeamInfo {
   /** 這一刀插了多長的留白。 */
   gapMs: number;
   kind: "crossfade" | "gap" | "seam";
+  /**
+   * 編排（剪下貼上 / 搬移）造成的接縫，不是剪除。
+   *
+   * 這種接縫**不能修剪**：兩邊來自來源的兩個地方，中間沒有被剪掉的東西。
+   * 見 `isArrangementSeam`。
+   */
+  rearranged: boolean;
 }
 
 /** 目前 EDL 的所有接縫（時間軸畫把手、[ ] 巡覽、修剪都用這份）。 */
@@ -49,6 +57,7 @@ export function seamsOfEdl(edl: Edl | null): SeamInfo[] {
       splitId: j?.splitId,
       gapMs: j?.kind === "gap" ? j.ms : 0,
       kind: j?.kind ?? "crossfade",
+      rearranged: isArrangementSeam(k, next),
     });
   }
   return out;
@@ -115,6 +124,10 @@ export function trimSeam(afterKeepId: number, deltaMs: number, mode: TrimMode, s
   const edl = currentEdl();
   const seam = seamsOfEdl(edl).find((s) => s.afterKeepId === afterKeepId);
   if (!edl || !seam) return false;
+  // 編排接縫（貼上 / 搬移）不能修剪：兩邊來自來源的兩個地方，中間沒有被剪掉的東西。
+  // 硬做的話下面找剪除區那一行會因為 srcAfterMs < srcBeforeMs 而恆真，
+  // 於是改到一個完全不相干的候選 —— 使用者拖了一下接縫，別的地方安靜地變了。
+  if (seam.rearranged) return false;
   const bounds = { minMs: 0, maxMs: c.durationMs };
   const d = useDecisions.getState();
 

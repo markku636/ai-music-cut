@@ -114,7 +114,16 @@ export default function PreviewBar({ mediaId }: { mediaId: string }) {
         window.setTimeout(() => cutRef.current?.pause(), w.endMs - w.startMs);
         return;
       }
-      // 即時模式：用來源時間軸播，跳播會把剪掉的部分吃掉
+      // 即時模式：用來源時間軸播，跳播會把剪掉的部分吃掉。
+      //
+      // 編排接縫（貼上 / 搬移）在來源時間軸上**放不出來** —— 它的兩邊來自來源的兩個
+      // 地方，`srcAfterMs` 可能比 `srcBeforeMs` 還小，直接餵進去就是一個顛倒的範圍
+      // （放不出聲音，或整檔從頭播）。這種接縫只播前面那一段的尾巴，要聽真正的接法
+      // 得切到成品預覽。
+      if (s.rearranged) {
+        playRange(Math.max(0, s.srcBeforeMs - SEAM_PAD_MS), s.srcBeforeMs, { skip: true });
+        return;
+      }
       playRange(Math.max(0, s.srcBeforeMs - SEAM_PAD_MS), s.srcAfterMs + SEAM_PAD_MS, { skip: true });
     },
     [mode],
@@ -162,7 +171,8 @@ export default function PreviewBar({ mediaId }: { mediaId: string }) {
       <IconButton icon={ChevronRight} label={t("下一個接縫")} disabled={!seams.length} onClick={() => step(1)} />
       {cur && (
         <span className="text-fg/45 truncate max-w-[16rem]">
-          {formatMs(cur.outMs, { millis: false })} · {t("剪掉 {s}s", { s: (cur.removedMs / 1000).toFixed(2) })}
+          {formatMs(cur.outMs, { millis: false })} ·{" "}
+          {cur.rearranged ? t("編排接縫（貼上 / 搬移）") : t("剪掉 {s}s", { s: (cur.removedMs / 1000).toFixed(2) })}
           {cur.kind === "gap" && ` · ${t("留白")}`}
         </span>
       )}

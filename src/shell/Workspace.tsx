@@ -8,6 +8,7 @@ import { DEFAULT_DUCK, DEFAULT_MUSIC, DEFAULT_SFX, LANE_LABEL, planDuck, voiceRe
 import { BUILTIN_ROLES, overlayRole, roleLabel } from "../analysis/roles";
 import type { SpeakerState } from "../analysis/speakers";
 import { MARKER_KIND_LABEL, isActiveState, type Candidate, type DecisionMap, type Marker, type MarkerKind, type SplitPoint } from "../analysis/types";
+import type { Paste } from "../analysis/edl/arrange";
 import { openSettings } from "../commands/appActions";
 import { selectionMenuItems } from "../commands/menuModel";
 import { useT } from "../i18n";
@@ -45,6 +46,7 @@ const EMPTY_D: DecisionMap = {};
 const EMPTY_E: AudioEffect[] = [];
 const EMPTY_SPK: SpeakerState = { list: [], turns: [] };
 const EMPTY_S: SplitPoint[] = [];
+const EMPTY_P: Paste[] = [];
 const EMPTY_MK: Marker[] = [];
 const EMPTY_OV: Overlay[] = [];
 /** 配樂音量的常用檔位（dB）。 */
@@ -70,6 +72,7 @@ export default function Workspace({ variant }: { variant: UiMode }) {
   const decisions = useDecisions((s) => (mediaId ? s.decisions[mediaId] ?? EMPTY_D : EMPTY_D));
   const effects = useDecisions((s) => (mediaId ? s.effects[mediaId] ?? EMPTY_E : EMPTY_E));
   const splits = useDecisions((s) => (mediaId ? s.splits[mediaId] ?? EMPTY_S : EMPTY_S));
+  const pastes = useDecisions((s) => (mediaId ? s.pastes[mediaId] ?? EMPTY_P : EMPTY_P));
   const speakers = useDecisions((s) => (mediaId ? s.speakers[mediaId] ?? EMPTY_SPK : EMPTY_SPK));
   const selectedIds = useDecisions((s) => s.selectedIds);
   const aggressiveness = useProject((s) => s.aggressiveness);
@@ -96,8 +99,12 @@ export default function Workspace({ variant }: { variant: UiMode }) {
   // EDL 算不出來（還沒逐字稿 / 還沒探測）時才退回 activeRanges。
   // edlFor 從 store 直接讀（getState），所以 lint 看不出它依賴什麼；
   // 這些 dep 就是「該重算」的訊號，刻意留著。
+  //
+  // **這張清單漏一項就是一個安靜的 bug。** `pastes` 曾經漏掉：貼上之後波形上的剪除區、
+  // 接縫、修剪把手全部停在貼上之前的狀態，看起來像「貼上沒有生效」，
+  // 但輸出出來的又是新的 —— 畫面與成品不一致，而且不會有任何錯誤。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const edl = useMemo(() => (mediaId ? edlFor(mediaId) : null), [mediaId, candidates, decisions, splits, aggressiveness, local, transcript]);
+  const edl = useMemo(() => (mediaId ? edlFor(mediaId) : null), [mediaId, candidates, decisions, splits, pastes, aggressiveness, local, transcript]);
   const cuts = useMemo(
     () => edl?.removals.map((r) => ({ startMs: r.startMs, endMs: r.endMs })) ?? activeRanges(candidates, decisions),
     [edl, candidates, decisions],

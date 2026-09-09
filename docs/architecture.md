@@ -14,18 +14,18 @@
 │   cli/       aicut（同一套 analysis，I/O 走 ffmpeg 子程序 + fetch + claude）     │
 │ Rust（src-tauri）                                                              │
 │   ffmpeg.rs 偵測+probe · media.rs 串流波形+ebur128 · render.rs 串流剪接+loudnorm │
-│   ttls.rs REST client（transcribe / separate）· agent.rs claude CLI 橋 · mcp.rs  │
-│   store.rs settings.json + OS keychain（API key 唯一落點）                      │
+│   local_asr.rs faster-whisper · local_separate.rs demucs · agent.rs claude 橋   │
+│   mcp.rs 內建 MCP server · store.rs settings.json（沒有金鑰，全部跑在本機）      │
 └──────────┬──────────────────────────────┬────────────────────────────────────┘
-           │ HTTPS X-API-Key              │ spawn claude -p … --mcp-config
-   ttls.markkulab.net (FastAPI)       claude CLI ──MCP──▶ 127.0.0.1:{port}/mcp
-   /v1/transcribe/jobs（faster-whisper）  (judge: --json-schema 結構化輸出)
+           │ spawn python（本機）          │ spawn claude -p … --mcp-config
+   faster-whisper / demucs             claude CLI ──MCP──▶ 127.0.0.1:{port}/mcp
+   （第一次用先裝，會先給你看指令）        (judge: --json-schema 結構化輸出)
 ```
 
 ## 資料流
 
-0. **開檔**（`pipeline/waveform.ts`）：ffprobe → 指紋 → 立刻跑本機 `analysis.bin`（5 ms 波形桶 + 100 ms LUFS 視窗；只需 ffmpeg、快取命中即時）→ 時間軸 fit-to-width 首繪。與 ttls / 金鑰無關；沒分析也能播放、手動剪、輸出。
-1. **分析**（`pipeline/analyze.ts`）：確保本機分析 ∥ `upload.ogg`（16k opus）→ ttls 轉寫 202+輪詢（503/429 backoff）→ `normalizeTranscript`（秒→ms、句子切分）→ `runRules` → 候選 + 預設決策。
+0. **開檔**（`pipeline/waveform.ts`）：ffprobe → 指紋 → 立刻跑本機 `analysis.bin`（5 ms 波形桶 + 100 ms LUFS 視窗；只需 ffmpeg、快取命中即時）→ 時間軸 fit-to-width 首繪。與語音辨識無關；沒分析也能播放、手動剪、輸出。
+1. **分析**（`pipeline/analyze.ts`）：確保本機分析 ∥ 轉成 16k 單聲道 → 本機 faster-whisper（`local_asr.rs` spawn python，逐行進度）→ `normalizeTranscript`（秒→ms、句子切分）→ `runRules` → 候選 + 預設決策。
 1b. **節拍**（`analysis/beats.ts`）：5 ms RMS 桶 → 半波整流一階差分（onset）→ 自相關（60–190 BPM，倍/半週期加權）→ 相位對齊 → 拍點 / 小節線；信心 < 0.12 視為非音樂不顯示。選取貼齊在 `store/timeline.setSelection` 統一處理（拖曳、逐字稿、右鍵都吃得到）。
 2. **規則層**（`analysis/rules/*`）：贅字（語境：句首「然後」保留、「那個」+名詞保留、問句後的「對」是回答…）、口吃 / 重複片語 / restart（LCS）、長停頓縮短為 350 ms、含糊（低信心 / 段級訊號 / 音量偏小）、雜音。門檻由激進度 0–100 線性插值（`thresholds.ts`）。
 3. **決策**（`store/decisions.ts`）：`auto | accepted | rejected | pending`；只建議的類型（unclear / rambling / off_topic / redo）永遠不會自動剪；user 決策與人工拉過的範圍（`meta.userRange`）跨重跑保留；undo/redo 為整份快照（候選 + 決策 + 效果）。
@@ -278,6 +278,23 @@
    > 章節（`chapters.ts`）與 `markersToChapters` 本來就有排序，亂序下是安全的 ——
    > 確認過，沒有改。
 
+   > **v0.114：接縫那一層。** 「接縫」在這裡一直只有一種意思 —— 兩邊在來源上相鄰、
+   > 中間那段被剪掉了。編排接縫（貼上 / 搬移）長得一樣但完全不是那件事：兩邊來自
+   > 來源的兩個地方，中間**沒有**被剪掉的東西。分不出來的後果從難看到危險都有：
+   > `srcAfterMs - srcBeforeMs` 是負數（畫面上寫「剪掉 -13000 ms」，PreviewBar 因為
+   > `Math.max(0, …)` 而寫「剪掉 0.00s」）、即時試聽拿到一個顛倒的播放範圍、
+   > 而最糟的是 `trimSeam`：它找剪除區的條件 `r.endMs >= srcAfterMs - 1` 因為
+   > srcAfterMs 很小而**恆真**，於是挑中一個完全不相干的剪除區改掉它的候選 ——
+   > 使用者拖了一下接縫，別的地方安靜地變了（有測試重現）。
+   > 現在 `isArrangementSeam` 是唯一的判斷點，`Seam` / `SeamInfo` 都帶 `rearranged`，
+   > 修剪、把手、精準修剪、試聽、MCP 的 `list_seams` 各自照它分流。
+   >
+   > **順便抓到一個既有的 bug。** `Workspace` 與 `ProShell` 的 EDL memo 相依清單裡
+   > 沒有 `pastes` —— 貼上之後波形上的剪除區、接縫、修剪把手全部停在貼上之前，
+   > 看起來像「貼上沒生效」，但輸出出來的是新的。畫面與成品不一致，而且不報錯。
+   > 這種「相依清單漏一項」的 bug 單元測試抓不到，是真機量 DOM 才發現的
+   > （把手上的標籤還寫著貼上前的「剪掉 1998 ms」）。
+
    > **同名不同義的陷阱。** `edl/build.ts` 以前也有一組 `mapSrcToOut` / `mapOutToSrc`，
    > 跟 `edl/map.ts` 同名但語意不同（落在剪除區回 `null`，而且不認得重排），
    > 只有自己的測試在用。兩個同名函式隨手 import 錯一個就是一個不會報錯的 bug，
@@ -336,7 +353,7 @@
 
 ## 祕密與隱私
 
-- ttls API key：Settings → `ttls_key_set` → OS keychain（service `ai-music-cut`）。唯一讀取點 `ttls::api_key()`；沒有任何 command 回傳它；專案檔 / 設定檔 / log 不含金鑰（`format.test.ts` 與 `store.rs` 測試斷言）。
+- **沒有金鑰**：v0.110 起轉寫（faster-whisper）與人聲分離（demucs）都在本機跑，ttls 伺服器與 API key 整個拿掉了。`scripts/check-secrets.mjs` 仍在 `npm run check` 裡掃全 repo —— 這條防線留著，不是因為現在有金鑰，是因為以後可能又有人加一個。
 - claude 走使用者本機登入；MCP server 只綁 loopback、每次啟動隨機 bearer token，只給自家 claude 子程序。
 - `scripts/check-secrets.mjs` 在 `npm run check` 掃 tracked files。
 

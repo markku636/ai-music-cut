@@ -8,7 +8,7 @@ import type { Edl } from "../analysis/edl/build";
 
 vi.mock("../pipeline/rules", () => ({ edlFor: () => currentTestEdl }));
 
-const { seamsOfEdl, bladeAt, liftSelection } = await import("./trimActions");
+const { seamsOfEdl, bladeAt, liftSelection, trimSeam } = await import("./trimActions");
 const { useDecisions } = await import("../store/decisions");
 const { useProject } = await import("../store/project");
 const { useTimeline } = await import("../store/timeline");
@@ -134,5 +134,54 @@ describe("liftSelection", () => {
   it("沒有選取時回 null", () => {
     useTimeline.setState({ selection: null });
     expect(liftSelection()).toBeNull();
+  });
+});
+
+describe("編排接縫（剪下貼上 / 搬移）", () => {
+  it("認得出來：來源往回跳、或任一邊是貼上來的", () => {
+    // 一般接縫：來源往前走
+    const plain = seamsOfEdl(edlOf([keep(0, 0, 1000, 0), keep(1, 2000, 3000, 1000)], [{ afterKeepId: 0, kind: "crossfade", ms: 24 }] as never));
+    expect(plain[0].rearranged).toBe(false);
+
+    // 搬移：來源往回跳
+    const moved = seamsOfEdl(edlOf([keep(0, 5000, 6000, 0), keep(1, 0, 1000, 1000)], [{ afterKeepId: 0, kind: "seam", ms: 0 }] as never));
+    expect(moved[0].rearranged).toBe(true);
+
+    // 貼上：來源接得上，但那一段是貼進來的（是插入不是剪除）
+    const pastedKeeps = [keep(0, 0, 1000, 0), { ...keep(1, 1000, 2000, 1000), pasteId: "p1" }];
+    const pasted = seamsOfEdl(edlOf(pastedKeeps as never, [{ afterKeepId: 0, kind: "seam", ms: 0 }] as never));
+    expect(pasted[0].rearranged).toBe(true);
+  });
+
+  it("拖它不會安靜地改到別的候選 —— 那是最糟的一種錯", () => {
+    // 成品：來源 5–6 秒那段在前、0–1 秒那段在後（搬移），所以接縫是
+    // srcBefore 6000 → srcAfter 0（往回跳）。
+    //
+    // 另外在 2–3 秒有一個**完全不相干**的剪除區。舊程式碼找剪除區的條件是
+    // `r.startMs <= srcBeforeMs + 1 && r.endMs >= srcAfterMs - 1` —— 後半段因為
+    // srcAfterMs 是 0 而恆真，於是它會挑中這一段，把使用者根本沒碰的候選改掉。
+    const edl = edlOf([keep(0, 5000, 6000, 0), keep(1, 0, 1000, 1000)], [{ afterKeepId: 0, kind: "seam", ms: 0 }] as never);
+    (edl as { removals: unknown }).removals = [{ startMs: 2000, endMs: 3000, candidateIds: ["c-far"] }];
+    currentTestEdl = edl;
+    useDecisions.setState({
+      candidates: { [MEDIA]: [{ id: "c-far", kind: "filler", startMs: 2000, endMs: 3000, wordIds: [], source: "rule", score: 1 }] as never },
+    });
+
+    const before = JSON.stringify(useDecisions.getState().candidates[MEDIA]);
+    expect(trimSeam(0, 200, "ripple", "left")).toBe(false);
+    expect(JSON.stringify(useDecisions.getState().candidates[MEDIA])).toBe(before);
+    // 也不該塞一筆 undo 進去（使用者拖了一下、什麼都沒發生，歷史要乾淨）
+    expect(useDecisions.getState().past).toHaveLength(0);
+  });
+
+  it("一般接縫照常可以修剪（別把功能一起關掉）", () => {
+    const edl = edlOf([keep(0, 0, 1000, 0), keep(1, 2000, 3000, 1000)], [{ afterKeepId: 0, kind: "crossfade", ms: 24 }] as never);
+    (edl as { removals: unknown }).removals = [{ startMs: 1000, endMs: 2000, candidateIds: ["c1"] }];
+    currentTestEdl = edl;
+    useDecisions.setState({
+      candidates: { [MEDIA]: [{ id: "c1", kind: "filler", startMs: 1000, endMs: 2000, wordIds: [], source: "rule", score: 1 }] as never },
+    });
+    expect(trimSeam(0, 200, "ripple", "left")).toBe(true);
+    expect(useDecisions.getState().candidates[MEDIA][0].startMs).not.toBe(1000);
   });
 });

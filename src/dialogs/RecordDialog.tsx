@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Circle, Mic, Square } from "lucide-react";
 import { api, errMessage } from "../api";
+import { micErrorKind } from "../recording/micError";
 import { estimateGate, worthGating } from "../analysis/gate";
 import { rmsDbRange } from "../analysis/peaks";
 import { withUndoToast } from "../commands/undoToast";
-import { useT } from "../i18n";
+import { t, useT } from "../i18n";
 import { analyzeAlignment, renderAlignment } from "../pipeline/align";
 import { edlFor } from "../pipeline/rules";
 import { ensureLocalAnalysis } from "../pipeline/waveform";
@@ -28,6 +29,28 @@ type Phase = "idle" | "listen" | "count" | "rec" | "proc" | "tooLong";
  * 簡易 punch-in 零旋鈕：顯示範圍 → 「聽一次，然後錄」→ 播原句 → 3-2-1 → 錄 →
  * 講完安靜 1.5 秒自動停 → 修頭尾 → 對齊回原位 → mute 原句 + 疊上 take（一筆 undo）。
  */
+/**
+ * 麥克風打不開時說人話。
+ *
+ * `getUserMedia` 丟的是 `DOMException`，直接印出來的話第一次用「重錄這句」的人
+ * 看到的是 `NotAllowedError: Permission denied` —— 那句話沒告訴他要做什麼。
+ * 認不出來的錯誤原樣保留，不要吞成一句籠統的話。
+ */
+function micMessage(e: unknown): string {
+  switch (micErrorKind(e)) {
+    case "denied":
+      return t("沒有麥克風權限。到系統設定 → 隱私權 → 麥克風把這個 App 打開，再按一次。");
+    case "notFound":
+      return t("找不到麥克風。插上一支，或在上面換一個輸入裝置，再試一次。");
+    case "busy":
+      return t("麥克風正被別的程式用著（會議軟體、瀏覽器分頁那些）。關掉它再按一次。");
+    case "unsupported":
+      return t("這個環境不支援錄音。");
+    default:
+      return errMessage(e);
+  }
+}
+
 export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "retake"; range?: { startMs: number; endMs: number } | null; onClose: () => void }) {
   const t = useT();
   const simple = useUi((s) => s.mode === "simple");
@@ -97,7 +120,7 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
       }
       await processRetake(done);
     } catch (e) {
-      toast.error(errMessage(e));
+      toast.error(micMessage(e));
       setPhase("idle");
     } finally {
       stoppingRef.current = false;
@@ -133,12 +156,12 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
         },
         onBackpressure: () => setStatus(t("寫入跟不上，還在緩衝（不會掉）")),
         onEnded: () => void stopRecording(),
-        onError: (e) => toast.error(errMessage(e)),
+        onError: (e) => toast.error(micMessage(e)),
       });
       handleRef.current = h;
       setPhase("rec");
     } catch (e) {
-      toast.error(errMessage(e));
+      toast.error(micMessage(e));
       setPhase("idle");
     }
   };
@@ -209,7 +232,7 @@ export default function RecordDialog({ mode, range, onClose }: { mode: "new" | "
       await withUndoToast(t("已換成新錄的（Ctrl+Z 可還原）"), () => useDecisions.getState().applyRedub(mainId, plan, "重錄這句"));
       onClose();
     } catch (e) {
-      toast.error(errMessage(e));
+      toast.error(micMessage(e));
       setPhase("idle");
     } finally {
       setStatus("");

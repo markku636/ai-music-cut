@@ -265,6 +265,23 @@
    > 這條唯一的長度公式對兩條路都成立。順序正常的專案仍然走原本的串流路徑，
    > 有一條 60 組隨機 plan 的對拍測試釘住「兩條路逐位元相同」。
    > 代價是亂序時多一份暫存檔（一小時立體聲約 1.4 GB）與一趟磁碟讀寫，用完就刪。
+   >
+   > **v0.112：交付物那一層。** 「依來源順序走」這個假設不只藏在剪接器裡，也藏在
+   > 每一個「逐字稿 → 交付物」的地方。字幕（`captions.ts`）與節目筆記素材
+   > （`shownotes.ts`）現在都改成**依成品順序走保留段**，時間直接從那一段的位移算，
+   > 不再靠 `mapSrcToOut` 反查 —— 反查對重複出現的來源一律回「成品裡最早的那一次」，
+   > 於是貼上的那一份完全沒有字幕；而同一句話被搬移拆到接縫兩邊時，一則字幕的結束
+   > 會早於開始（`tidyCues` 接著把它夾成一則 1.2 秒的字幕放在錯的地方）。
+   > 分段匯出（`splitExport.ts`）的長度改成「保留段與這段來源範圍的重疊總和」，
+   > 相減會是負數、那一段就被當成太短默默丟掉。
+   >
+   > 章節（`chapters.ts`）與 `markersToChapters` 本來就有排序，亂序下是安全的 ——
+   > 確認過，沒有改。
+
+   > **同名不同義的陷阱。** `edl/build.ts` 以前也有一組 `mapSrcToOut` / `mapOutToSrc`，
+   > 跟 `edl/map.ts` 同名但語意不同（落在剪除區回 `null`，而且不認得重排），
+   > 只有自己的測試在用。兩個同名函式隨手 import 錯一個就是一個不會報錯的 bug，
+   > 所以 v0.112 把它刪掉了：時間換算只有 `edl/map.ts` 一個地方。
 7. **去人聲**（`pipeline/separate.ts` → `local_separate.rs`）：本機 demucs（htdemucs）→ `<out>/htdemucs/<檔名>/{vocals,no_vocals}.wav` → 寫 `<來源>_vocals` / `_accompaniment` → 加入媒體清單。第一次用會先裝套件（會帶進 torch，所以不自動裝）。
 8. **ASR 驗收**（`pipeline/verify.ts` + `analysis/verify.ts`）：成品 → `media_prepare` → 本機 faster-whisper 轉寫 → `expectedWords(EDL)` × 成品逐字稿做帶狀 Levenshtein 對齊 → 漏字 / 該剪沒剪 / 接縫 ±600 ms 標記；報告存在 `store/verify.ts`（不進專案檔），UI 可逐筆試聽或跳去修。
 9. **輸出**（`render.rs`）：保留段再依 VAD 切成 ≤15 s 單元 → BS.1770 閘門量測 → 增益規劃（clamp ±12 dB、峰值守門、平滑、階差 ≤3 dB）→ Rust 串流剪接（等功率 crossfade / seam / gap）→ `concat.wav` → ffmpeg loudnorm 兩趟 + alimiter → mp3 / m4a / wav。

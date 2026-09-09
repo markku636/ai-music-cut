@@ -11,9 +11,26 @@
 // 章節標記存的是**來源時間**，而輸出的 `rangeMs` 要的也是來源時間 —— 這裡不需要換算，
 // 但每一段在成品裡有多長就要換算（中間可能剪掉很多）。
 
-import type { Edl } from "./edl/build";
-import { mapSrcToOut } from "./edl/map";
+import type { Edl, KeepSegment } from "./edl/build";
+import { isRearrangedKeeps, mapSrcToOut } from "./edl/map";
 import type { Marker } from "./types";
+
+/**
+ * 這一段來源範圍在成品裡總共佔多久。
+ *
+ * 亂序（剪下貼上 / 搬移）時不能用 `mapSrcToOut(end) - mapSrcToOut(start)`：
+ * 兩個端點可能落在成品的兩頭，相減出來是**負數**，那一段就會被當成太短默默丟掉。
+ * 改成把每一段保留段與這個範圍的重疊加起來 —— 那正是 `clipUnits` 實際會剪出來的量
+ * （同一段來源被貼兩次時算兩次，因為成品裡真的有兩份）。
+ *
+ * 順序正常時兩種算法只差在 room tone 的留白，所以那條路維持原本的減法不動。
+ */
+function outMsForSrcRange(keeps: KeepSegment[], fromMs: number, toMs: number): number {
+  if (!isRearrangedKeeps(keeps)) return mapSrcToOut(keeps, toMs, "prev") - mapSrcToOut(keeps, fromMs, "next");
+  let ms = 0;
+  for (const k of keeps) ms += Math.max(0, Math.min(toMs, k.srcEndMs) - Math.max(fromMs, k.srcStartMs));
+  return ms;
+}
 
 export interface SplitPart {
   /** 1 起算。 */
@@ -89,7 +106,7 @@ export function splitByChapters(markers: Marker[], edl: Edl | null, opts: SplitO
   const out: SplitPart[] = [];
   for (const b of bounds) {
     if (b.endMs <= b.startMs) continue;
-    const outMs = edl ? mapSrcToOut(edl.keeps, b.endMs, "prev") - mapSrcToOut(edl.keeps, b.startMs, "next") : b.endMs - b.startMs;
+    const outMs = edl ? outMsForSrcRange(edl.keeps, b.startMs, b.endMs) : b.endMs - b.startMs;
     if (outMs < minOut) continue;
     const index = out.length + 1;
     out.push({ index, title: b.title, startMs: b.startMs, endMs: b.endMs, outMs, fileName: "" });

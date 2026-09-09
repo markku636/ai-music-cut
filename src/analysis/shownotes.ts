@@ -1,6 +1,6 @@
 import type { Edl } from "./edl/build";
 import { mapSrcToOut } from "./edl/map";
-import type { Marker, Transcript } from "./types";
+import type { Marker, Sentence, Transcript } from "./types";
 
 /**
  * 節目筆記（show notes）：剪完之後要貼到部落格 / RSS 的那一份。
@@ -58,16 +58,42 @@ export function notesSource(tr: Transcript | null, edl: Edl | null, opts: { maxC
   const maxChars = opts.maxChars ?? 24_000;
   const out: NotesSource[] = [];
   let used = 0;
-  for (const s of tr.sentences) {
-    // 這句話在成品裡還在不在：起點落在任何一個保留段內才算
-    const kept = edl.keeps.some((k) => s.startMs >= k.srcStartMs && s.startMs < k.srcEndMs);
-    if (!kept) continue;
-    const text = s.wordIds.map((id) => tr.words[id]?.text ?? "").join("").trim();
-    if (!text) continue;
-    if (used + text.length > maxChars) break;
-    used += text.length;
-    out.push({ outMs: mapSrcToOut(edl.keeps, s.startMs), text });
+  // **依成品順序走保留段。** 這份東西整個的前提就是「每一行的時間戳是成品裡的位置」，
+  // 而剪下貼上 / 搬移之後來源順序不再等於聽到的順序 —— 照來源順序給，claude 讀到的
+  // 是一集不存在的節目，它回來的章節時間也會跟著錯。同一段話被貼兩次時要出現兩次。
+  let full = false;
+  for (const k of edl.keeps) {
+    if (full) break;
+    for (const s of sentencesIn(tr.sentences, k)) {
+      const text = s.wordIds.map((id) => tr.words[id]?.text ?? "").join("").trim();
+      if (!text) continue;
+      if (used + text.length > maxChars) {
+        full = true;
+        break;
+      }
+      used += text.length;
+      out.push({ outMs: k.outStartMs + (s.startMs - k.srcStartMs), text });
+    }
   }
+  return out;
+}
+
+/**
+ * 起點落在這一段裡的句子（`tr.sentences` 依 `startMs` 遞增，所以可以二分找起點）。
+ *
+ * 二分而不是整份掃：贅字剪多了保留段會有上千個，每一段掃一次整份逐字稿就是
+ * 上千萬次比較。
+ */
+function sentencesIn(sentences: Sentence[], k: { srcStartMs: number; srcEndMs: number }): Sentence[] {
+  let lo = 0;
+  let hi = sentences.length;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (sentences[m].startMs < k.srcStartMs) lo = m + 1;
+    else hi = m;
+  }
+  const out: Sentence[] = [];
+  for (let i = lo; i < sentences.length && sentences[i].startMs < k.srcEndMs; i++) out.push(sentences[i]);
   return out;
 }
 

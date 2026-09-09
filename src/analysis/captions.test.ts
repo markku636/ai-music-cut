@@ -326,3 +326,69 @@ describe("端到端：剪掉贅字之後字幕不會飄", () => {
     expect(Math.max(...cues.map((c) => c.endMs))).toBeLessThanOrEqual(2200);
   });
 });
+
+describe("buildCues：亂序的 EDL（剪下貼上 / 搬移）", () => {
+  // 來源：四句各 1 秒，中間空 200 ms
+  const words = [w(0, 0, 800, "第一句"), w(1, 1000, 1800, "第二句"), w(2, 2000, 2800, "第三句"), w(3, 3000, 3800, "第四句")];
+  const sentences = [sent(0, [0], words), sent(1, [1], words), sent(2, [2], words), sent(3, [3], words)];
+
+  it("搬移：字幕依成品順序排，而且結束不會早於開始", () => {
+    // 成品順序＝第三句、第一句（來源往回跳）
+    const keeps: KeepSegment[] = [
+      { id: 0, srcStartMs: 1900, srcEndMs: 2900, outStartMs: 0, outEndMs: 1000, gainDb: 0 },
+      { id: 1, srcStartMs: 0, srcEndMs: 900, outStartMs: 1000, outEndMs: 1900, gainDb: 0 },
+    ];
+    const cues = buildCues({ words, sentences, keeps, opts: { minMs: 0 } });
+    expect(cues.map((c) => c.text)).toEqual(["第三句", "第一句"]);
+    // 每一則都必須是正長度，而且依成品時間遞增
+    for (const c of cues) expect(c.endMs).toBeGreaterThan(c.startMs);
+    expect(cues[0].startMs).toBeLessThan(cues[1].startMs);
+    // 第三句在來源 2000，這一段的位移是 -1900 → 成品 100
+    expect(cues[0].startMs).toBe(100);
+    // 第一句在來源 0，這一段的位移是 +1000 → 成品 1000
+    expect(cues[1].startMs).toBe(1000);
+  });
+
+  it("貼上：同一句在成品出現兩次，字幕也要出現兩次", () => {
+    // 成品＝第一句、第三句（貼上的那一份）、第三句（原本的位置）
+    const keeps: KeepSegment[] = [
+      { id: 0, srcStartMs: 0, srcEndMs: 900, outStartMs: 0, outEndMs: 900, gainDb: 0 },
+      { id: 1, srcStartMs: 1900, srcEndMs: 2900, outStartMs: 900, outEndMs: 1900, gainDb: 0 },
+      { id: 2, srcStartMs: 1900, srcEndMs: 2900, outStartMs: 1900, outEndMs: 2900, gainDb: 0 },
+    ];
+    const cues = buildCues({ words, sentences, keeps, opts: { minMs: 0 } });
+    expect(cues.map((c) => c.text)).toEqual(["第一句", "第三句", "第三句"]);
+    expect(cues[1].startMs).toBe(1000); // 900 + (2000 - 1900)
+    expect(cues[2].startMs).toBe(2000); // 1900 + (2000 - 1900)
+    for (const c of cues) expect(c.endMs).toBeGreaterThan(c.startMs);
+  });
+
+  it("接縫兩邊不會被黏成同一則字幕", () => {
+    // 第一句與第四句在成品裡緊鄰，但來源上差了 2 秒以上
+    const keeps: KeepSegment[] = [
+      { id: 0, srcStartMs: 2900, srcEndMs: 3900, outStartMs: 0, outEndMs: 1000, gainDb: 0 },
+      { id: 1, srcStartMs: 0, srcEndMs: 900, outStartMs: 1000, outEndMs: 1900, gainDb: 0 },
+    ];
+    const cues = buildCues({ words, sentences, keeps, opts: { minMs: 0, maxWidth: 999, maxMs: 999_999 } });
+    expect(cues.map((c) => c.text)).toEqual(["第四句", "第一句"]);
+  });
+});
+
+describe("buildCues：同一句話被搬移拆到接縫兩邊", () => {
+  it("不會做出一則「結束早於開始」的字幕", () => {
+    // 一句話的兩個字，成品裡「乙」在前、「甲」在後（搬移）
+    const words = [w(0, 0, 400, "甲"), w(1, 3000, 3400, "乙")];
+    const sentences = [sent(0, [0, 1], words)];
+    const keeps: KeepSegment[] = [
+      { id: 0, srcStartMs: 2900, srcEndMs: 3500, outStartMs: 0, outEndMs: 600, gainDb: 0 },
+      { id: 1, srcStartMs: 0, srcEndMs: 500, outStartMs: 600, outEndMs: 1100, gainDb: 0 },
+    ];
+    // breakGapMs 開到很大，把「大段剪除就斷開」那條規則排除掉 ——
+    // 這裡要測的是「來源往回跳」本身有沒有被當成斷點。
+    const cues = buildCues({ words, sentences, keeps, opts: { minMs: 0, breakGapMs: 999_999, maxWidth: 999 } });
+    expect(cues.map((c) => c.text)).toEqual(["乙", "甲"]);
+    for (const c of cues) expect(c.endMs).toBeGreaterThan(c.startMs);
+    expect(cues[0].startMs).toBe(100); // 3000 - 2900
+    expect(cues[1].startMs).toBe(600); // 0 + 600
+  });
+});

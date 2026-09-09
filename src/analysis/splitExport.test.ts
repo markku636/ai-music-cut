@@ -160,3 +160,26 @@ describe("splitByChapters", () => {
     expect(new Set(parts.map((p) => p.fileName)).size).toBe(3);
   });
 });
+
+describe("splitByChapters：亂序的 EDL（剪下貼上 / 搬移）", () => {
+  it("段落長度不會算成負的，也就不會被當成太短丟掉", () => {
+    // 成品順序＝來源 10–20 秒在前、0–10 秒在後
+    const edl = edlOf([
+      { id: 0, srcStartMs: 10_000, srcEndMs: 20_000, outStartMs: 0, outEndMs: 10_000, gainDb: 0 },
+      { id: 1, srcStartMs: 0, srcEndMs: 10_000, outStartMs: 10_000, outEndMs: 20_000, gainDb: 0 },
+    ]);
+    const parts = splitByChapters([chapter("a", 0, "上半"), chapter("b", 10_000, "下半")], edl, { ...OPTS, durationMs: 20_000 });
+    expect(parts.map((p) => p.title)).toEqual(["上半", "下半"]);
+    for (const p of parts) expect(p.outMs).toBeGreaterThan(0);
+    expect(parts.map((p) => p.outMs)).toEqual([10_000, 10_000]);
+  });
+
+  it("貼上：同一段來源被算兩次 —— 成品裡真的有兩份", () => {
+    const edl = edlOf([
+      { id: 0, srcStartMs: 0, srcEndMs: 10_000, outStartMs: 0, outEndMs: 10_000, gainDb: 0 },
+      { id: 1, srcStartMs: 2000, srcEndMs: 6000, outStartMs: 10_000, outEndMs: 14_000, gainDb: 0 },
+    ]);
+    const parts = splitByChapters([chapter("a", 0, "全部")], edl, { ...OPTS, durationMs: 10_000 });
+    expect(parts[0].outMs).toBe(14_000);
+  });
+});

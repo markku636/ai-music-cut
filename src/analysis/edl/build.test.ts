@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { Candidate, DecisionMap, Sentence, Word } from "../types";
 import { candidateId } from "../types";
-import { activeRanges, buildEdl, DEFAULT_EDL_OPTIONS, mapOutToSrc, mapSrcToOut, MIDPOINT_PROBE, type EdlInput } from "./build";
+import { activeRanges, buildEdl, DEFAULT_EDL_OPTIONS, MIDPOINT_PROBE, type EdlInput } from "./build";
+import { mapOutToSrc, mapSrcToOut } from "./map";
 
 function mkWords(spec: [string, number, number][]): Word[] {
   return spec.map(([text, s, e], i) => ({ id: i, segId: 0, text, norm: text, startMs: s, endMs: e, prob: 0.9 }));
@@ -72,15 +73,16 @@ describe("buildEdl", () => {
   it("src↔out mapping is monotonic and round-trips on kept time", () => {
     const c = cand("filler", words, [1]);
     const edl = buildEdl(input, [c], auto([c.id]), { ...DEFAULT_EDL_OPTIONS, snapWindowMs: 0 }, MIDPOINT_PROBE);
-    expect(mapSrcToOut(edl, 100)).toBe(100);
-    expect(mapSrcToOut(edl, 350)).toBeNull();
-    const o = mapSrcToOut(edl, 1000)!;
+    const kept = (ms: number) => edl.keeps.some((k) => ms >= k.srcStartMs && ms <= k.srcEndMs);
+    expect(mapSrcToOut(edl.keeps, 100)).toBe(100);
+    expect(kept(350)).toBe(false); // 350 ms 被剪掉了，成品裡沒有這一刻
+    const o = mapSrcToOut(edl.keeps, 1000);
     expect(o).toBeLessThan(1000);
-    expect(mapOutToSrc(edl, o)).toBe(1000);
+    expect(mapOutToSrc(edl.keeps, o)).toBe(1000);
     let prev = -1;
     for (let t = 0; t <= 2000; t += 50) {
-      const v = mapSrcToOut(edl, t);
-      if (v == null) continue;
+      if (!kept(t)) continue;
+      const v = mapSrcToOut(edl.keeps, t);
       expect(v).toBeGreaterThanOrEqual(prev);
       prev = v;
     }

@@ -5,15 +5,15 @@
 //
 // **這裡真正難的不是格式，是時間。** 逐字稿在**來源時間軸**上，字幕要的是**成品
 // 時間**：剪掉 20 個贅字之後，來源 12:30 那句話在成品裡是 12:11，剪愈多錯愈遠，
-// 而且錯得很安靜 —— 字幕會整份慢慢飄掉，愈後面愈離譜。所以每一則字幕的時間都要
-// 經過 `mapSrcToOut`，而**被剪掉的字要整個不出現**（不是往前挪，是根本沒說過）。
+// 而且錯得很安靜 —— 字幕會整份慢慢飄掉，愈後面愈離譜。所以字幕是**依成品順序走
+// 保留段**長出來的，而**被剪掉的字要整個不出現**（不是往前挪，是根本沒說過）。
+// 反過來，剪下貼上讓同一段話在成品裡出現兩次時，字幕也要出現兩次。
 //
 // 第二個容易錯的地方是**斷句**。播放器不接受重疊或零長度的字幕；一則太長讀不完、
 // 太短閃一下就消失。所以除了字數與時長上限之外，換講者一定另起一則（同一則字幕
 // 混兩個人的話是不能讀的），大段剪除的兩邊也要斷開。
 
 import type { KeepSegment } from "./edl/build";
-import { mapSrcToOut } from "./edl/map";
 import type { Sentence, Word } from "./types";
 
 export interface Cue {
@@ -115,29 +115,93 @@ export interface BuildCuesInput {
   opts?: Partial<CaptionOptions>;
 }
 
+/** 一個字被放進成品的某一次（貼上會讓同一個字有兩份）。 */
+interface PlacedWord {
+  w: Word;
+  outStartMs: number;
+  outEndMs: number;
+  /** 屬於第幾句 —— 句號是天然斷點。 */
+  sentence: number;
+}
+
+/** 依中點排好的字（`wordsInKeep` 要二分找起點，所以順序必須是中點的順序）。 */
+interface WordByMid {
+  w: Word;
+  mid: number;
+}
+
+/**
+ * 中點落在這一段裡的字，依來源時間排好。
+ *
+ * 二分找起點而不是整份掃：贅字剪多了保留段會有上千個，每一段都掃一次整份逐字稿
+ * 就是上千萬次比較。
+ */
+function wordsInKeep(byMid: WordByMid[], k: KeepSegment): Word[] {
+  let lo = 0;
+  let hi = byMid.length;
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (byMid[m].mid < k.srcStartMs) lo = m + 1;
+    else hi = m;
+  }
+  const out: Word[] = [];
+  for (let i = lo; i < byMid.length && byMid[i].mid < k.srcEndMs; i++) out.push(byMid[i].w);
+  return out.sort((a, b) => a.startMs - b.startMs || a.id - b.id);
+}
+
 /**
  * 逐字稿 → 字幕。
  *
- * 順序是：先丟掉被剪掉的字 → 依「換講者 / 大段剪除 / 句號」切成段 → 段內依字數與
- * 時長打包成一則一則 → 換算成成品時間 → 修掉太短與重疊。
+ * 順序是：依**成品順序**走保留段、把段內的字放到成品時間上 → 依「換講者 / 大段剪除 /
+ * 來源往回跳 / 句號」切成段 → 段內依字數與時長打包成一則一則 → 修掉太短與重疊。
  */
 export function buildCues(input: BuildCuesInput): Cue[] {
   const o = { ...DEFAULT_CAPTIONS, ...input.opts };
   const { words, sentences, keeps, speakerOf } = input;
   if (!keeps.length) return [];
 
+  const sentenceOf = new Map<number, number>();
+  sentences.forEach((s, si) => s.wordIds.forEach((id) => sentenceOf.set(id, si)));
+
+  // **依成品順序走 keeps，不是依來源順序走字。**
+  //
+  // 剪下貼上 / 搬移之後來源順序不再等於成品順序，照它走會出兩種錯，而且都不會報錯：
+  // 搬移時一則字幕的結束會早於開始（`tidyCues` 接著把它夾成一則 1.2 秒的字幕放在
+  // 錯的地方），貼上的那一份則完全沒有字幕 —— `mapSrcToOut` 對重複出現的來源一律
+  // 回「成品裡最早的那一次」。
+  //
+  // 從 keeps 走就沒有這個問題：成品時間天生遞增，而同一段來源出現兩次就會被走兩次。
+  const byMid: WordByMid[] = words
+    .filter((w) => w && w.text.trim())
+    .map((w) => ({ w, mid: (w.startMs + w.endMs) / 2 }))
+    .sort((a, b) => a.mid - b.mid);
+
+  const placed: PlacedWord[] = [];
+  for (const k of keeps) {
+    const off = k.outStartMs - k.srcStartMs;
+    for (const w of wordsInKeep(byMid, k)) {
+      placed.push({
+        w,
+        // 跨在段落邊界上的字要夾住，不然會畫到這一段之外去
+        outStartMs: Math.max(k.outStartMs, Math.min(k.outEndMs, w.startMs + off)),
+        outEndMs: Math.max(k.outStartMs, Math.min(k.outEndMs, w.endMs + off)),
+        sentence: sentenceOf.get(w.id) ?? -1,
+      });
+    }
+  }
+
   const cues: Cue[] = [];
-  let pending: Word[] = [];
+  let pending: PlacedWord[] = [];
   let pendingSpeaker: string | undefined;
 
   const flush = () => {
     if (!pending.length) return;
-    const text = joinWords(pending.map((w) => w.text));
+    const text = joinWords(pending.map((p) => p.w.text));
     if (text) {
       cues.push({
         index: 0,
-        startMs: mapSrcToOut(keeps, pending[0].startMs, "next"),
-        endMs: mapSrcToOut(keeps, pending[pending.length - 1].endMs, "prev"),
+        startMs: pending[0].outStartMs,
+        endMs: pending[pending.length - 1].outEndMs,
         text,
         speakerId: pendingSpeaker,
       });
@@ -145,30 +209,28 @@ export function buildCues(input: BuildCuesInput): Cue[] {
     pending = [];
   };
 
-  for (const s of sentences) {
-    let prev: Word | null = null;
-    for (const id of s.wordIds) {
-      const w = words[id];
-      if (!w || !w.text.trim()) continue;
-      if (!wordSurvives(keeps, w)) continue;
-
-      const sp = speakerOf?.get(w.id);
-      // 換講者一定另起一則：一則字幕混兩個人的話是不能讀的
-      if (pending.length && sp !== pendingSpeaker) flush();
-      // 中間被剪掉一大段 → 斷開（剪一個贅字不算）
-      if (pending.length && prev && w.startMs - prev.endMs > o.breakGapMs) flush();
-      // 字數 / 時長上限
-      if (pending.length) {
-        const wouldBe = joinWords([...pending.map((x) => x.text), w.text]);
-        const spanMs = w.endMs - pending[0].startMs;
-        if (displayWidth(wouldBe) > o.maxWidth || spanMs > o.maxMs) flush();
-      }
-      if (!pending.length) pendingSpeaker = sp;
-      pending.push(w);
-      prev = w;
+  let prev: PlacedWord | null = null;
+  for (const p of placed) {
+    const sp = speakerOf?.get(p.w.id);
+    // 換講者一定另起一則：一則字幕混兩個人的話是不能讀的
+    if (pending.length && sp !== pendingSpeaker) flush();
+    if (pending.length && prev) {
+      const srcGap = p.w.startMs - prev.w.endMs;
+      // 中間被剪掉一大段 → 斷開（剪一個贅字不算）。
+      // srcGap < 0 是「來源往回跳」＝ 搬移 / 貼上的接縫，那裡一定要斷。
+      if (srcGap < 0 || srcGap > o.breakGapMs) flush();
+      else if (p.sentence !== prev.sentence) flush();
     }
-    // 句號是天然的斷點 —— 一則字幕跨兩句話讀起來會黏在一起
-    flush();
+    // 字數 / 時長上限。時長用**成品時間**：字幕在螢幕上待多久是成品的事，
+    // 用來源時間會把中間剪掉的部分也算進去，於是斷在不需要斷的地方。
+    if (pending.length) {
+      const wouldBe = joinWords([...pending.map((x) => x.w.text), p.w.text]);
+      const spanMs = p.outEndMs - pending[0].outStartMs;
+      if (displayWidth(wouldBe) > o.maxWidth || spanMs > o.maxMs) flush();
+    }
+    if (!pending.length) pendingSpeaker = sp;
+    pending.push(p);
+    prev = p;
   }
   flush();
 

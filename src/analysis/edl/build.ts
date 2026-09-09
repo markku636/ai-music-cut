@@ -426,20 +426,6 @@ function hasKeptWordBetween(words: Word[], cutWordIds: Set<number>, fromMs: numb
   return false;
 }
 
-/** 來源時間 → 輸出時間；落在剪除區回 null。 */
-export function mapSrcToOut(edl: Edl, srcMs: number): number | null {
-  for (const k of edl.keeps) {
-    if (srcMs >= k.srcStartMs && srcMs <= k.srcEndMs) return k.outStartMs + (srcMs - k.srcStartMs);
-  }
-  return null;
-}
-
-/** 輸出時間 → 來源時間（gap 內回下一段起點）。 */
-export function mapOutToSrc(edl: Edl, outMs: number): number {
-  for (const k of edl.keeps) {
-    if (outMs < k.outStartMs) return k.srcStartMs;
-    if (outMs <= k.outEndMs) return k.srcStartMs + (outMs - k.outStartMs);
-  }
-  const last = edl.keeps[edl.keeps.length - 1];
-  return last ? last.srcEndMs : 0;
-}
+// 時間換算（來源 ↔ 成品）住在 `edl/map.ts`，不在這裡。
+// 這裡曾經有一組**同名但語意不同**的版本（落在剪除區回 null、而且不認得重排），
+// 只有自己的測試在用 —— 兩個 `mapSrcToOut` 隨手 import 錯一個，就是一個不會報錯的 bug。

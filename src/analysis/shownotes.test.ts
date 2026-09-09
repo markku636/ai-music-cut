@@ -213,3 +213,31 @@ describe("markersToChapters", () => {
     expect(markersToChapters([marker(1000, "chapter", "")], edl)).toEqual([]);
   });
 });
+
+describe("notesSource：亂序的 EDL（剪下貼上 / 搬移）", () => {
+  it("時間戳依成品順序給 —— 照來源順序給的話 claude 讀到的是一集不存在的節目", () => {
+    // 成品順序＝來源 10–14 秒那段在前，0–4 秒那段在後
+    const edl = edlOf([{ startMs: 10_000, endMs: 14_000 }, { startMs: 0, endMs: 4000 }]);
+    const src = notesSource(trOf([{ startMs: 1000, text: "開場" }, { startMs: 12_000, text: "重點" }]), edl);
+    expect(src).toEqual([
+      { outMs: 2000, text: "重點" },
+      { outMs: 5000, text: "開場" },
+    ]);
+    // 時間戳必須遞增，不然 notesPrompt 那句「時間戳是成品裡的位置」就是騙人的
+    for (let i = 1; i < src.length; i++) expect(src[i].outMs).toBeGreaterThan(src[i - 1].outMs);
+  });
+
+  it("貼上：同一句在成品出現兩次，素材也要出現兩次", () => {
+    const edl = edlOf([
+      { startMs: 0, endMs: 4000 },
+      { startMs: 10_000, endMs: 14_000 },
+      { startMs: 10_000, endMs: 14_000 },
+    ]);
+    const src = notesSource(trOf([{ startMs: 1000, text: "開場" }, { startMs: 12_000, text: "重點" }]), edl);
+    expect(src).toEqual([
+      { outMs: 1000, text: "開場" },
+      { outMs: 6000, text: "重點" },
+      { outMs: 10_000, text: "重點" },
+    ]);
+  });
+});

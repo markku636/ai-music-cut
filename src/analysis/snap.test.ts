@@ -27,15 +27,52 @@ describe("snapValue", () => {
     expect(snapValue(508, c)).toEqual({ ms: 500, kind: "seam" });
   });
 
-  it("多個目標取最近", () => {
+  it("同一類目標取最近", () => {
+    const c = ctx({
+      targets: [
+        { ms: 480, kind: "word" },
+        { ms: 520, kind: "word" },
+      ],
+    });
+    expect(snapValue(505, c)).toEqual({ ms: 520, kind: "word" });
+    expect(snapValue(495, c)).toEqual({ ms: 480, kind: "word" });
+  });
+
+  it("結構性邊界在差不多近的時候贏過字界", () => {
+    // 中文沒空格，字界密到每 220 ms 一個 —— 純比距離的話永遠吸到字界。
+    // 量過：站在既有接縫旁 30 ms 拖，36/100 會被字界搶走。
     const c = ctx({
       targets: [
         { ms: 480, kind: "word" },
         { ms: 520, kind: "sentence" },
       ],
     });
-    expect(snapValue(505, c)).toEqual({ ms: 520, kind: "sentence" });
-    expect(snapValue(495, c)).toEqual({ ms: 480, kind: "word" });
+    // 字界近 10 ms，但句界是使用者真正瞄準的東西
+    expect(snapValue(495, c)).toEqual({ ms: 520, kind: "sentence" });
+  });
+
+  it("接縫贏過貼在鼻子上的字界（半個容差以內）", () => {
+    const c = ctx({
+      tolMs: 140,
+      targets: [
+        { ms: 1000, kind: "seam" },
+        { ms: 1029, kind: "word" },
+      ],
+    });
+    // 離接縫 30 ms、離字界 1 ms —— 使用者是瞄著那一刀去的
+    expect(snapValue(1030, c)).toEqual({ ms: 1000, kind: "seam" });
+  });
+
+  it("但差太遠的結構性邊界不會硬拉過去", () => {
+    const c = ctx({
+      tolMs: 140,
+      targets: [
+        { ms: 1000, kind: "seam" },
+        { ms: 1100, kind: "word" },
+      ],
+    });
+    // 離接縫 101 ms（超過半個容差）、離字界 1 ms → 字界贏，不會被拉走 100 ms
+    expect(snapValue(1101, c)).toEqual({ ms: 1100, kind: "word" });
   });
 
   it("同距離時越結構性的邊界越優先（接縫 > 句界 > 字界）", () => {

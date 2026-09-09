@@ -35,8 +35,22 @@ export interface SnapContext {
   tolMs: number;
 }
 
-/** 同距離時誰贏：接縫優先於句界，句界優先於字界 —— 越「結構性」的邊界越該吸。 */
+/** 距離完全相同時誰贏。實際的偏好靠 `BIAS`，這只是最後的平手裁決。 */
 const PRIORITY: Record<SnapKind, number> = { marker: 0, seam: 1, sentence: 2, playhead: 3, bound: 4, word: 5, beat: 6 };
+
+/**
+ * 結構性邊界的偏好（乘上容差）。比較的是 `距離 − 偏好 × 容差`，不是純距離。
+ *
+ * **為什麼需要**：中文沒有空格，辨識器給的字界密到每 220 ms 一個。整段適配時容差是
+ * 140 ms —— 幾乎任何位置附近都有字界，所以「純看誰近」的結果就是永遠吸到字界。
+ * 量過一集 40 分鐘的中文 podcast（22519 個目標）：站在既有接縫旁 30 ms 拖，
+ * **36/100 會被字界搶走**；300 次落點裡字界 245 次、接縫 0 次。
+ * 使用者是瞄著那一刀去的，結果停在 30 ms 外，於是留下一個 30 ms 的碎片。
+ *
+ * 偏好 0.5 表示「接縫離半個容差以內就贏過貼在鼻子上的字界」。
+ * 字界與拍點沒有偏好 —— 它們是順手的參考，不是使用者瞄準的東西。
+ */
+const BIAS: Record<SnapKind, number> = { marker: 0.5, seam: 0.5, sentence: 0.25, playhead: 0.25, bound: 0.25, word: 0, beat: 0 };
 
 export interface SnapResult {
   ms: number;
@@ -47,13 +61,18 @@ export interface SnapResult {
 export function snapValue(ms: number, ctx: SnapContext): SnapResult {
   if (!ctx.enabled || ctx.tolMs <= 0) return { ms, kind: null };
   let best: SnapTarget | null = null;
-  let bestDist = Infinity;
+  // 排名分數：距離扣掉偏好。真正的距離仍然要在容差內才算候選。
+  let bestScore = Infinity;
+  // 內聯而不是抽成 closure：這條迴圈一次拖曳要跑兩萬多次（40 分鐘的中文 podcast
+  // 有 22519 個目標），一次 closure 呼叫就讓每次拖曳從 0.063 ms 變成 0.139 ms。
+  const tol = ctx.tolMs;
   for (const t of ctx.targets) {
     const d = Math.abs(t.ms - ms);
-    if (d > ctx.tolMs) continue;
-    if (d < bestDist - 0.001 || (Math.abs(d - bestDist) <= 0.001 && best && PRIORITY[t.kind] < PRIORITY[best.kind])) {
+    if (d > tol) continue;
+    const sc = d - BIAS[t.kind] * tol;
+    if (sc < bestScore - 0.001 || (Math.abs(sc - bestScore) <= 0.001 && best && PRIORITY[t.kind] < PRIORITY[best.kind])) {
       best = t;
-      bestDist = d;
+      bestScore = sc;
     }
   }
   if (ctx.grid) {
@@ -61,9 +80,10 @@ export function snapValue(ms: number, ctx: SnapContext): SnapResult {
     const d = Math.abs(b - ms);
     // snapToBeat 吸不到時原樣回傳，所以 d === 0 有兩種意思：正好在拍上、或根本沒吸到。
     // 兩種情況的結果都一樣（ms 不動），只有標示的 kind 有差，不值得為此再算一次。
-    if (b !== ms && d <= ctx.tolMs && (d < bestDist - 0.001 || (Math.abs(d - bestDist) <= 0.001 && best && PRIORITY.beat < PRIORITY[best.kind]))) {
+    const sc = d - BIAS.beat * tol;
+    if (b !== ms && d <= ctx.tolMs && (sc < bestScore - 0.001 || (Math.abs(sc - bestScore) <= 0.001 && best && PRIORITY.beat < PRIORITY[best.kind]))) {
       best = { ms: b, kind: "beat" };
-      bestDist = d;
+      bestScore = sc;
     }
   }
   return best ? { ms: best.ms, kind: best.kind } : { ms, kind: null };

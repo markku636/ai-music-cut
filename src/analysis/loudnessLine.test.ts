@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addLines, gainLine, loudnessFraction, loudnessLine, quietShare, SILENT_LUFS } from "./loudnessLine";
+import { addLines, gainLine, loudnessFraction, loudnessLine, loudnormOffset, quietShare, shiftLine, SILENT_LUFS } from "./loudnessLine";
 
 /** 造 n 個視窗，第 i 個的 shortTerm 由 f(i) 決定。 */
 function win(n: number, f: (i: number) => number): Float32Array {
@@ -124,5 +124,26 @@ describe("addLines", () => {
     expect(r[0]).toBe(-16);
     expect(Number.isNaN(r[1])).toBe(true);
     expect(Number.isNaN(r[2])).toBe(true);
+  });
+});
+
+describe("loudnormOffset / shiftLine", () => {
+  it("把整段推到目標：量到 -21 要補 +5 才到 -16", () => {
+    expect(loudnormOffset(-21, -16)).toBe(5);
+    expect(loudnormOffset(-12, -16)).toBe(-4);
+  });
+
+  it("量不到就不平移（寧可不動，也不要憑空推一個數字）", () => {
+    expect(loudnormOffset(null, -16)).toBe(0);
+    expect(loudnormOffset(NaN, -16)).toBe(0);
+  });
+
+  it("平移保留 NaN，也不會為了 0 額外配一份陣列", () => {
+    const src = Float32Array.from([-20, NaN, -18]);
+    expect(shiftLine(src, 0)).toBe(src);
+    const out = shiftLine(src, 4);
+    expect(out[0]).toBe(-16);
+    expect(Number.isNaN(out[1])).toBe(true);
+    expect(out[2]).toBe(-14);
   });
 });

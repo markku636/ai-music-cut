@@ -114,3 +114,25 @@ export function addLines(a: Float32Array, b: Float32Array): Float32Array {
   }
   return out;
 }
+
+/**
+ * loudnorm 那兩趟會把整段的 integrated 推到目標，所以圖上那條「平衡後」要一起平移。
+ *
+ * 不平移的話圖是在講半個真相：實測（sample90、目標 −16）平衡後的中位是 −17.1，
+ * 但成品量出來是 −16.0 —— 圖說「還有 13% 偏小聲」，而成品其實沒有那個問題。
+ * 那是個假警報，而假警報會讓人開始不相信這張圖。
+ *
+ * @param integrated 逐段平衡之後、只算保留段的 integrated LUFS（null = 量不到）
+ */
+export function loudnormOffset(integrated: number | null, targetLufs: number): number {
+  if (integrated == null || !Number.isFinite(integrated)) return 0;
+  return targetLufs - integrated;
+}
+
+/** 整條線加一個固定偏移（NaN 保持 NaN）。 */
+export function shiftLine(line: Float32Array, db: number): Float32Array {
+  if (!db) return line;
+  const out = new Float32Array(line.length).fill(NaN);
+  for (let i = 0; i < line.length; i++) if (Number.isFinite(line[i])) out[i] = line[i] + db;
+  return out;
+}

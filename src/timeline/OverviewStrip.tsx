@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cutSpansOf, overviewBars, scrollTargetMs, spansToRects, viewportOf, xFromMs } from "../analysis/overview";
-import { addLines, gainLine, loudnessFraction, loudnessLine, quietShare } from "../analysis/loudnessLine";
+import { addLines, gainLine, loudnessFraction, loudnessLine, loudnormOffset, quietShare, shiftLine } from "../analysis/loudnessLine";
+import { integratedFromBlocks } from "../analysis/loudness/gating";
 import { DEFAULT_GAIN_OPTIONS, measureUnits, planGains } from "../analysis/loudness/plan";
 import { splitUnits } from "../analysis/loudness/units";
 import { useT } from "../i18n";
@@ -89,7 +90,25 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
     const units = splitUnits(edl.keeps, tr?.vad ?? []);
     if (!units.length) return null;
     const gains = planGains(measureUnits(units, local), { ...DEFAULT_GAIN_OPTIONS, targetLufs });
-    return addLines(loud, gainLine(units, gains.map((g) => g.gainDb), durationMs, w));
+    const leveled = addLines(loud, gainLine(units, gains.map((g) => g.gainDb), durationMs, w));
+
+    // 還沒完：輸出還會經過 loudnorm 兩趟，把**整段**的 integrated 推到目標。
+    // 不算進去的話圖只講半個真相 —— 實測平衡後中位 −17.1，成品卻是 −16.0，
+    // 圖說「還有 13% 偏小聲」而成品其實沒有那個問題。假警報會讓人不再相信這張圖。
+    //
+    // 這裡照 loudnorm 的定義算：只取**保留段**內、逐段增益套完的 momentary，
+    // 走同一支閘門（`integratedFromBlocks`）。
+    const blocks: number[] = [];
+    for (const u of units) {
+      const g = gains.find((x) => x.unitId === u.id)?.gainDb ?? 0;
+      const from = Math.max(0, Math.floor(u.startMs / local.hopMs));
+      const to = Math.min(local.nWin - 1, Math.floor((u.endMs - 1) / local.hopMs));
+      for (let i = from; i <= to; i++) {
+        const m = local.win[i * 3];
+        if (Number.isFinite(m)) blocks.push(m + g);
+      }
+    }
+    return shiftLine(leveled, loudnormOffset(integratedFromBlocks(blocks), targetLufs));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loud, leveling, local, mediaId, w, durationMs, targetLufs, decisions, candidates, splits, pastes]);
 

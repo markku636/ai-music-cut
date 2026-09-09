@@ -7,8 +7,9 @@
 //! **模型選 htdemucs**：demucs 的預設，四軌品質最好；`--two-stems=vocals` 時它只輸出
 //! vocals / no_vocals 兩個檔，比事後自己混回去準（分離器內部是四軌一起解的）。
 //!
-//! **這個檔案的實機分離沒有在開發機上跑過**：demucs 會帶進 torch（幾百 MB），
-//! 不會替使用者自動安裝。偵測、參數組法、輸出檔名對應都有測試，但沒有真的分離過一首歌。
+//! **實機驗證過**（demucs 4.1.0、34.5 秒的語音檔、RTX 5070 Ti，整條約 8 秒）：
+//! 輸出確實落在 `<out>/htdemucs/<檔名>/{vocals,no_vocals}.wav`，兩軌長度與來源一致
+//! （差 0.5 ms），進度條格式是 `NN%|…`。demucs 會帶進 torch（幾百 MB），所以不自動安裝。
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;

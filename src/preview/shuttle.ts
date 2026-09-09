@@ -62,7 +62,14 @@ export function shuttleLabel(s: ShuttleState): string {
   return `${arrows} ${s.rate}x`;
 }
 
-/** `<audio>` 放不出倒轉，倒退時只移動播放線（靜音）。UI 要據此說明。 */
+/**
+ * `<audio>` 放不出倒轉，倒退時只移動播放線（靜音）。UI 要據此說明。
+ *
+ * **落點是準的**：實機量過（1 秒），倒退 1x/2x/4x 的誤差是 2 / 36 / 8 ms（≤ 1.8%）。
+ * 順向靠 `playbackRate`，穩態倍率是精確的（實測 1.000 / 2.000 / 4.006），
+ * 但每改一次速率媒體元素要重新同步，會吃掉約 57 ms 的來源時間 ——
+ * 4x 下每按一次 L 就少聽約 230 ms。那是元素本身的成本，不是這裡算錯。
+ */
 export function isSilentDirection(s: ShuttleState): boolean {
   return s.dir < 0;
 }

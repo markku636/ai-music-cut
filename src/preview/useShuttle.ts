@@ -37,9 +37,16 @@ export function useShuttle() {
     if (shuttle.dir > 0) {
       el.playbackRate = shuttle.rate;
       void el.play().catch(() => {});
-      return () => {
-        el.playbackRate = usePlayback.getState().rate;
-      };
+      // 這裡**不需要** cleanup 還原速率：effect 的相依是 shuttle 本身，連按 L
+      // （1x → 2x → 4x）時每一步都會先跑一次 cleanup，速率先彈回一般播放速率再設新的。
+      // 停下來的還原由上面 `!shuttle.dir` 那一支負責，那是唯一真的要還原的時機。
+      //
+      // **那一彈不是效能問題** —— 本來以為它就是切速率時掉內容的原因，量了才知道不是：
+      // 「直接設 4」與「先彈回 1 再設 4」在同一個元素上各跑四次，平均差 −229 vs −227 ms，
+      // 完全在雜訊裡。真正的成本是媒體元素每次改速率都要重新同步一次
+      // （約 57 ms 的來源時間，所以 4x 下每按一次少聽 230 ms），那個從 JS 這一層省不掉。
+      // 拿掉這個 cleanup 只是因為它是一個沒有用途的中間狀態，不是因為它慢。
+      return;
     }
     // 倒退：暫停元素，改用共用 ticker 推 currentTime
     el.pause();

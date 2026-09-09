@@ -76,7 +76,13 @@ export default function TransportBar({ durationMs, cuts }: { durationMs: number;
           className={`h-7 px-1.5 rounded-sm text-[11px] mono tabular-nums inline-flex items-center whitespace-nowrap ${shuttle.dir < 0 ? "bg-amber-400/15 text-amber-400" : "bg-accent/15 text-accent"}`}
           title={shuttle.dir < 0 ? t("倒退轉盤：只移動播放線，沒有聲音") : t("前進轉盤")}
         >
+          {/*
+            倒退時把「靜音」寫在**看得到的地方**，不是只放在 tooltip。
+            切入倒退時會 toast 一次，但那是一閃即逝的；一直往回找位置的人
+            看著「◀◀ 2x」卻聽不到聲音，第一個念頭是「壞了」。
+          */}
           {shuttleLabel(shuttle)}
+          {shuttle.dir < 0 && <span className="ml-1 opacity-70">{t("（靜音）")}</span>}
         </span>
       )}
       <button type="button" onClick={() => setRate(RATES[(RATES.indexOf(rate) + 1) % RATES.length] ?? 1)} title={t("播放速率")} className="h-7 px-2 rounded-sm text-xs mono text-fg/70 hover:bg-fg/5">

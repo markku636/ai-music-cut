@@ -1016,6 +1016,7 @@ const en: Catalog = {
   "總覽": "Overview",
   "成品": "output",
   "成品順序": "Arrangement",
+  "（靜音）": "(muted)",
   "沒有產生（缺少必要資料）": "Not produced (missing required data)",
   "把拖選的那一段拿掉，後面的接上來": "Removes the range you dragged; what follows moves up",
   "會放在成品的 {from} – {to}（節目長 {len}）": "Goes at {from} – {to} of the output (episode is {len})",

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cutSpansOf, overviewBars, scrollTargetMs, spansToRects, viewportOf, xFromMs } from "../analysis/overview";
+import { loudnessFraction, loudnessLine, quietShare } from "../analysis/loudnessLine";
 import { useT } from "../i18n";
 import { edlFor } from "../pipeline/rules";
 import { useDecisions } from "../store/decisions";
 import { usePlayback } from "../store/playback";
+import { useProject } from "../store/project";
 import { useTimeline } from "../store/timeline";
 import { useTranscript } from "../store/transcript";
 
@@ -42,6 +44,8 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
   const viewStartMs = useTimeline((s) => s.viewStartMs);
   const scrollTo = useTimeline((s) => s.scrollTo);
   const currentMs = usePlayback((s) => s.currentMs);
+  const showLoudness = useTimeline((s) => s.showLoudness);
+  const targetLufs = useProject((s) => s.targetLufs);
   const local = useTranscript((s) => (mediaId ? s.local[mediaId] : undefined));
   const markers = useDecisions((s) => (mediaId ? s.markers[mediaId] : undefined));
   // 訂閱決策：剪掉哪裡要跟著更新。EDL 每次重算不便宜，所以只在這兩者變動時重算。
@@ -68,6 +72,9 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
   useEffect(() => () => roRef.current?.disconnect(), []);
 
   const bars = useMemo(() => (local && w > 0 ? overviewBars(local.rmsU8, w) : null), [local, w]);
+  // 整集的響度形狀。資料本來就在 analysis.bin（每 100 ms 一個視窗），這裡只是壓到帶寬。
+  const loud = useMemo(() => (showLoudness && local && w > 0 ? loudnessLine(local.win, local.nWin, w) : null), [showLoudness, local, w]);
+  const quiet = useMemo(() => (loud ? quietShare(loud, targetLufs) : 0), [loud, targetLufs]);
 
   const cuts = useMemo(() => {
     if (!mediaId || w <= 0 || !durationMs) return [];
@@ -109,6 +116,29 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
     g.fillStyle = cssRgb("--c-danger", 0.35);
     for (const r of cuts) g.fillRect(r.x, 0, r.w, HEIGHT);
 
+    // 響度形狀：目標線 + 逐像素的 short-term LUFS。
+    // 即時響度表回答「這一刻多大聲」，這條回答「哪幾段要處理」—— 那是剪 podcast 真正在問的。
+    if (loud) {
+      const yOf = (v: number) => HEIGHT - loudnessFraction(v, targetLufs) * HEIGHT;
+      // 目標線
+      g.strokeStyle = cssRgb("--c-success", 0.55);
+      g.setLineDash([3, 3]);
+      g.lineWidth = 1;
+      g.beginPath();
+      const ty = Math.round(yOf(targetLufs)) + 0.5;
+      g.moveTo(0, ty);
+      g.lineTo(w, ty);
+      g.stroke();
+      g.setLineDash([]);
+      // 響度線。低於目標 3 LU 以上的那幾格換色 —— 那正是「這一段偏小聲」。
+      for (let x = 0; x < loud.length; x++) {
+        const v = loud[x];
+        if (!Number.isFinite(v)) continue;
+        g.fillStyle = v < targetLufs - 3 ? cssRgb("--c-warning", 0.85) : cssRgb("--c-success", 0.8);
+        g.fillRect(x, Math.max(0, yOf(v) - 1), 1, 2);
+      }
+    }
+
     // 標記（章節畫高一點，其他矮一格）
     for (const m of markers ?? []) {
       g.fillStyle = m.kind === "chapter" ? cssRgb("--c-accent", 0.9) : cssRgb("--c-warning", 0.8);
@@ -125,7 +155,7 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
     g.strokeRect(vp.x + 0.5, 0.5, Math.max(2, vp.w - 1), HEIGHT - 1);
     g.fillStyle = cssRgb("--c-fg", 0.1);
     g.fillRect(vp.x, 0, vp.w, HEIGHT);
-  }, [bars, cuts, markers, currentMs, vp, w, durationMs]);
+  }, [bars, cuts, markers, currentMs, vp, w, durationMs, loud, targetLufs]);
 
   // 整段適配時這條跟上面的波形是同一張圖，留著只是佔高度
   if (!mediaId || !durationMs || vp.full) return null;
@@ -162,7 +192,7 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
         {t("總覽")}
       </span>
       <span className="pointer-events-none absolute right-0.5 top-0.5 rounded-sm bg-app/70 px-1 text-[9px] leading-[11px] tabular-nums text-fg/40">
-        {Math.round((vp.endMs - vp.startMs) / 1000)}s / {Math.round(durationMs / 1000)}s
+        {loud && quiet > 0.05 ? t("{p}% 偏小聲", { p: Math.round(quiet * 100) }) : `${Math.round((vp.endMs - vp.startMs) / 1000)}s / ${Math.round(durationMs / 1000)}s`}
       </span>
     </div>
   );

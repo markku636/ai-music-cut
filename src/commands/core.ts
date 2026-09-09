@@ -312,7 +312,7 @@ export const CORE_COMMANDS: Command[] = [
   { id: "view.snap", title: "吸附", group: "view", section: "波形", icon: Magnet, shortcuts: ["N"], checked: () => useTimeline.getState().snap.enabled, enabled: () => OK, run: () => A.toggleSnapWithToast() },
   { id: "view.skim", title: "滑過波形就聽得到（skimming）開關", group: "view", section: "波形", icon: Volume2, shortcuts: ["Shift+S"], checked: () => useTimeline.getState().skim, enabled: () => OK, run: () => useTimeline.getState().toggleSkim() },
   { id: "view.beats", title: "顯示拍線", group: "view", section: "波形", icon: Music, checked: () => useTimeline.getState().showBeats, enabled: () => (useTimeline.getState().beatGrid ? OK : { ok: false, why: "這個檔案沒有偵測到拍子" }), run: () => useTimeline.getState().toggleBeats() },
-  { id: "view.loudness", title: "顯示響度表", group: "view", section: "波形", icon: Volume2, checked: () => useTimeline.getState().showLoudness, enabled: () => OK, run: () => useTimeline.getState().toggleLoudness() },
+  { id: "view.loudness", title: "顯示響度（即時表 + 整集形狀）", group: "view", section: "波形", icon: Volume2, keywords: ["loudness", "lufs", "meter", "quiet"], checked: () => useTimeline.getState().showLoudness, enabled: () => OK, run: () => useTimeline.getState().toggleLoudness() },
   {
     id: "view.spectrogram",
     title: "波形 / 頻譜 / 疊合",

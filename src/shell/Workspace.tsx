@@ -29,6 +29,7 @@ import { useTimeline } from "../store/timeline";
 import { useTranscript } from "../store/transcript";
 import { useUi, type UiMode } from "../store/ui";
 import { formatMs } from "../time";
+import ArrangementStrip from "../timeline/ArrangementStrip";
 import OverviewStrip from "../timeline/OverviewStrip";
 import SelectionBar from "../timeline/SelectionBar";
 import Timeline, { type WaveMenuInfo } from "../timeline/Timeline";
@@ -413,6 +414,7 @@ export default function Workspace({ variant }: { variant: UiMode }) {
         {markerMenu && <WaveContextMenu x={markerMenu.x} y={markerMenu.y} items={markerMenuItems(markerMenu.marker)} onClose={() => setMarkerMenu(null)} />}
         {overlayMenu && <WaveContextMenu x={overlayMenu.x} y={overlayMenu.y} items={overlayMenuItems(overlayMenu.o)} onClose={() => setOverlayMenu(null)} />}
       </div>
+      <ArrangementStrip mediaId={mediaId} />
       <OverviewStrip mediaId={mediaId} durationMs={durationMs} />
       <Splitter axis="y" onPointerDown={timeline.onPointerDown} />
     </>

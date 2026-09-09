@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { overviewBars, scrollTargetMs, spansToRects, viewportOf, xFromMs } from "../analysis/overview";
+import { cutSpansOf, overviewBars, scrollTargetMs, spansToRects, viewportOf, xFromMs } from "../analysis/overview";
 import { useT } from "../i18n";
 import { edlFor } from "../pipeline/rules";
 import { useDecisions } from "../store/decisions";
@@ -47,6 +47,9 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
   // 訂閱決策：剪掉哪裡要跟著更新。EDL 每次重算不便宜，所以只在這兩者變動時重算。
   const decisions = useDecisions((s) => (mediaId ? s.decisions[mediaId] : undefined));
   const candidates = useDecisions((s) => (mediaId ? s.candidates[mediaId] : undefined));
+  // splits / pastes 也是 keeps 的輸入 —— 漏了它們，切一刀或貼一段之後這條不會重畫
+  const splits = useDecisions((s) => (mediaId ? s.splits[mediaId] : undefined));
+  const pastes = useDecisions((s) => (mediaId ? s.pastes[mediaId] : undefined));
 
   // callback ref 而不是 useEffect([])：這條在整段適配時整個不渲染，
   // 用 effect 的話第一次跑時 ref 還是 null，之後元素出現也不會再跑一次 ——
@@ -70,17 +73,11 @@ export default function OverviewStrip({ mediaId, durationMs }: { mediaId: string
     if (!mediaId || w <= 0 || !durationMs) return [];
     const edl = edlFor(mediaId);
     if (!edl) return [];
-    // EDL 給的是「保留」的段落；剪掉的是它們之間的空隙
-    const gaps: { startMs: number; endMs: number }[] = [];
-    let cursor = 0;
-    for (const k of edl.keeps) {
-      if (k.srcStartMs > cursor) gaps.push({ startMs: cursor, endMs: k.srcStartMs });
-      cursor = Math.max(cursor, k.srcEndMs);
-    }
-    if (cursor < durationMs) gaps.push({ startMs: cursor, endMs: durationMs });
-    return spansToRects(gaps, w, durationMs);
+    // EDL 給的是「保留」的段落；剪掉的是它們的**聯集**的補集（見 cutSpansOf ——
+    // 照陣列順序推游標的話，搬到後面的那一段會被當成從來沒保留過）
+    return spansToRects(cutSpansOf(edl.keeps, durationMs), w, durationMs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mediaId, w, durationMs, decisions, candidates]);
+  }, [mediaId, w, durationMs, decisions, candidates, splits, pastes]);
 
   const vp = useMemo(
     () => viewportOf({ viewStartMs, viewWidthPx: viewWidth, pxPerSec: pxPerSec ?? fitPxPerSec, durationMs, stripWidth: w }),

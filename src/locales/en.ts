@@ -1018,6 +1018,7 @@ const en: Catalog = {
   "成品順序": "Arrangement",
   "編排接縫（不能修剪）": "arrangement seam (not trimmable)",
   "編排接縫（貼上 / 搬移）": "Arrangement seam (paste / move)",
+  "這一集有貼上 / 搬移 · 即時放的不是成品順序，要聽真正的順序請渲染": "This episode has pastes / moves — live playback is not in output order; render to hear the real thing",
   "編排接縫（貼上 / 搬移）· 這裡不能修剪，改用成品順序帶": "Arrangement seam (paste / move) — not trimmable here; use the arrangement strip",
   "貼上來的（右鍵可以移除）": "Pasted here (right-click to remove)",
   "這一塊裡面剪掉了 {ms}": "{ms} cut out inside this block",

@@ -116,3 +116,31 @@ export function spansToRects(spans: OverviewSpan[], stripWidth: number, duration
       return { x, w: Math.max(1, xFromMs(s.endMs, stripWidth, durationMs) - x) };
     });
 }
+
+/**
+ * 來源時間軸上「成品裡沒有的」那些段落 —— 總覽條要塗紅的地方。
+ *
+ * 不能照 keeps 的陣列順序一路推游標算空隙：剪下貼上 / 搬移之後 keeps 是**成品順序**，
+ * 來源起點會忽大忽小。舊寫法用 `cursor = Math.max(cursor, k.srcEndMs)` 讓游標只前進，
+ * 於是搬到後面的那一段（來源在前面）會被算成「從來沒保留過」，整條被塗成剪掉 ——
+ * 明明它還在成品裡，而且是使用者剛剛親手搬過去的。
+ *
+ * 正確的定義是：保留段來源範圍的**聯集**，取補集。同一段來源被貼兩次也只算一次
+ * （這裡問的是「這段素材還在不在」，不是「它出現幾次」）。
+ */
+export function cutSpansOf(keeps: readonly { srcStartMs: number; srcEndMs: number }[], durationMs: number): OverviewSpan[] {
+  if (durationMs <= 0) return [];
+  const sorted = keeps
+    .map((k) => ({ startMs: Math.max(0, Math.min(durationMs, k.srcStartMs)), endMs: Math.max(0, Math.min(durationMs, k.srcEndMs)) }))
+    .filter((k) => k.endMs > k.startMs)
+    .sort((a, b) => a.startMs - b.startMs);
+
+  const gaps: OverviewSpan[] = [];
+  let cursor = 0;
+  for (const k of sorted) {
+    if (k.startMs > cursor) gaps.push({ startMs: cursor, endMs: k.startMs });
+    cursor = Math.max(cursor, k.endMs);
+  }
+  if (cursor < durationMs) gaps.push({ startMs: cursor, endMs: durationMs });
+  return gaps;
+}

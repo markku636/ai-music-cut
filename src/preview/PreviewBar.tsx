@@ -157,7 +157,15 @@ export default function PreviewBar({ mediaId }: { mediaId: string }) {
           { value: "rendered", label: busy ? t("渲染中…") : t("剪後（成品）") },
         ]}
       />
-      {mode === "live" && <Badge tone="warning">{t("即時近似 · 沒有接點淡化")}</Badge>}
+      {mode === "live" &&
+        // 亂序（剪下貼上 / 搬移）時「即時」不只是近似，**順序是錯的** ——
+        // 它是在來源時間軸上跳過剪除區，貼上的那一份根本不在來源時間軸上，
+        // 搬走的那一段也還在原位。要聽真正的節目只能渲染。
+        (edl?.rearranged ? (
+          <Badge tone="danger">{t("這一集有貼上 / 搬移 · 即時放的不是成品順序，要聽真正的順序請渲染")}</Badge>
+        ) : (
+          <Badge tone="warning">{t("即時近似 · 沒有接點淡化")}</Badge>
+        ))}
       {mode === "rendered" && !stale && <Badge tone="success">{t("已渲染 · 與成品同一套剪接")}</Badge>}
       {stale && <Badge tone="warning">{t("決策已變，預覽過期")}</Badge>}
 

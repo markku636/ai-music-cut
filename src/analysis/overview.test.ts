@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { msFromX, overviewBars, scrollTargetMs, spansToRects, viewportOf, xFromMs } from "./overview";
+import { cutSpansOf, msFromX, overviewBars, scrollTargetMs, spansToRects, viewportOf, xFromMs } from "./overview";
 
 describe("overviewBars", () => {
   it("壓成指定根數", () => {
@@ -114,5 +114,42 @@ describe("spansToRects", () => {
 
   it("時長 0 回空陣列", () => {
     expect(spansToRects([{ startMs: 0, endMs: 100 }], 800, 0)).toEqual([]);
+  });
+});
+
+describe("cutSpansOf", () => {
+  it("一般剪輯：保留段之間的空隙就是剪掉的", () => {
+    expect(cutSpansOf([{ srcStartMs: 0, srcEndMs: 1000 }, { srcStartMs: 2000, srcEndMs: 3000 }], 4000)).toEqual([
+      { startMs: 1000, endMs: 2000 },
+      { startMs: 3000, endMs: 4000 },
+    ]);
+  });
+
+  it("搬移：搬到後面的那一段還在成品裡，不能被畫成剪掉", () => {
+    // 成品順序＝來源 10–14 秒在前、0–4 秒在後
+    const keeps = [{ srcStartMs: 10_000, srcEndMs: 14_000 }, { srcStartMs: 0, srcEndMs: 4000 }];
+    // 舊寫法（照陣列順序推游標）會回 [0,10000]，把使用者剛搬走的那 4 秒也算進去
+    expect(cutSpansOf(keeps, 20_000)).toEqual([
+      { startMs: 4000, endMs: 10_000 },
+      { startMs: 14_000, endMs: 20_000 },
+    ]);
+  });
+
+  it("貼上：同一段來源出現兩次只算一次（問的是素材還在不在）", () => {
+    const keeps = [{ srcStartMs: 0, srcEndMs: 4000 }, { srcStartMs: 1000, srcEndMs: 3000 }];
+    expect(cutSpansOf(keeps, 6000)).toEqual([{ startMs: 4000, endMs: 6000 }]);
+  });
+
+  it("完整保留就沒有剪掉的地方", () => {
+    expect(cutSpansOf([{ srcStartMs: 0, srcEndMs: 5000 }], 5000)).toEqual([]);
+  });
+
+  it("空的 / 長度 0 不會爆", () => {
+    expect(cutSpansOf([], 0)).toEqual([]);
+    expect(cutSpansOf([], 1000)).toEqual([{ startMs: 0, endMs: 1000 }]);
+  });
+
+  it("超出檔案長度的保留段會被夾住（貼上可以拉到檔尾之外）", () => {
+    expect(cutSpansOf([{ srcStartMs: 0, srcEndMs: 9999 }], 3000)).toEqual([]);
   });
 });

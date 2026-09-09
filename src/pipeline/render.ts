@@ -309,18 +309,10 @@ export async function runRender(mediaId: string, opts: RenderOptions, onProgress
   if (!media) throw new Error(t("找不到媒體"));
   const built = buildRenderPlan(mediaId, opts);
   if (!built) throw new Error(t("無法建立輸出計畫（媒體尚未探測）"));
-  // **擋住重排過的 EDL。**
-  //
-  // Rust 的剪接器是單趟前向串流（render.rs 的 Cutter::push，`si` 只前進不回頭），
-  // 所以貼上 / 搬移產生的亂序段落會產出零個 frame。實測：計畫 35534 ms、成品只有 19372 ms，
-  // 中間 16 秒憑空消失，而且沒有任何錯誤 —— 那是使用者要拿去上架的檔案。
-  //
-  // 在剪接器支援亂序之前，寧可明確擋下來也不要交出一個安靜壞掉的成品。
-  if (built.edl.rearranged) {
-    throw new Error(
-      t("這一集有剪下貼上 / 搬移的段落，目前還不能輸出 —— 剪接器尚未支援重新排序，硬輸出會安靜地少掉內容。請先復原那些貼上（Ctrl+Z）再輸出。"),
-    );
-  }
+  // 重排過的 EDL（剪下貼上 / 搬移）自 v0.111 起可以輸出：Rust 端偵測到段落離開
+  // 「來源時間遞增且不重疊」時，改走先解碼成暫存 raw、再照成品順序回頭讀的路徑
+  // （render.rs 的 needs_random_access / cut_to_wav_arranged）。順序正常的專案
+  // 仍然走原本的單趟串流，逐位元相同（有隨機 plan 對拍測試釘住）。
   const jobs = useJobs.getState();
   const jobId = newJobId();
   jobs.upsert({ id: jobId, kind: "render", mediaId, step: t("剪接"), pct: 0, status: "running", message: opts.outPath, cancel: () => void api.renderCancel(jobId) });

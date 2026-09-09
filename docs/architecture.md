@@ -251,10 +251,22 @@
    > 字幕整份慢慢飄掉、章節跳到不對的地方。
    >
    > **之後動到 keeps 的人請先問一句：這段程式碼有沒有假設來源順序？**
-7c. **曲風轉換**（）： 用 ffmpeg 把選取切成 44.1k 立體聲 wav → multipart POST /v1/music/style（cover_strength 決定貼近原曲的程度）→ 同一套 music job 輪詢 / 下載 → 加進媒體清單。
-7b. **AI 配樂**（`pipeline/music.ts` → `ttls::music_*`）：POST /v1/music（ACE-Step，非同步）→ 每 3 秒輪詢 → GET audio?i=N 下載各候選寫檔 → 加進媒體清單；BPM / 長度由 UI 從偵測到的拍網格與目前選取帶入。
-7. **去人聲**（`pipeline/separate.ts` → `ttls::separate`）：上傳原檔到 `/v1/separate`（demucs htdemucs，同步、各軌 base64）→ 寫 `<來源>_vocals` / `_accompaniment` → 加入媒體清單。
-8. **ASR 驗收**（`pipeline/verify.ts` + `analysis/verify.ts`）：成品 → `media_prepare` → ttls 轉寫 → `expectedWords(EDL)` × 成品逐字稿做帶狀 Levenshtein 對齊 → 漏字 / 該剪沒剪 / 接縫 ±600 ms 標記；報告存在 `store/verify.ts`（不進專案檔），UI 可逐筆試聽或跳去修。
+   >
+   > **v0.99 的守門與 v0.111 的解法。** 上面說「Rust 完全不用改」是錯的，而且錯得很貴。
+   > `RenderSeg` 的**格式**確實不用改，但剪接器的**前提**被打破了：`Cutter::push` 是單趟前向串流，
+   > `si` 只前進不回頭，所以回頭的那幾段一個 frame 都寫不出來，而且不會報錯。
+   > 我當時只驗了 TS 端的 `edl.stats.outMs`（那是「計畫」）就發版，實際渲染出來是
+   > 計畫 35534 ms、成品 19372 ms。v0.99 先加了一道守門直接擋下輸出 —— 交不出成品，
+   > 好過交出一個安靜少掉 16 秒的成品。
+   >
+   > v0.111 把它做完：`needs_random_access(plan)` 偵測段落有沒有離開「來源時間遞增且不重疊」，
+   > 是的話改走 `cut_to_wav_arranged` —— 先把來源解成暫存 raw f32，再照**成品順序**回頭隨機讀
+   > （`RawFrames`），接點 / tail / 效果全部走同一個 `emit_frame`，所以 `plan_out_frames`
+   > 這條唯一的長度公式對兩條路都成立。順序正常的專案仍然走原本的串流路徑，
+   > 有一條 60 組隨機 plan 的對拍測試釘住「兩條路逐位元相同」。
+   > 代價是亂序時多一份暫存檔（一小時立體聲約 1.4 GB）與一趟磁碟讀寫，用完就刪。
+7. **去人聲**（`pipeline/separate.ts` → `local_separate.rs`）：本機 demucs（htdemucs）→ `<out>/htdemucs/<檔名>/{vocals,no_vocals}.wav` → 寫 `<來源>_vocals` / `_accompaniment` → 加入媒體清單。第一次用會先裝套件（會帶進 torch，所以不自動裝）。
+8. **ASR 驗收**（`pipeline/verify.ts` + `analysis/verify.ts`）：成品 → `media_prepare` → 本機 faster-whisper 轉寫 → `expectedWords(EDL)` × 成品逐字稿做帶狀 Levenshtein 對齊 → 漏字 / 該剪沒剪 / 接縫 ±600 ms 標記；報告存在 `store/verify.ts`（不進專案檔），UI 可逐筆試聽或跳去修。
 9. **輸出**（`render.rs`）：保留段再依 VAD 切成 ≤15 s 單元 → BS.1770 閘門量測 → 增益規劃（clamp ±12 dB、峰值守門、平滑、階差 ≤3 dB）→ Rust 串流剪接（等功率 crossfade / seam / gap）→ `concat.wav` → ffmpeg loudnorm 兩趟 + alimiter → mp3 / m4a / wav。
 
 ## 殼層：指令註冊表 / 對話框 store / 選單（v0.98）

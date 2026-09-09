@@ -444,7 +444,8 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
         Ok(())
     }
 
-    /// 餵一個 frame（來源時間 t）。
+    /// 餵一個 frame（來源時間 t）。**前提是段落依來源時間遞增且不重疊** ——
+    /// `si` 只前進不回頭，所以貼上 / 搬移那種亂序 plan 不能走這裡，見 `run_arranged`。
     fn push(&mut self, frame: &[f32], seed: &mut u32) -> AppResult<()> {
         let t = self.t;
         self.t += 1;
@@ -459,13 +460,20 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
         if self.si >= self.segs.len() {
             return Ok(());
         }
-        let (s, e, g) = self.segs[self.si];
-        if t < s {
+        if t < self.segs[self.si].0 {
             return Ok(());
         }
-        if t == s && self.tail.is_empty() && self.si > 0 {
-            // begin_segment 尚未被呼叫（上一段結束於此段開始前，已在 while 內處理）→ no-op
-        }
+        self.emit_frame(frame, t)
+    }
+
+    /// 把一個屬於「目前這一段」（`self.si`）的 frame 寫出去；`t` 是它的來源時間，
+    /// 效果包絡與 tail 扣留都依它算。
+    ///
+    /// 串流（`push`）與隨機存取（`run_arranged`）共用這一份，別各寫一份：
+    /// 接點協定（hold / mixing）只要錯開一個 frame，成品長度就會慢慢漂，
+    /// 而且會被後面的 loudnorm 掩蓋掉，聽感上只剩「接縫怪怪的」。
+    fn emit_frame(&mut self, frame: &[f32], t: u64) -> AppResult<()> {
+        let (_, e, g) = self.segs[self.si];
         let env: f32 = self.fx.iter().map(|f| fx_gain(f, t)).product();
         let mut cur: Vec<f32> = frame.iter().map(|v| v * g * env).collect();
         // 本段最後 hold 個 frame 扣住當 tail（長度由接點協定決定，見 join_plan）
@@ -505,6 +513,42 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
         Ok(())
     }
 
+    /// 亂序 plan 的驅動：段照**成品順序**跑，每一段回頭到自己的來源位置隨機讀。
+    ///
+    /// 跟 `push` 的差別只有「frame 從哪來」：接點、tail、效果全部走同一個 `emit_frame`，
+    /// 所以 `plan_out_frames` 這條唯一的長度公式對兩條路都成立（由測試對拍釘死）。
+    ///
+    /// `tick` 每 `PROGRESS_EVERY` 個來源 frame 呼叫一次，帶目前已寫出的 frame 數；
+    /// 取消就從那裡回 `Err`。
+    fn run_arranged<S: FrameSource>(
+        &mut self,
+        src: &mut S,
+        seed: &mut u32,
+        tick: &mut dyn FnMut(u64) -> AppResult<()>,
+    ) -> AppResult<()> {
+        const PROGRESS_EVERY: u64 = 8192;
+        let mut frame = vec![0f32; self.ch];
+        let mut since = 0u64;
+        for i in 0..self.segs.len() {
+            self.si = i;
+            if i > 0 {
+                self.begin_segment(seed)?;
+            }
+            let (s, e) = (self.segs[i].0, self.segs[i].1);
+            for t in s..e {
+                src.read_frame(t, &mut frame)?;
+                self.emit_frame(&frame, t)?;
+                since += 1;
+                if since >= PROGRESS_EVERY {
+                    since = 0;
+                    tick(self.written)?;
+                }
+            }
+            self.end_segment()?;
+        }
+        Ok(())
+    }
+
     fn finish(mut self) -> AppResult<u64> {
         self.end_segment()?;
         self.flush_tail_fade_out()?;
@@ -513,17 +557,69 @@ impl<W: std::io::Write + std::io::Seek> Cutter<W> {
     }
 }
 
+/// 依來源 frame 序號隨機取樣的來源。超出來源長度一律補 0（段落被拉到檔尾之外時，
+/// 寧可補靜音也不要少寫 frame —— 少寫就對不起 `plan_out_frames`）。
+trait FrameSource {
+    fn read_frame(&mut self, index: u64, out: &mut [f32]) -> AppResult<()>;
+}
+
+/// 解碼後的 raw f32 暫存檔。段內是順向讀，所以記住游標、只有真的跳段才 seek。
+struct RawFrames {
+    f: std::fs::File,
+    ch: usize,
+    frames: u64,
+    /// 檔案游標目前對應的 frame 序號（None = 未知，下次一定 seek）。
+    pos: Option<u64>,
+    buf: Vec<u8>,
+}
+
+impl RawFrames {
+    fn open(path: &Path, ch: usize, frames: u64) -> AppResult<Self> {
+        let f = std::fs::File::open(path)?;
+        Ok(Self { f, ch, frames, pos: None, buf: vec![0u8; ch * 4] })
+    }
+}
+
+impl FrameSource for RawFrames {
+    fn read_frame(&mut self, index: u64, out: &mut [f32]) -> AppResult<()> {
+        if index >= self.frames {
+            out.fill(0.0);
+            return Ok(());
+        }
+        if self.pos != Some(index) {
+            std::io::Seek::seek(&mut self.f, std::io::SeekFrom::Start(index * self.ch as u64 * 4))?;
+        }
+        std::io::Read::read_exact(&mut self.f, &mut self.buf)?;
+        self.pos = Some(index + 1);
+        for (i, sb) in self.buf.chunks_exact(4).enumerate() {
+            out[i] = f32::from_le_bytes([sb[0], sb[1], sb[2], sb[3]]);
+        }
+        Ok(())
+    }
+}
+
 fn total_out_frames(plan: &RenderPlan) -> u64 {
     plan_out_frames(plan)
 }
 
+/// 段落有沒有離開「來源時間遞增且不重疊」—— 那是串流剪接器的前提。
+///
+/// 剪下貼上 / 搬移會打破它：段落改成依**成品順序**排，同一段來源可能出現兩次，
+/// 後面的段起點也可能落在前一段的結束之前。
+fn needs_random_access(plan: &RenderPlan) -> bool {
+    plan.segs.windows(2).any(|w| ms_to_frames(w[1].src_start_ms) < ms_to_frames(w[0].src_end_ms))
+}
+
 /// 第一階段：來源 → concat.wav（f32、48k、ch）。
 pub async fn cut_to_wav(app: &AppHandle, bins: &FfmpegBins, src: &str, plan: &RenderPlan, wav_path: &Path, job_id: &str, cancel: &AtomicBool) -> AppResult<u64> {
+    validate_effects(plan)?;
+    if needs_random_access(plan) {
+        return cut_to_wav_arranged(app, bins, src, plan, wav_path, job_id, cancel).await;
+    }
     let ch = plan.channels.max(1);
     let spec = hound::WavSpec { channels: ch as u16, sample_rate: SR, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
     let file = std::fs::File::create(wav_path)?;
     let writer = hound::WavWriter::new(std::io::BufWriter::new(file), spec).map_err(|e| AppError::Io(format!("建立 wav 失敗：{e}")))?;
-    validate_effects(plan)?;
     let mut cutter = Cutter::new(plan, writer);
     let last_end = plan.segs.iter().map(|s| ms_to_frames(s.src_end_ms)).max().unwrap_or(0);
 
@@ -579,6 +675,122 @@ pub async fn cut_to_wav(app: &AppHandle, bins: &FfmpegBins, src: &str, plan: &Re
     let written = cutter.finish()?;
     emit_progress(app, job_id, "cut", 100.0);
     Ok(written)
+}
+
+/// 亂序 plan（剪下貼上 / 搬移）的剪接：先把來源解成暫存的 raw f32，再照成品順序回頭讀。
+///
+/// 為什麼不能沿用串流那條路：`Cutter::push` 的 `si` 只前進不回頭，段落一旦回頭，
+/// 那幾段會一個 frame 都寫不出來，而且**不會報錯**。實測過一次：計畫 35534 ms、
+/// 成品只有 19372 ms，中間 16 秒憑空消失 —— 那是使用者要拿去上架的檔案。
+///
+/// 代價是多一份暫存檔（時長 × 48000 × 聲道 × 4 bytes，一小時立體聲約 1.4 GB）與
+/// 一趟磁碟讀寫，只有亂序時才付。順序正常的專案逐位元走原本的串流路徑，沒有變化。
+async fn cut_to_wav_arranged(
+    app: &AppHandle,
+    bins: &FfmpegBins,
+    src: &str,
+    plan: &RenderPlan,
+    wav_path: &Path,
+    job_id: &str,
+    cancel: &AtomicBool,
+) -> AppResult<u64> {
+    let ch = plan.channels.max(1) as usize;
+    // 只需要解到「段落用得到的最後一刻」為止，後面的不用浪費時間也不用佔空間。
+    let last_end = plan.segs.iter().map(|s| ms_to_frames(s.src_end_ms)).max().unwrap_or(0);
+    let raw_path = wav_path.with_extension("srcf32");
+    let frames = decode_to_raw(app, bins, src, ch, last_end, &raw_path, job_id, cancel).await?;
+
+    let run = async {
+        let spec = hound::WavSpec { channels: ch as u16, sample_rate: SR, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+        let file = std::fs::File::create(wav_path)?;
+        let writer = hound::WavWriter::new(std::io::BufWriter::new(file), spec).map_err(|e| AppError::Io(format!("建立 wav 失敗：{e}")))?;
+        let mut cutter = Cutter::new(plan, writer);
+        let mut source = RawFrames::open(&raw_path, ch, frames)?;
+        let total_out = plan_out_frames(plan).max(1);
+        let mut seed: u32 = 0x9E37_79B9;
+        let mut last_pct = -1.0f32;
+        cutter.run_arranged(&mut source, &mut seed, &mut |written| {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(AppError::Canceled);
+            }
+            // 解碼那一趟已經吃掉前 50%，這裡是後半。
+            let pct = 50.0 + (written as f64 / total_out as f64).min(1.0) as f32 * 50.0;
+            if pct - last_pct >= 1.0 {
+                last_pct = pct;
+                emit_progress(app, job_id, "cut", pct);
+            }
+            Ok(())
+        })?;
+        cutter.finish()
+    }
+    .await;
+
+    // 暫存檔一定要清掉：一小時的立體聲是 1.4 GB，失敗時留著就是慢性磁碟外洩。
+    let _ = std::fs::remove_file(&raw_path);
+    let written = run?;
+    emit_progress(app, job_id, "cut", 100.0);
+    Ok(written)
+}
+
+/// 把來源解碼成 raw f32（48k、ch）寫進 `out`，最多解到 `last_end` 個 frame。
+/// 回傳實際寫進去的 frame 數（來源比 `last_end` 短時會少於它）。進度回報 0 → 50%。
+#[allow(clippy::too_many_arguments)]
+async fn decode_to_raw(
+    app: &AppHandle,
+    bins: &FfmpegBins,
+    src: &str,
+    ch: usize,
+    last_end: u64,
+    out: &Path,
+    job_id: &str,
+    cancel: &AtomicBool,
+) -> AppResult<u64> {
+    let mut c = proc::cmd(&bins.ffmpeg);
+    c.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-i"]);
+    c.arg(src);
+    c.args(["-vn", "-f", "f32le", "-ar", "48000", "-ac", &ch.to_string(), "pipe:1"]);
+    c.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    let mut child = c.spawn().map_err(|e| AppError::Ffmpeg(format!("ffmpeg 啟動失敗：{e}")))?;
+    let mut stdout = child.stdout.take().expect("stdout");
+    let mut stderr = child.stderr.take().expect("stderr");
+    let err_task = tokio::spawn(async move {
+        let mut s = String::new();
+        let _ = stderr.read_to_string(&mut s).await;
+        s
+    });
+
+    let frame_bytes = ch * 4;
+    let mut f = std::io::BufWriter::new(std::fs::File::create(out)?);
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut bytes: u64 = 0;
+    let mut last_pct = -1.0f32;
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.start_kill();
+            return Err(AppError::Canceled);
+        }
+        let n = stdout.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        std::io::Write::write_all(&mut f, &buf[..n])?;
+        bytes += n as u64;
+        if bytes / frame_bytes as u64 >= last_end {
+            let _ = child.start_kill(); // 後面用不到，提早結束 decode
+            break;
+        }
+        let pct = (bytes / frame_bytes as u64) as f64 / last_end.max(1) as f64 * 50.0;
+        if pct as f32 - last_pct >= 1.0 {
+            last_pct = pct as f32;
+            emit_progress(app, job_id, "cut", pct as f32);
+        }
+    }
+    std::io::Write::flush(&mut f)?;
+    drop(f);
+    let _ = child.wait().await;
+    let _ = err_task.await;
+    // 尾端可能停在半個 frame 上（提早 kill），無條件捨去；讀不到的部分 RawFrames 會補 0。
+    Ok(bytes / frame_bytes as u64)
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1172,5 +1384,215 @@ mod tests {
         let m = parse_loudnorm_json(s).unwrap();
         assert_eq!(m.normalization_type.as_deref(), Some("dynamic"));
         assert_eq!(m.output_i, Some(-18.44));
+    }
+
+    // ---- 亂序（剪下貼上 / 搬移）----
+
+    struct MemFrames {
+        data: Vec<f32>,
+        ch: usize,
+    }
+
+    impl FrameSource for MemFrames {
+        fn read_frame(&mut self, index: u64, out: &mut [f32]) -> AppResult<()> {
+            let base = index as usize * self.ch;
+            for (c, o) in out.iter_mut().enumerate() {
+                *o = self.data.get(base + c).copied().unwrap_or(0.0);
+            }
+            Ok(())
+        }
+    }
+
+    fn open_writer() -> (PathBuf, hound::WavWriter<std::io::BufWriter<std::fs::File>>) {
+        let spec = hound::WavSpec { channels: 1, sample_rate: SR, bits_per_sample: 32, sample_format: hound::SampleFormat::Float };
+        let path = std::env::temp_dir().join(format!("aicut-cutter-{}.wav", uuid::Uuid::new_v4()));
+        let w = hound::WavWriter::create(&path, spec).unwrap();
+        (path, w)
+    }
+
+    fn read_back(path: &Path, written: u64) -> Vec<f32> {
+        let mut r = hound::WavReader::open(path).unwrap();
+        let out: Vec<f32> = r.samples::<f32>().map(|s| s.unwrap()).collect();
+        let _ = std::fs::remove_file(path);
+        assert_eq!(out.len() as u64, written);
+        out
+    }
+
+    /// 串流路徑，但來源由呼叫端給（才能跟隨機存取路徑餵同一份訊號）。
+    fn run_streaming_from(p: &RenderPlan, src: &[f32]) -> Vec<f32> {
+        let (path, w) = open_writer();
+        let mut c = Cutter::new(p, w);
+        let mut seed = 1u32;
+        for &v in src {
+            c.push(&[v], &mut seed).unwrap();
+        }
+        let written = c.finish().unwrap();
+        read_back(&path, written)
+    }
+
+    fn run_arranged_from(p: &RenderPlan, src: &[f32]) -> Vec<f32> {
+        let (path, w) = open_writer();
+        let mut c = Cutter::new(p, w);
+        let mut source = MemFrames { data: src.to_vec(), ch: 1 };
+        let mut seed = 1u32;
+        c.run_arranged(&mut source, &mut seed, &mut |_| Ok(())).unwrap();
+        let written = c.finish().unwrap();
+        read_back(&path, written)
+    }
+
+    /// 每個 frame 的值都不一樣 → 成品裡的每個 frame 都能反推它來自來源的哪一刻。
+    fn ramp(frames: u64) -> Vec<f32> {
+        (0..frames).map(|t| t as f32 * 1e-5).collect()
+    }
+
+    #[test]
+    fn detects_when_segments_leave_source_order() {
+        // 正常：遞增且不重疊
+        assert!(!needs_random_access(&plan(&[(0.0, 500.0, 0.0), (800.0, 1300.0, 0.0)], &[("seam", 0.0)])));
+        // 搬移：後面的段回到前面去了
+        assert!(needs_random_access(&plan(&[(800.0, 1300.0, 0.0), (0.0, 500.0, 0.0)], &[("seam", 0.0)])));
+        // 貼上：同一段來源出現兩次（起點雖然遞增，但落在前一段的結束之前）
+        assert!(needs_random_access(&plan(&[(0.0, 1000.0, 0.0), (500.0, 1500.0, 0.0)], &[("seam", 0.0)])));
+        // 剛好接在一起不算重疊
+        assert!(!needs_random_access(&plan(&[(0.0, 500.0, 0.0), (500.0, 1000.0, 0.0)], &[("seam", 0.0)])));
+    }
+
+    /// 這是本輪最重要的一條：順序正常時，新的隨機存取路徑必須跟串流路徑**逐位元相同**。
+    /// 不然「多一條路」就等於「多一種輸出」，而使用者分不出來自己拿到的是哪一種。
+    #[test]
+    fn random_access_matches_streaming_on_ordered_plans() {
+        let mut seed = 0x2545_F491_4F6C_DD1Du64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        let kinds = ["crossfade", "gap", "seam"];
+        for case in 0..60u32 {
+            let n = 1 + (next() % 5) as usize;
+            let mut segs = Vec::new();
+            let mut cursor = 0.0f64;
+            for _ in 0..n {
+                let len = match next() % 4 {
+                    0 => 5.0 + (next() % 20) as f64,
+                    1 => 30.0 + (next() % 60) as f64,
+                    _ => 120.0 + (next() % 900) as f64,
+                };
+                segs.push((cursor, cursor + len, 0.0));
+                cursor += len + (next() % 200) as f64;
+            }
+            let joins: Vec<(&str, f64)> = (0..n.saturating_sub(1))
+                .map(|_| {
+                    let k = kinds[(next() % 3) as usize];
+                    let ms = match k {
+                        "gap" => 40.0 + (next() % 300) as f64,
+                        "seam" => 0.0,
+                        _ => 4.0 + (next() % 60) as f64,
+                    };
+                    (k, ms)
+                })
+                .collect();
+            let p = plan(&segs, &joins);
+            assert!(!needs_random_access(&p), "case {case} 這裡只測順序正常的 plan");
+            let src = ramp(ms_to_frames(cursor + 100.0));
+            let a = run_streaming_from(&p, &src);
+            let b = run_arranged_from(&p, &src);
+            assert_eq!(a.len(), b.len(), "case {case}: 長度不同 segs={segs:?} joins={joins:?}");
+            assert_eq!(a, b, "case {case}: 內容不同 segs={segs:?} joins={joins:?}");
+        }
+    }
+
+    /// 搬移：第二段的來源在第一段之前。串流路徑會安靜地少寫一整段，
+    /// 隨機存取路徑必須寫滿，而且順序是**成品順序**不是來源順序。
+    #[test]
+    fn moved_segments_are_written_in_output_order() {
+        let p = plan(&[(1000.0, 1200.0, 0.0), (0.0, 200.0, 0.0)], &[("seam", 0.0)]);
+        assert!(needs_random_access(&p));
+        let src = ramp(ms_to_frames(1300.0));
+        let out = run_arranged_from(&p, &src);
+        assert_eq!(out.len() as u64, plan_out_frames(&p));
+
+        let first = ms_to_frames(1000.0); // 第一段來自來源 1000 ms
+        assert!((out[0] - src[first as usize]).abs() < 1e-6, "成品開頭應該是來源的 1000 ms");
+        assert!((out[100] - src[first as usize + 100]).abs() < 1e-6);
+        // 第二段從成品的 200 ms 開始，來自來源 0 ms
+        let boundary = ms_to_frames(200.0) as usize;
+        assert!((out[boundary] - src[0]).abs() < 1e-6, "接下來應該是來源的 0 ms");
+        assert!((out[boundary + 100] - src[100]).abs() < 1e-6);
+
+        // 串流路徑在同一個 plan 上會漏掉整個第二段 —— 這就是 v0.99 要擋下來的那個壞檔。
+        let streamed = run_streaming_from(&p, &src);
+        assert!(
+            (streamed.len() as u64) < plan_out_frames(&p),
+            "串流路徑本來就寫不滿；這條斷了表示前提變了，隨機存取那條路可以拿掉"
+        );
+    }
+
+    /// 貼上：同一段來源在成品裡出現兩次。
+    #[test]
+    fn pasted_segments_can_repeat_the_same_source_range() {
+        let p = plan(&[(0.0, 300.0, 0.0), (100.0, 250.0, 0.0), (300.0, 600.0, 0.0)], &[("seam", 0.0), ("seam", 0.0)]);
+        assert!(needs_random_access(&p));
+        let src = ramp(ms_to_frames(700.0));
+        let out = run_arranged_from(&p, &src);
+        assert_eq!(out.len() as u64, plan_out_frames(&p));
+        let b1 = ms_to_frames(300.0) as usize; // 第二段（重複的那一份）在成品的位置
+        assert!((out[b1] - src[ms_to_frames(100.0) as usize]).abs() < 1e-6);
+        let b2 = b1 + ms_to_frames(150.0) as usize;
+        assert!((out[b2] - src[ms_to_frames(300.0) as usize]).abs() < 1e-6);
+    }
+
+    /// `RawFrames` 會記住檔案游標省掉 seek —— 那個最佳化只要記錯一格，
+    /// 讀出來的就是隔壁那個 frame，而且完全不會報錯。這裡把跳讀與順讀混著測。
+    #[test]
+    fn raw_frames_reads_the_frame_you_asked_for() {
+        let path = std::env::temp_dir().join(format!("aicut-raw-{}.f32", uuid::Uuid::new_v4()));
+        let ch = 2usize;
+        let n = 500u64;
+        // frame t 的兩個聲道分別是 t 與 -t，左右搞混也看得出來
+        let mut bytes = Vec::with_capacity(n as usize * ch * 4);
+        for t in 0..n {
+            bytes.extend_from_slice(&(t as f32).to_le_bytes());
+            bytes.extend_from_slice(&(-(t as f32)).to_le_bytes());
+        }
+        std::fs::write(&path, &bytes).unwrap();
+
+        let mut r = RawFrames::open(&path, ch, n).unwrap();
+        let mut out = vec![0f32; ch];
+        // 跳著讀
+        for &t in &[400u64, 0, 250, 1, 499] {
+            r.read_frame(t, &mut out).unwrap();
+            assert_eq!(out, vec![t as f32, -(t as f32)], "跳讀 frame {t}");
+        }
+        // 跳一次之後連續順讀（走「不 seek」那條捷徑）
+        r.read_frame(100, &mut out).unwrap();
+        for t in 100..110u64 {
+            if t > 100 {
+                r.read_frame(t, &mut out).unwrap();
+            }
+            assert_eq!(out, vec![t as f32, -(t as f32)], "順讀 frame {t}");
+        }
+        // 超出檔尾補 0，而且不能是「上一次讀到的值」留在原地
+        r.read_frame(n, &mut out).unwrap();
+        assert_eq!(out, vec![0.0, 0.0]);
+        r.read_frame(n + 10_000, &mut out).unwrap();
+        assert_eq!(out, vec![0.0, 0.0]);
+        // 補 0 之後還能繼續正確跳讀（pos 沒有被弄髒）
+        r.read_frame(42, &mut out).unwrap();
+        assert_eq!(out, vec![42.0, -42.0]);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 段落被拉到來源結尾之外時要補靜音，不能少寫 frame（少寫就對不起 plan_out_frames）。
+    #[test]
+    fn segments_past_the_end_of_source_are_padded_with_silence() {
+        let p = plan(&[(500.0, 800.0, 0.0), (0.0, 200.0, 0.0)], &[("seam", 0.0)]);
+        let src = ramp(ms_to_frames(600.0)); // 來源只有 600 ms，第一段超出去 200 ms
+        let out = run_arranged_from(&p, &src);
+        assert_eq!(out.len() as u64, plan_out_frames(&p));
+        let past = ms_to_frames(150.0) as usize; // 成品 150 ms ＝ 來源 650 ms，已經沒東西了
+        assert_eq!(out[past], 0.0);
     }
 }

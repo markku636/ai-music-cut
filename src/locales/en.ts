@@ -1379,7 +1379,6 @@ const en: Catalog = {
   "開頭慢慢變大聲、結尾慢慢變小聲": "Fade in at the start, fade out at the end",
   "預設": "Presets",
   "0 dB＝沒有改變": "0 dB = unchanged",
-  "這一集有剪下貼上 / 搬移的段落，目前還不能輸出 —— 剪接器尚未支援重新排序，硬輸出會安靜地少掉內容。請先復原那些貼上（Ctrl+Z）再輸出。": "This episode has cut/paste or moved passages, which cannot be exported yet — the cutter does not support reordering, and forcing it would silently drop content. Undo those pastes (Ctrl+Z) first.",
   // R2 簡易模式
   "介面模式": "UI mode",
   "你可以做的事": "What you can do",

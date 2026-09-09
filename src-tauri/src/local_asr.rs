@@ -9,9 +9,18 @@
 //! 這樣腳本永遠跟著這個執行檔的版本走，不會出現「App 更新了但殘留舊腳本」的情況，
 //! 也少一份要維護的打包清單。
 //!
-//! **這個檔案的實機轉寫沒有驗證過** —— 開發機上沒有安裝 faster-whisper
-//! （它會帶進 ctranslate2 與約 1 GB 的模型），不會替使用者自動安裝。
-//! 偵測、指令組法、輸出格式轉換都有測試，但沒有真的跑過一次轉寫。
+//! **這台開發機的 GPU 路徑是壞的**（RTX 5070 Ti，`RuntimeError: cuBLAS failed with
+//! status CUBLAS_STATUS_NOT_SUPPORTED`，34 秒的檔也一樣）—— 所以 sidecar 在轉寫途中
+//! 遇到例外時會**退回 CPU 再跑一次**。慢很多，但比「顯示卡對不上就完全不能用」好。
+//! 這也表示：驗證過的是錯誤回報與 CPU 退路，GPU 那條路在這台機器上驗不了。
+//!
+//! **長檔踩過一個很難查的坑**，兩個地方都要留著：
+//! 1. Windows 上 python 寫進「管線」用的是 ANSI 代碼頁（zh-TW 是 cp950），不是 UTF-8。
+//!    sidecar 用 `ensure_ascii=False` 輸出中文，所以 bytes 不是合法 UTF-8。
+//!    → `proc::cmd` 一律設 `PYTHONIOENCODING=utf-8`。
+//! 2. 讀取迴圈不能寫成 `while let Ok(Some(..))` —— 一行讀不動就結束迴圈，
+//!    之後沒有人讀 stdout，管線塞滿、python 卡在 flush，最後以結束碼 120 退出。
+//!    短檔看不出來（寫不滿 64 KB），16 分鐘的節目必掛，而且中間的進度事件一直被丟掉。
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -52,14 +61,33 @@ def main():
 
     emit({"event": "status", "message": "轉寫中"})
     lang = None if not language or language in ("auto", "") else language
-    segments, info = model.transcribe(
-        audio, language=lang, word_timestamps=True, vad_filter=True,
-        condition_on_previous_text=False,
-    )
+
+    def run(m):
+        # faster-whisper 是惰性的：段落要在迭代時才真的算，所以 GPU 的錯誤
+        # （cuBLAS / 顯存不足）不會在 transcribe() 就丟出來，要在這裡才看得到。
+        segs, info = m.transcribe(
+            audio, language=lang, word_timestamps=True, vad_filter=True,
+            condition_on_previous_text=False,
+        )
+        return list(segs), info
+
+    try:
+        seg_list, info = run(model)
+    except Exception as e:
+        # **GPU 壞掉不該讓整個功能死掉。** CUDA / cuBLAS 版本對不上是很常見的環境問題
+        # （實測 RTX 5070 Ti + 這台的 cuBLAS：CUBLAS_STATUS_NOT_SUPPORTED），
+        # 而 CPU 一定跑得動，只是慢。慢很多也比「完全不能用」好。
+        emit({"event": "status", "message": "顯示卡跑不動（%s），改用 CPU 重跑一次" % type(e).__name__})
+        try:
+            model = WhisperModel(model_name, device="cpu", compute_type="int8")
+            seg_list, info = run(model)
+        except Exception as e2:
+            emit({"event": "error", "message": "GPU 與 CPU 都失敗：%s / %s" % (e, e2)})
+            return 4
     total = float(getattr(info, "duration", 0.0) or 0.0)
 
     out_segments = []
-    for i, s in enumerate(segments):
+    for i, s in enumerate(seg_list):
         words = []
         for w in (s.words or []):
             words.append({
@@ -362,12 +390,34 @@ fn emit(app: &AppHandle, job_id: &str, kind: &str, step: Option<&str>, line: Opt
 /// 2. **無論什麼原因都附上 `pip install faster-whisper`**。腳本的 2 才是「套件沒裝」，
 ///    3 是「模型載入失敗」（顯存不夠、模型檔壞掉、網路抓不到）—— 對後者建議去 pip install，
 ///    是把人帶去修一個根本沒壞的東西。
+/// 3. **只留 stderr 的「最後幾行」不夠**。Python 的 traceback 裡有用的是最後那一行
+///    （`RuntimeError: cuBLAS failed…`），前面全是呼叫堆疊；traceback 被中途截斷時
+///    留下來的剛好是前幾行，使用者拿到「File …, line 26, in main」等於什麼都沒說。
 pub fn transcribe_error_message(code: Option<i32>, detail: Option<&str>) -> String {
     let hint = if code == Some(2) { format!("　→ {}", install_command()) } else { String::new() };
     match detail {
         Some(m) => format!("本機辨識失敗：{m}{hint}"),
         None => format!("本機辨識以結束碼 {code:?} 退出{hint}"),
     }
+}
+
+/// 這一行看起來是不是 Python 的例外（traceback 的最後一行）。
+///
+/// 形狀是 `SomeError: 說明` —— 開頭不縮排、冒號前是一個結尾為 Error / Exception 的識別字。
+/// 縮排的是呼叫堆疊，`Traceback (most recent call last):` 也不算（冒號後面是空的）。
+pub fn is_exception_line(line: &str) -> bool {
+    if line.starts_with(' ') || line.starts_with('\t') {
+        return false;
+    }
+    let Some((head, rest)) = line.split_once(':') else { return false };
+    if rest.trim().is_empty() {
+        return false;
+    }
+    // `torch.cuda.OutOfMemoryError` 這種帶模組前綴的也要認得
+    let name = head.rsplit('.').next().unwrap_or(head);
+    (name.ends_with("Error") || name.ends_with("Exception"))
+        && name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// 跑一個子行程，把 stdout / stderr 逐行送到前端；回傳結束碼。
@@ -467,8 +517,15 @@ pub async fn transcribe(app: AppHandle, job_id: String, audio_path: String, mode
         let jid = job_id.clone();
         let errbox = last_error.clone();
         tokio::spawn(async move {
+            // **不能用 `while let Ok(Some(..))`**：一行不是合法 UTF-8 就結束迴圈，
+            // 之後沒有人讀 stdout，管線塞滿、子程序卡死。壞的一行跳過就好。
             let mut lines = BufReader::new(stdout).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
+            loop {
+                let line = match lines.next_line().await {
+                    Ok(Some(l)) => l,
+                    Ok(None) => break,
+                    Err(_) => continue,
+                };
                 let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
                 let ev = v.get("event").and_then(|x| x.as_str()).unwrap_or("").to_string();
                 if ev == "error" {
@@ -489,10 +546,64 @@ pub async fn transcribe(app: AppHandle, job_id: String, audio_path: String, mode
         });
     }
 
+    // **stderr 一定要讀。**
+    //
+    // 它是 piped 但沒有人讀的話，管線的緩衝（Windows 64 KB）一滿，python 就卡在寫入；
+    // 最後離開時 flush 失敗，以**結束碼 120** 退出。短檔看不出來（寫不滿），
+    // 16 分鐘的節目 faster-whisper 光是進度與警告就寫爆了 —— 實測就是這樣掛的，
+    // 而且使用者只看到「本機辨識以結束碼 Some(120) 退出」，沒有任何線索。
+    //
+    // 順便：python 的 traceback 是寫在 stderr 的。腳本自己 catch 得到的錯誤會走
+    // stdout 的 JSON 事件，catch 不到的（記憶體不足、CUDA 掛掉、被砍）只有 traceback。
+    // 留最後幾行當失敗原因，比一個裸的數字有用得多。
+    // 留兩樣東西：最後幾行（當退路），以及**最後一行看起來像例外的**。
+    //
+    // Python 的 traceback 裡真正有用的是**最後一行**（`RuntimeError: cuBLAS failed…`），
+    // 前面全是呼叫堆疊。只留「最後 N 行」在 traceback 被中途截斷時會剛好留下前幾行 ——
+    // 使用者拿到的是「File …, line 26, in main」，等於什麼都沒說。
+    let tail: std::sync::Arc<parking_lot::Mutex<Vec<String>>> = Default::default();
+    let exc: std::sync::Arc<parking_lot::Mutex<Option<String>>> = Default::default();
+    let stderr_task = child.stderr.take().map(|err| {
+        let sink = tail.clone();
+        let exc = exc.clone();
+        tokio::spawn(async move {
+            let mut lines = BufReader::new(err).lines();
+            loop {
+                let l = match lines.next_line().await {
+                    Ok(Some(x)) => x,
+                    Ok(None) => break,
+                    Err(_) => continue,
+                };
+                if is_exception_line(&l) {
+                    *exc.lock() = Some(l.trim().to_string());
+                }
+                let mut v = sink.lock();
+                v.push(l);
+                // 只留最後 8 行：一集節目的 stderr 可能幾千行，全留只是佔記憶體
+                if v.len() > 8 {
+                    let drop_n = v.len() - 8;
+                    v.drain(..drop_n);
+                }
+            }
+        })
+    });
+
     let status = child.wait().await.map_err(|e| AppError::Agent(format!("本機辨識失敗：{e}")))?;
+    if let Some(t) = stderr_task {
+        let _ = t.await;
+    }
     if !status.success() {
         let _ = tokio::fs::remove_file(&out).await;
-        let detail = last_error.lock().clone();
+        // 優先序：腳本自己講的原因 → stderr 裡的例外那一行 → stderr 的尾巴。
+        let detail = last_error
+            .lock()
+            .clone()
+            .or_else(|| exc.lock().clone())
+            .or_else(|| {
+                let v = tail.lock();
+                let s = v.join(" / ");
+                if s.trim().is_empty() { None } else { Some(s) }
+            });
         return Err(AppError::Agent(transcribe_error_message(status.code(), detail.as_deref())));
     }
     let text = tokio::fs::read_to_string(&out).await.map_err(|e| AppError::Io(format!("讀不到本機辨識結果：{e}")))?;
@@ -594,6 +705,29 @@ mod tests {
         assert!(!m.contains("pip install"), "{m}");
         // 被訊號砍掉時 code() 是 None，也不能 panic
         assert!(!transcribe_error_message(None, None).is_empty());
+    }
+
+    #[test]
+    fn picks_the_exception_line_out_of_a_traceback() {
+        assert!(is_exception_line("RuntimeError: cuBLAS failed with status CUBLAS_STATUS_NOT_SUPPORTED"));
+        assert!(is_exception_line("ValueError: bad input"));
+        assert!(is_exception_line("torch.cuda.OutOfMemoryError: CUDA out of memory"));
+        // 呼叫堆疊與其他雜訊都不是 —— 只留「最後 N 行」時它們會蓋掉真正的錯誤
+        assert!(!is_exception_line("Traceback (most recent call last):"));
+        assert!(!is_exception_line("  File \"x.py\", line 26, in main"));
+        assert!(!is_exception_line("    sys.exit(main())"));
+        assert!(!is_exception_line("RuntimeError:"), "冒號後面沒有說明就不算");
+        assert!(!is_exception_line("warning: something"), "小寫開頭不是例外類別");
+        assert!(!is_exception_line("no colon here"));
+    }
+
+    #[test]
+    fn stderr_tail_is_better_than_a_bare_exit_code() {
+        // python 自己 catch 不到的錯誤（記憶體不足、CUDA 掛掉、被砍）只會留下 traceback，
+        // 而 traceback 是寫在 stderr 的。有它就用它 —— 一個裸的數字對使用者沒有用。
+        let m = transcribe_error_message(Some(120), Some("Traceback (most recent call last): / RuntimeError: CUDA error"));
+        assert!(m.contains("CUDA error"), "stderr 的尾巴要出現在訊息裡：{m}");
+        assert!(!m.contains("pip install"), "{m}");
     }
 
     #[test]

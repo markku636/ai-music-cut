@@ -11,6 +11,13 @@ pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 pub fn cmd(program: &str) -> Command {
     let mut c = Command::new(program);
     c.stdin(Stdio::null());
+    // **Windows 上 Python 寫進「管線」用的是 ANSI 代碼頁（zh-TW 是 cp950），不是 UTF-8。**
+    // 我們的 sidecar 用 ensure_ascii=False 輸出中文，所以那些 bytes 不是合法 UTF-8，
+    // Rust 這邊 `lines()` 會回 Err、讀取迴圈直接結束 —— 沒有人再讀 stdout 之後管線塞滿，
+    // python 就卡在下一次 flush，最後以結束碼 120 退出。
+    // 短檔看不出來（寫不滿 64 KB），16 分鐘的節目必掛，而且中間的進度事件一直在被丟掉。
+    // 對非 python 的程式（ffmpeg…）這兩個變數沒有作用，設了無害。
+    c.env("PYTHONIOENCODING", "utf-8").env("PYTHONUTF8", "1");
     #[cfg(windows)]
     c.creation_flags(CREATE_NO_WINDOW);
     c

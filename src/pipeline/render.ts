@@ -93,10 +93,39 @@ export function dirname(p: string): string {
   return i >= 0 ? p.slice(0, i) : "";
 }
 
-export function defaultOutPath(media: MediaItem, format: RenderFormat, outputDir: string | null): string {
+/**
+ * 成品要寫到哪裡。
+ *
+ * `taken` / `sources` 只有**批次**會傳：一次跑好幾集、又指定同一個輸出資料夾時，
+ * podcast 的檔案結構常常是 `ep01/recording.wav`、`ep02/recording.wav` ——
+ * 只用檔名的話兩集都算出 `recording_cut.mp3`，第二集**安靜地蓋掉第一集**。
+ * 使用者跑完看到一個檔案，以為是自己選錯了。
+ *
+ * `sources` 再擋一層：對著上一輪的成品資料夾再跑一次批次時，
+ * 輸出不能蓋掉這一批自己的來源檔（跑到一半輸入就沒了）。
+ *
+ * 單檔輸出不傳，行為與以前逐字元相同。
+ */
+export function defaultOutPath(
+  media: MediaItem,
+  format: RenderFormat,
+  outputDir: string | null,
+  taken?: Set<string>,
+  sources?: ReadonlySet<string>,
+): string {
   const dir = outputDir?.trim() || dirname(media.path);
   const base = media.name.replace(/\.[^.]+$/, "");
-  return `${dir}${sep(dir || media.path)}${base}_cut.${format}`;
+  const s = sep(dir || media.path);
+  const lc = (x: string) => x.toLowerCase();
+  let candidate = `${dir}${s}${base}_cut.${format}`;
+  if (!taken && !sources) return candidate;
+  let n = 2;
+  while (taken?.has(lc(candidate)) || sources?.has(lc(candidate))) {
+    candidate = `${dir}${s}${base}_cut_${n}.${format}`;
+    n++;
+  }
+  taken?.add(lc(candidate));
+  return candidate;
 }
 
 export interface BuiltPlan {

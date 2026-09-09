@@ -153,6 +153,17 @@ export async function runBatch(mediaIds: string[], opts: BatchOptions = {}): Pro
   const targetLufs = opts.targetLufs ?? settings.target_lufs ?? -16;
   const results: BatchItemResult[] = [];
   const cancelled = () => opts.isCancelled?.() ?? false;
+  // 這一批已經配出去的成品路徑，以及所有來源檔（都用小寫比：Windows 大小寫不分）。
+  // podcast 的檔案結構常常是 ep01/recording.wav、ep02/recording.wav —— 指定同一個
+  // 輸出資料夾時，只用檔名的話兩集都算出 recording_cut.mp3，第二集會安靜蓋掉第一集。
+  const takenOut = new Set<string>();
+  const allMedia = useProject.getState().media;
+  const sourcePaths: ReadonlySet<string> = new Set(
+    mediaIds
+      .map((id) => allMedia.find((m) => m.id === id)?.path)
+      .filter((p): p is string => !!p)
+      .map((p) => p.toLowerCase()),
+  );
 
   for (let i = 0; i < mediaIds.length; i++) {
     const mediaId = mediaIds[i];
@@ -229,7 +240,7 @@ export async function runBatch(mediaIds: string[], opts: BatchOptions = {}): Pro
         }
 
         if (p.key === "render") {
-          const outPath = defaultOutPath(media, format, outputDir);
+          const outPath = defaultOutPath(media, format, outputDir, takenOut, sourcePaths);
           report("render", t("輸出"), 0);
           const r = await runRender(mediaId, { format, outPath, leveling, targetLufs }, (pr) =>
             report("render", t("輸出"), pr.pct / 100),
@@ -243,10 +254,11 @@ export async function runBatch(mediaIds: string[], opts: BatchOptions = {}): Pro
       // 沒跑智慧剪輯但跑了輸出時，長度資訊還是要有 —— 報告上「省了多少」是使用者唯一在意的數字
       if (!item.srcMs) {
         const edl = edlFor(mediaId);
-        // EdlStats 沒有 srcMs（它只記剪掉多少、留下多少），來源長度要從 keeps + removed 湊
         if (edl) {
           item.outMs = edl.stats.outMs;
-          item.srcMs = edl.stats.keptMs + edl.stats.removedMs;
+          // 用 stats.srcMs，不要湊 keptMs + removedMs —— 貼上會讓 keptMs 把同一段
+          // 來源算兩次，「省了多少」就跟著虛報（v0.116 起 srcMs 是 EDL 的一等公民）。
+          item.srcMs = edl.stats.srcMs;
           item.savedMs = Math.max(0, item.srcMs - item.outMs);
         }
       }

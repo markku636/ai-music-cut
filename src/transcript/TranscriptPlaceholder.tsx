@@ -3,7 +3,6 @@ import { Button, EmptyState, Spinner } from "../ui/index";
 import { useT } from "../i18n";
 import { useJobs, type JobPhase } from "../store/jobs";
 import { useProject } from "../store/project";
-import { useSettings } from "../store/settings";
 import { formatDuration } from "../time";
 
 export interface TranscriptPlaceholderProps {
@@ -25,13 +24,11 @@ export function estimateTranscribeMs(durationMs: number): number {
 export default function TranscriptPlaceholder({ mediaId, onAnalyze, onOpenSettings }: TranscriptPlaceholderProps) {
   const t = useT();
   const media = useProject((s) => s.media.find((m) => m.id === mediaId) ?? null);
-  const key = useSettings((s) => s.key);
-  const ttls = useSettings((s) => s.ttls);
   const job = useJobs((s) => s.jobs.find((j) => j.kind === "analyze" && j.mediaId === mediaId && (j.status === "running" || j.status === "queued")));
   const cancelJob = useJobs((s) => s.cancel);
   const phaseLabels: Record<JobPhase, string> = {
     prepare: t("轉檔"),
-    transcribe: t("上傳 / 轉寫"),
+    transcribe: t("本機辨識"),
     normalize: t("整理逐字稿"),
     rules: t("規則分析"),
   };
@@ -101,31 +98,19 @@ export default function TranscriptPlaceholder({ mediaId, onAnalyze, onOpenSettin
     );
   }
 
-  const keyMissing = key !== null && !key.present;
   const dur = media.probe?.duration_ms ?? 0;
-  const busy = !!ttls && (!!ttls.degraded || (ttls.queue_pending != null && ttls.max_pending != null && ttls.queue_pending >= ttls.max_pending));
-  const est = dur > 0 && !busy ? t("（{dur} 音檔約需 {est}）", { dur: formatDuration(dur), est: formatDuration(estimateTranscribeMs(dur)) }) : "";
+  const est = dur > 0 ? t("（{dur} 音檔約需 {est}）", { dur: formatDuration(dur), est: formatDuration(estimateTranscribeMs(dur)) }) : "";
   return (
     <EmptyState
       compact
       icon={FileText}
       title={t("逐字稿會在分析後出現")}
-      hint={
-        keyMissing
-          ? t("分析會把音檔上傳到 ttls 轉寫（需要金鑰），並用規則找出贅字 / 口吃 / 停頓。在那之前，波形已可播放、可拖選手動剪。")
-          : t("上傳到 ttls 轉寫{est}；波形已可先聽、先手動剪。", { est })
-      }
+      hint={t("在你電腦上辨識{est}，不上傳、不需要金鑰；波形已可先聽、先手動剪。", { est })}
       className="flex-1"
       action={
-        keyMissing ? (
-          <Button size="sm" variant="primary" onClick={() => onOpenSettings("key")}>
-            {t("貼上 ttls 金鑰")}
-          </Button>
-        ) : (
-          <Button size="sm" variant="primary" onClick={onAnalyze}>
-            {t("開始分析")}
-          </Button>
-        )
+        <Button size="sm" variant="primary" onClick={onAnalyze}>
+          {t("開始分析")}
+        </Button>
       }
     />
   );

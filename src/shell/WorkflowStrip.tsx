@@ -34,10 +34,9 @@ export default function WorkflowStrip({ variant = "pro" }: { variant?: UiMode })
     onJudge: () => A.judgeActive(),
     onRender: () => A.openRender(null),
     onVerify: () => A.openVerify(),
-    onOpenSettings: (focus?: "key" | "ffmpeg") => A.openSettings(focus ?? null),
+    onOpenSettings: (focus?: "ffmpeg") => A.openSettings(focus ?? null),
   };
   const active = useProject(selectActiveMedia);
-  const key = useSettings((s) => s.key);
   const claude = useSettings((s) => s.claude);
   const mediaId = active?.id ?? null;
   const candidates = useDecisions((s) => (mediaId ? s.candidates[mediaId] ?? EMPTY : EMPTY));
@@ -52,7 +51,6 @@ export default function WorkflowStrip({ variant = "pro" }: { variant?: UiMode })
   const counts = decisionCounts(candidates, decisions ?? {});
   // 簡易只有三步：開檔 → 做調整 → 輸出。分析是「做調整」裡的一顆按鈕，不是一個步驟。
   const step = simple ? (!active ? 1 : rendered ? 3 : 2) : !active ? 1 : active.analysis !== "ready" ? 2 : rendered ? 4 : 3;
-  const keyMissing = key !== null && !key.present;
   const labels = simple ? [t("開啟音檔"), t("做調整"), t("輸出")] : [t("開啟音檔"), t("分析"), t("檢視決策"), t("輸出")];
 
   let caption: Caption;
@@ -109,16 +107,6 @@ export default function WorkflowStrip({ variant = "pro" }: { variant?: UiMode })
         cta: (
           <Button size="sm" variant="primary" onClick={p.onAnalyze}>
             {t("重試")}
-          </Button>
-        ),
-      };
-    } else if (keyMissing) {
-      caption = {
-        text: t("波形已可看、可手動剪；轉寫逐字稿與找贅字需要 ttls 金鑰"),
-        badge: <Badge tone="warning">{t("需要 ttls 金鑰")}</Badge>,
-        cta: (
-          <Button size="sm" variant="primary" onClick={() => p.onOpenSettings("key")}>
-            {t("貼上金鑰")}
           </Button>
         ),
       };

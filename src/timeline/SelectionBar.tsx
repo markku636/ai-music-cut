@@ -1,4 +1,4 @@
-import { Crop, Palette, Play, Repeat, Scissors, Share2, Square, Star, TrendingDown, TrendingUp, VolumeX, X, ZoomIn } from "lucide-react";
+import { Crop, Play, Repeat, Scissors, Share2, Square, Star, TrendingDown, TrendingUp, VolumeX, X, ZoomIn } from "lucide-react";
 import { useT } from "../i18n";
 import { playRange, stopRange } from "../preview/playerRef";
 import { useHighlights } from "../store/highlights";
@@ -20,7 +20,6 @@ import { addEffectOnSelection, clearSelection, cutSelection, keepOnlySelection }
 export default function SelectionBar({ variant = "pro" }: { variant?: UiMode }) {
   const t = useT();
   const simple = variant === "simple";
-  const onStyle = (startMs: number, endMs: number) => openDialog("style", { startMs, endMs });
   const onExportRange = (startMs: number, endMs: number) => openDialog("render", { range: { startMs, endMs }, reel: null, reelBed: null });
   const selection = useTimeline((s) => s.selection);
   const loop = useTimeline((s) => s.loopSelection);
@@ -64,7 +63,6 @@ export default function SelectionBar({ variant = "pro" }: { variant?: UiMode }) 
       {!simple && (
         <>
           <span className="w-px h-4 bg-fg/10 mx-0.5" aria-hidden />
-          <IconButton icon={Palette} label={t("把這段改成另一種曲風（AI）")} onClick={() => onStyle(selection.startMs, selection.endMs)} />
           <IconButton icon={VolumeX} label={t("靜音這段")} onClick={() => addEffectOnSelection("mute")} />
           <IconButton icon={TrendingUp} label={t("淡入")} onClick={() => addEffectOnSelection("fade_in")} />
           <IconButton icon={TrendingDown} label={t("淡出")} onClick={() => addEffectOnSelection("fade_out")} />

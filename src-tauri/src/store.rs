@@ -12,7 +12,6 @@ use tauri::{AppHandle, Manager};
 use crate::error::{AppError, AppResult};
 
 // 改名 AI Podcast Cut 之後 service 名刻意不動：換了名字舊使用者的 API key 就找不到了。
-const KEYCHAIN_SERVICE: &str = "ai-music-cut";
 pub const SETTINGS_FILE: &str = "settings.json";
 pub const TTLS_KEY_ACCOUNT: &str = "ttls-api-key";
 
@@ -24,9 +23,6 @@ pub const TTLS_KEY_ACCOUNT: &str = "ttls-api-key";
 /// 而且不上傳、不需要金鑰。有金鑰的人在設定裡切回 ttls 就好。
 ///
 /// 已經有設定檔的使用者不受影響：這個預設只在欄位不存在時才生效。
-fn default_asr_source() -> String {
-    "local".to_string()
-}
 
 fn default_agent_backend() -> String {
     "claude".to_string()
@@ -49,7 +45,6 @@ pub struct ExportPreset {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AppSettings {
-    pub ttls_base_url: String,
     /// ffmpeg 執行檔或其所在目錄；空＝自動偵測（PATH / 常見安裝路徑）。
     pub ffmpeg_path: Option<String>,
     /// claude CLI 的 --model（空＝CLI 預設）。
@@ -68,8 +63,6 @@ pub struct AppSettings {
     pub lang: String,
     pub judge_enabled: bool,
     /// 逐字稿來源："local"（預設，本機 faster-whisper）或 "ttls"（上傳到伺服器）。
-    #[serde(default = "default_asr_source")]
-    pub asr_source: String,
     pub asr_language: String,
     pub asr_model: String,
     pub hotwords: String,
@@ -104,7 +97,6 @@ pub struct AppSettings {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
-            ttls_base_url: "https://ttls.markkulab.net".to_string(),
             ffmpeg_path: None,
             claude_model: "sonnet".to_string(),
             agent_backend: default_agent_backend(),
@@ -115,7 +107,6 @@ impl Default for AppSettings {
             output_dir: None,
             lang: "zh-TW".to_string(),
             judge_enabled: true,
-            asr_source: default_asr_source(),
             asr_language: "zh".to_string(),
             asr_model: "auto".to_string(),
             hotwords: String::new(),
@@ -185,44 +176,8 @@ pub async fn write_json<T: Serialize>(app: &AppHandle, file: &str, value: &T) ->
 
 // ---- keychain ----
 
-/// 寫入 keychain。secret 為空字串時視為「刪除該項」。
-pub fn kc_set(account: &str, secret: &str) -> AppResult<()> {
-    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, account)
-        .map_err(|e| AppError::Storage(format!("keychain 開啟失敗：{e}")))?;
-    if secret.is_empty() {
-        let _ = entry.delete_credential();
-        return Ok(());
-    }
-    entry
-        .set_password(secret)
-        .map_err(|e| AppError::Storage(format!("keychain 寫入失敗：{e}")))?;
-    Ok(())
-}
 
-/// 讀取 keychain。不存在或任何錯誤都回 None（log 只記 account，不記內容）。
-pub fn kc_get(account: &str) -> Option<String> {
-    let entry = match keyring::Entry::new(KEYCHAIN_SERVICE, account) {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("[store] keychain 開啟失敗 ({account})：{e}");
-            return None;
-        }
-    };
-    match entry.get_password() {
-        Ok(p) => Some(p),
-        Err(keyring::Error::NoEntry) => None,
-        Err(e) => {
-            eprintln!("[store] keychain 讀取失敗 ({account})：{e}");
-            None
-        }
-    }
-}
 
-pub fn kc_delete(account: &str) {
-    if let Ok(entry) = keyring::Entry::new(KEYCHAIN_SERVICE, account) {
-        let _ = entry.delete_credential();
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -240,24 +195,13 @@ mod tests {
         // 新使用者拿不到金鑰，預設指過去等於一打開就是死路。
         let dir = tmpdir();
         let s: AppSettings = read_json_in(&dir, SETTINGS_FILE).await.unwrap();
-        assert_eq!(s.asr_source, "local");
     }
 
-    #[tokio::test]
-    async fn existing_settings_keep_their_asr_source() {
-        // 已經選了 ttls 的使用者升級後不該被改掉
-        let dir = tmpdir();
-        let raw = r#"{"asr_source":"ttls"}"#;
-        tokio::fs::write(dir.join(SETTINGS_FILE), raw).await.unwrap();
-        let s: AppSettings = read_json_in(&dir, SETTINGS_FILE).await.unwrap();
-        assert_eq!(s.asr_source, "ttls");
-    }
-
+    
     #[tokio::test]
     async fn settings_roundtrip_and_defaults() {
         let dir = tmpdir();
         let s: AppSettings = read_json_in(&dir, SETTINGS_FILE).await.unwrap();
-        assert_eq!(s.ttls_base_url, "https://ttls.markkulab.net");
         assert_eq!(s.default_aggressiveness, 50);
         let mut s2 = s.clone();
         s2.target_lufs = -14.0;

@@ -17,16 +17,14 @@ function Dot({ ok, warn }: { ok: boolean; warn?: boolean }) {
 export default function StatusBar({ variant = "pro" }: { variant?: UiMode }) {
   const t = useT();
   const simple = variant === "simple";
-  const onOpenSettings = (focus?: "key" | "ffmpeg") => openSettings(focus ?? null);
+  const onOpenSettings = (focus?: "ffmpeg") => openSettings(focus ?? null);
   const ffmpeg = useSettings((s) => s.ffmpeg);
-  const ttls = useSettings((s) => s.ttls);
-  const key = useSettings((s) => s.key);
   const probeAll = useSettings((s) => s.probeAll);
   const currentMs = usePlayback((s) => s.currentMs);
   const dirty = useProject((s) => s.dirty);
   const path = useProject((s) => s.path);
 
-  // 視窗聚焦時每 30 秒重探一次（ffmpeg / ttls / 金鑰）。
+  // 視窗聚焦時每 30 秒重探一次（ffmpeg / claude）。
   useEffect(() => {
     const id = window.setInterval(() => {
       if (document.hasFocus()) void probeAll();
@@ -34,8 +32,6 @@ export default function StatusBar({ variant = "pro" }: { variant?: UiMode }) {
     return () => window.clearInterval(id);
   }, [probeAll]);
 
-  const ttlsBusy = !!ttls && ttls.queue_pending != null && ttls.max_pending != null && ttls.queue_pending >= ttls.max_pending;
-  const ttlsWarn = !!ttls?.degraded || ttlsBusy;
 
   return (
     <div className="h-7 bg-panel border-t border-fg/10 px-3 flex items-center text-xs text-fg/40 gap-4 min-w-0">
@@ -52,22 +48,6 @@ ${ffmpegSourceLabel(ffmpeg.source)}：${ffmpeg.ffmpeg_path}` : t("找不到 ffmp
         <Dot ok={!!ffmpeg?.found} />
         {ffmpeg?.found ? `ffmpeg ${shortFfmpegVersion(ffmpeg.version)} · ${ffmpegSourceLabel(ffmpeg.source)}` : t("找不到 ffmpeg")}
       </button>
-      {!simple && (
-      <button
-        type="button"
-        onClick={() => onOpenSettings("key")}
-        className="flex items-center gap-1.5 shrink-0 hover:text-fg/70"
-        title={
-          ttls?.ok
-            ? `${!key?.present ? t("分析需要金鑰；點擊設定") + " · " : ""}queue ${ttls.queue_pending ?? 0}/${ttls.max_pending ?? "?"}${ttls.degraded ? " · degraded" : ""}`
-            : ttls?.error ?? ""
-        }
-      >
-        <Dot ok={!!ttls?.ok} warn={ttlsWarn || (!!ttls?.ok && !key?.present)} />
-        ttls {ttls?.ok ? `${ttls.latency_ms ?? "?"}ms` : t("離線")}
-        {ttls?.ok && !key?.present && <span className="text-warning">· {t("未設金鑰")}</span>}
-      </button>
-      )}
       {!simple && <ModelMenu onOpenSettings={() => onOpenSettings()} />}
       <span className="mono shrink-0 text-fg/60">{formatMs(currentMs)}</span>
       <span className="ml-auto flex items-center gap-1.5 min-w-0">

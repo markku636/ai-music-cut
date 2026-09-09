@@ -12,7 +12,6 @@ import {
   Cog,
   Copy,
   Crop,
-  Disc3,
   FileMusic,
   FilePlus,
   FileText,
@@ -435,7 +434,6 @@ export const CORE_COMMANDS: Command[] = [
     },
   },
   { id: "ai.separate", title: "去人聲", group: "ai", section: "聲音", icon: MicOff, enabled: needsMedia, run: () => openDialog("separate") },
-  { id: "ai.music", title: "AI 配樂", group: "ai", section: "聲音", icon: Disc3, enabled: () => OK, run: () => openDialog("music") },
   {
     id: "ai.music.introOutro",
     title: "加片頭 / 片尾音樂",
@@ -450,19 +448,6 @@ export const CORE_COMMANDS: Command[] = [
     keywords: ["intro", "outro", "music", "bgm"],
     enabled: needsMedia,
     run: () => openDialog("introOutro"),
-  },
-  {
-    id: "ai.style",
-    title: "改成另一種曲風…",
-    group: "ai",
-    section: "聲音",
-    icon: Palette,
-    surfaces: ["palette", "context"],
-    enabled: needsSelection,
-    run: () => {
-      const sel = useTimeline.getState().selection;
-      if (sel) openDialog("style", { startMs: sel.startMs, endMs: sel.endMs });
-    },
   },
   { id: "ai.highlight", title: "精華片段", group: "ai", section: "精華", icon: Zap, enabled: needsMedia, run: () => openDialog("highlight") },
   { id: "ai.highlights", title: "精華合輯（串成一支預告）", group: "ai", section: "精華", icon: Star, enabled: needsMedia, run: () => openDialog("highlights") },

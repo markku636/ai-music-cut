@@ -4,6 +4,7 @@ mod cleanup;
 mod codex;
 mod convert;
 mod local_asr;
+mod local_separate;
 mod commands;
 mod error;
 mod ffmpeg;
@@ -19,7 +20,6 @@ mod record;
 mod render;
 mod spectrum;
 mod store;
-mod ttls;
 
 use tauri::Manager;
 
@@ -31,12 +31,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState::new())
         .setup(|app| {
-            // dev 便利：repo 根的 .env.local（gitignored）。只在 debug build 讀，
-            // 且 keychain 沒金鑰時才會用到（見 ttls::api_key）。tauri dev 的 cwd 是 src-tauri。
-            #[cfg(debug_assertions)]
-            {
-                let _ = dotenvy::from_filename("../.env.local");
-            }
             let handle = app.handle().clone();
             let loaded: store::AppSettings =
                 tauri::async_runtime::block_on(store::read_json(&handle, store::SETTINGS_FILE))
@@ -89,24 +83,8 @@ pub fn run() {
             commands::media_cache_write_transcript,
             commands::media_cache_read_transcript,
             commands::media_cache_clear,
-            commands::ttls_health,
-            commands::ttls_key_status,
-            commands::ttls_key_set,
-            commands::ttls_key_clear,
-            commands::ttls_key_verify,
-            commands::ttls_transcribe_start,
-            commands::ttls_separate,
             commands::media_clip,
             commands::media_combine,
-            commands::ttls_gpu_release,
-            commands::ttls_music_start,
-            commands::ttls_music_style_start,
-            commands::ttls_music_poll,
-            commands::ttls_music_fetch,
-            commands::ttls_music_cancel,
-            commands::ttls_transcribe_poll,
-            commands::ttls_transcribe_result,
-            commands::ttls_transcribe_cancel,
             commands::render_start,
             commands::render_cancel,
             commands::fx_preview,
@@ -131,6 +109,10 @@ pub fn run() {
             commands::local_asr_install,
             commands::local_asr_install_command,
             commands::local_asr_models,
+            commands::local_separate_detect,
+            commands::local_separate_install_command,
+            commands::local_separate_install,
+            commands::local_separate_run,
             commands::local_asr_hardware,
             commands::local_asr_transcribe,
             agent::claude_send,

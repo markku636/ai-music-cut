@@ -23,7 +23,7 @@ export interface VerifyDialogProps {
 }
 
 /**
- * ASR 驗收報告：AI 剪完之後，把成品送回 ttls 重新轉寫，逐字比對「EDL 說該留的字」。
+ * ASR 驗收報告：AI 剪完之後，把成品用本機辨識重新轉寫，逐字比對「EDL 說該留的字」。
  * 人只要聽機器標出來的可疑處：漏字（剪過頭）、該剪沒剪、接縫附近的差異。
  */
 export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose }: VerifyDialogProps) {
@@ -88,7 +88,7 @@ export default function VerifyDialog({ mediaId, outPath, outDurationMs, onClose 
       {running || busy ? (
         <div className="flex items-center gap-2 text-sm text-fg/70 p-4">
           <Spinner size={16} className="text-accent" />
-          {t("比對成品與來源…（有逐字稿時還會送回 ttls 重新轉寫，需要一點時間）")}
+          {t("比對成品與來源…（有逐字稿時還會在本機重新轉寫一次，需要一點時間）")}
         </div>
       ) : !report && !splice ? (
         <EmptyState

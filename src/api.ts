@@ -5,13 +5,10 @@ import type { RenderFormat } from "./analysis/formats";
 // 單一 Rust 邊界：所有 invoke 集中在此，型別對齊 src-tauri（snake_case 欄位照 Rust struct）。
 
 export interface AppSettings {
-  ttls_base_url: string;
   ffmpeg_path: string | null;
   claude_model: string;
   /** 結構化產出的 CLI："claude" 或 "codex"。 */
   agent_backend: string;
-  /** 逐字稿來源："local"（預設，本機 faster-whisper）或 "ttls"（上傳到伺服器）。 */
-  asr_source: string;
   claude_review_model: string;
   /** "editor" | "editor+reviewer" */
   judge_roles: string;
@@ -94,7 +91,7 @@ export interface PrepareResult {
   cached: boolean;
 }
 
-/** ttls `GET /v1/transcribe/jobs/{id}` snapshot。 */
+/** 轉寫工作的狀態快照。 */
 export interface TranscribeJobInfo {
   job_id: string;
   status: "queued" | "running" | "post" | "done" | "failed" | "cancelled";
@@ -365,7 +362,23 @@ export interface AlignDone {
   elapsed_ms: number;
 }
 
-/** ttls /v1/separate 各軌落地結果。 */
+/** 分離出來的各軌。 */
+/** 本機 demucs 的就緒狀態。 */
+export interface LocalSeparateStatus {
+  python: boolean;
+  python_version: string | null;
+  demucs: boolean;
+  install_hint: string;
+}
+
+/** 分離過程的事件（Rust 從 demucs 的 stderr 轉出來）。 */
+export interface LocalSeparateEvent {
+  job_id: string;
+  event: "status" | "progress" | "line" | "done";
+  message?: string;
+  pct?: number;
+}
+
 export interface SeparateStem {
   name: string;
   label: string;
@@ -475,28 +488,13 @@ export const api = {
   mediaCacheWriteTranscript: (fingerprint: string, doc: unknown) => invoke<void>("media_cache_write_transcript", { fingerprint, doc }),
   mediaCacheReadTranscript: (fingerprint: string) => invoke<unknown | null>("media_cache_read_transcript", { fingerprint }),
   mediaCacheClear: (fingerprint?: string) => invoke<void>("media_cache_clear", { fingerprint: fingerprint ?? null }),
-  ttlsHealth: () => invoke<TtlsHealth>("ttls_health"),
-  ttlsKeyStatus: () => invoke<KeyStatus>("ttls_key_status"),
-  ttlsKeySet: (key: string) => invoke<KeyStatus>("ttls_key_set", { key }),
-  ttlsKeyClear: () => invoke<KeyStatus>("ttls_key_clear"),
-  ttlsKeyVerify: () => invoke<boolean>("ttls_key_verify"),
-  ttlsTranscribeStart: (uploadPath: string, language: string, model: string, hotwords: string) =>
-    invoke<string>("ttls_transcribe_start", { uploadPath, language, model, hotwords }),
-  ttlsTranscribePoll: (jobId: string) => invoke<TranscribeJobInfo>("ttls_transcribe_poll", { jobId }),
-  ttlsTranscribeResult: (jobId: string) => invoke<unknown>("ttls_transcribe_result", { jobId }),
-  ttlsTranscribeCancel: (jobId: string) => invoke<void>("ttls_transcribe_cancel", { jobId }),
-  /** 去人聲 / 分軌（同步等待伺服器；用 mediaCancel(jobId) 放棄）。 */
-  ttlsSeparate: (jobId: string, path: string, stems: string, targetFormat: string, outDir: string | null) =>
-    invoke<SeparateStem[]>("ttls_separate", { jobId, path, stems, targetFormat, outDir }),
-  /** ACE-Step 配樂：送單 → 輪詢 → 下載候選（非同步，30 秒～數分鐘）。 */
-  /** 顯存不夠時請伺服器讓位（預設停掉音樂服務）。 */
-  ttlsGpuRelease: (musicAction: "stop" | "none" = "stop") => invoke<GpuRelease>("ttls_gpu_release", { musicAction }),
-  ttlsMusicStart: (opts: MusicOpts) => invoke<string>("ttls_music_start", { opts }),
-  ttlsMusicStyleStart: (opts: MusicStyleOpts) => invoke<string>("ttls_music_style_start", { opts }),
-  ttlsMusicPoll: (jobId: string) => invoke<MusicJobInfo>("ttls_music_poll", { jobId }),
-  ttlsMusicFetch: (jobId: string, index: number, outDir: string, fileStem: string, ext: string) =>
-    invoke<string>("ttls_music_fetch", { jobId, index, outDir, fileStem, ext }),
-  ttlsMusicCancel: (jobId: string) => invoke<void>("ttls_music_cancel", { jobId }),
+  /** 本機分離（demucs）：python 與套件就緒了嗎。 */
+  localSeparateDetect: () => invoke<LocalSeparateStatus>("local_separate_detect"),
+  localSeparateInstallCommand: () => invoke<string[]>("local_separate_install_command"),
+  localSeparateInstall: (jobId: string) => invoke<boolean>("local_separate_install", { jobId }),
+  /** 去人聲 / 分軌（本機 demucs；用 mediaCancel(jobId) 放棄）。stems："2" 或 "4"。 */
+  localSeparateRun: (jobId: string, path: string, stems: string, outDir: string | null) =>
+    invoke<SeparateStem[]>("local_separate_run", { jobId, path, stems, outDir }),
   renderStart: (jobId: string, src: string, plan: RenderPlan) => invoke<void>("render_start", { jobId, src, plan }),
   /** 範圍濾波的 A/B 試聽：對來源檔切一段，dry / wet 各一份 mp3（快取在媒體目錄的 fx/）。 */
   fxPreview: (path: string, fingerprint: string, startMs: number, endMs: number, chain: RenderRangeFx[], key: string) =>
@@ -537,7 +535,7 @@ export const api = {
   /** 依使用者勾的項目安裝；輸出走 `local-asr-install` 事件。 */
   localAsrInstall: (jobId: string, pkg: boolean, model: string | null) =>
     invoke<boolean>("local_asr_install", { jobId, package: pkg, model }),
-  /** 本機 faster-whisper 轉寫；回傳與 ttls 相同形狀的逐字稿。 */
+  /** 本機 faster-whisper 轉寫。 */
   localAsrTranscribe: (jobId: string, audioPath: string, model: string, language: string) =>
     invoke<unknown>("local_asr_transcribe", { jobId, audioPath, model, language }),
   claudeSend: (reqId: string, prompt: string, sessionId: string | null, model: string | null, mode: "agent" | "advise", systemPrompt: string | null) =>

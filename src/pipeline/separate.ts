@@ -1,17 +1,20 @@
-// 去人聲 / 分軌：上傳原檔到 ttls `POST /v1/separate`（demucs htdemucs），把回來的各軌寫在來源旁邊，
-// 並（選用）加進媒體清單。同步端點、無進度百分比；長音檔可能要幾分鐘（工作列可取消 = 放棄等待）。
-import { api, errKind, errMessage, type SeparateStem } from "../api";
+// 去人聲 / 分軌：本機 demucs（htdemucs）把音檔拆成人聲與伴奏（或四軌），
+// 檔案寫在來源旁邊，並（選用）加進媒體清單。
+//
+// 全程在這台機器上跑：不上傳、不需要金鑰。第一次會下載模型（幾百 MB），之後就都在本機。
+// demucs 寫出來的是 wav；要別的格式用工具列的「轉檔」，不在這裡多做一層轉換
+// —— 分離本身就已經是最慢的一步，再串一次 ffmpeg 只是讓失敗點變多。
+import { listen } from "@tauri-apps/api/event";
+import { api, errKind, errMessage, type LocalSeparateEvent, type SeparateStem } from "../api";
 import { t } from "../i18n";
 import { newJobId, useJobs } from "../store/jobs";
 import { useProject } from "../store/project";
 import { toast } from "../ui";
 
 export type SeparateStems = "vocals_accom" | "all";
-export type SeparateFormat = "wav" | "mp3" | "flac";
 
 export interface SeparateOptions {
   stems: SeparateStems;
-  format: SeparateFormat;
   /** null = 與來源同資料夾。 */
   outDir: string | null;
   /** 完成後把各軌加進媒體清單，並切到伴奏（去人聲）那一軌。 */
@@ -27,21 +30,31 @@ export async function runSeparate(mediaId: string, opts: SeparateOptions): Promi
     id: jobId,
     kind: "separate",
     mediaId,
-    step: t("上傳並分離人聲（demucs）…"),
-    pct: null,
+    step: t("本機分離人聲（demucs）…"),
+    pct: 0,
     status: "running",
     message: media.name,
     cancel: () => void api.mediaCancel(jobId).catch(() => {}),
   });
+
+  // demucs 把進度印在 stderr，Rust 端轉成事件；沒有進度的行當成步驟文字
+  const un = await listen<LocalSeparateEvent>("local-separate", (ev) => {
+    const p = ev.payload;
+    if (p.job_id !== jobId) return;
+    if (p.event === "progress" && p.pct != null) jobs.upsert({ id: jobId, pct: p.pct });
+    else if (p.event === "status" && p.message) jobs.upsert({ id: jobId, message: p.message });
+  });
+
   try {
-    const stems = await api.ttlsSeparate(jobId, media.path, opts.stems, opts.format, opts.outDir);
+    const stems = await api.localSeparateRun(jobId, media.path, opts.stems === "all" ? "4" : "2", opts.outDir);
     jobs.upsert({ id: jobId, status: "done", step: t("完成"), pct: 100, message: stems.map((s) => s.label).join(" · "), endedAt: Date.now() });
     if (opts.addToProject) {
       const proj = useProject.getState();
       let focus: string | null = null;
       for (const s of stems) {
         const id = await proj.openMedia(s.path).catch(() => null);
-        if (id && (s.name === "accompaniment" || (!focus && s.name !== "vocals"))) focus = id;
+        // demucs 的伴奏軌叫 no_vocals（不是 accompaniment）—— 名字對錯會讓它切到人聲軌
+        if (id && (s.name === "no_vocals" || (!focus && s.name !== "vocals"))) focus = id;
       }
       if (focus) useProject.getState().setActive(focus);
     }
@@ -54,9 +67,10 @@ export async function runSeparate(mediaId: string, opts: SeparateOptions): Promi
     }
     const msg = errMessage(e);
     jobs.upsert({ id: jobId, status: "error", step: t("失敗"), error: msg, endedAt: Date.now() });
-    if (errKind(e) === "auth") toast.error(t("ttls 金鑰缺少或錯誤，請到設定輸入"));
-    else toast.error(msg);
+    toast.error(msg);
     throw e;
+  } finally {
+    un();
   }
 }
 

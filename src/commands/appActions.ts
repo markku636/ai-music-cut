@@ -80,7 +80,7 @@ export function openSettings(focus: SettingsFocus = null): void {
   openDialog("settings", { focus });
 }
 
-/** 所有「分析」入口共用的前置檢查：缺 ffmpeg / 金鑰時不轉檔不上傳，直接帶到該設定欄位。 */
+/** 所有「分析」入口共用的前置檢查：缺 ffmpeg 就不動手，直接帶到該設定欄位。 */
 export function analyzeWithPreflight(mediaId?: string): void {
   const id = mediaId ?? useProject.getState().activeMediaId;
   if (!id) return;
@@ -88,11 +88,6 @@ export function analyzeWithPreflight(mediaId?: string): void {
   if (st.ffmpeg && !st.ffmpeg.found) {
     toast.error(t("找不到 ffmpeg，先到設定指定路徑"));
     openSettings("ffmpeg");
-    return;
-  }
-  if (st.key && !st.key.present) {
-    toast.info(t("分析需要 ttls 金鑰，先貼上金鑰再開始"));
-    openSettings("key");
     return;
   }
   void runAnalyze(id).catch(() => {});

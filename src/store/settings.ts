@@ -1,15 +1,13 @@
 import { create } from "zustand";
 import { setFillerRules } from "../analysis/lexicon";
 import { setPromptOverrides } from "../analysis/prompts";
-import { api, type AppPaths, type AppSettings, type ClaudeStatus, type FfmpegStatus, type KeyStatus, type TtlsHealth } from "../api";
+import { api, type AppPaths, type AppSettings, type ClaudeStatus, type FfmpegStatus } from "../api";
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  ttls_base_url: "https://ttls.markkulab.net",
   ffmpeg_path: null,
   claude_model: "sonnet",
   agent_backend: "claude",
   // 新安裝預設走本機辨識：ttls 是作者自架的伺服器，新使用者拿不到金鑰
-  asr_source: "local",
   prompt_overrides: {},
   filler_rules: {},
   export_presets: [],
@@ -32,8 +30,6 @@ interface SettingsStore {
   s: AppSettings;
   loaded: boolean;
   ffmpeg: FfmpegStatus | null;
-  ttls: TtlsHealth | null;
-  key: KeyStatus | null;
   claude: ClaudeStatus | null;
   /** 只有選了 codex 後端、或使用者打開模型選單時才探（每探一次就是開一個 process）。 */
   codex: ClaudeStatus | null;
@@ -43,7 +39,6 @@ interface SettingsStore {
   save: (patch: Partial<AppSettings>) => Promise<void>;
   probeAll: () => Promise<void>;
   probeCodex: () => Promise<void>;
-  refreshKey: () => Promise<void>;
 }
 
 export const useSettings = create<SettingsStore>((set, get) => ({
@@ -88,20 +83,12 @@ export const useSettings = create<SettingsStore>((set, get) => ({
   probeAll: async () => {
     if (get().probing) return;
     set({ probing: true });
-    const [ffmpeg, ttls, key, claude] = await Promise.all([
-      api.ffmpegDetect().catch(() => null),
-      api.ttlsHealth().catch(() => null),
-      api.ttlsKeyStatus().catch(() => null),
-      api.claudeDetect().catch(() => null),
-    ]);
-    set({ ffmpeg, ttls, key, claude, probing: false });
+    const [ffmpeg, claude] = await Promise.all([api.ffmpegDetect().catch(() => null), api.claudeDetect().catch(() => null)]);
+    set({ ffmpeg, claude, probing: false });
     if ((get().s.agent_backend || "claude") === "codex") void get().probeCodex();
   },
   probeCodex: async () => {
     set({ codex: await api.codexDetect().catch(() => null) });
-  },
-  refreshKey: async () => {
-    set({ key: await api.ttlsKeyStatus().catch(() => null) });
   },
 }));
 

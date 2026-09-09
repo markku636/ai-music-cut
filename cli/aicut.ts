@@ -8,7 +8,6 @@
 //                          [--project p.aicut.json]（沿用 App 存的決策 / 手動剪輯 / 效果）
 //   aicut separate   <音檔> [--stems vocals_accom|all] [--format wav] [--out-dir DIR]
 //
-// 金鑰：--key、環境變數 AICUT_TTLS_API_KEY、或專案根目錄 .env.local（gitignored）；不會印出、不會寫進任何輸出。
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -25,7 +24,7 @@ import type { LocalAnalysis } from "../src/analysis/peaks";
 import { actualWords, expectedWords, verifyEdit, type VerifyReport } from "../src/analysis/verify";
 import { Ffmpeg } from "./lib/ffmpeg";
 import { judgeAll } from "./lib/judge";
-import { generateMusic, health, keyFromEnvFile, resolveKey, separate, styleTransfer, transcribe, type TtlsClient } from "./lib/ttls";
+import { separateLocal, transcribeLocal } from "./lib/local";
 
 const VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 declare const __APP_VERSION__: string | undefined;
@@ -86,12 +85,8 @@ function help(): void {
   aicut separate   <音檔> [--stems vocals_accom|all] [--format wav|mp3|flac] [--out-dir DIR]
   aicut verify     <原始音檔> <剪好的成品> [--project p.aicut.json]   用 ASR 重新轉寫成品，逐字比對該留的字
   aicut beats      <音檔> [--bars]                                    偵測 BPM / 拍點（剪音樂用；--bars 列出小節時間）
-  aicut music      "<風格描述>" [--duration 30] [--bpm 0] [--quality fast|fine|max] [--n 1] [--format mp3] [--out-dir DIR]
-  aicut style      <音檔> "<目標曲風>" [--from 0] [--to 30] [--strength 0.7] [--n 1] [--format mp3]   把一段改成另一種曲風
 
 共用選項：
-  --server URL      ttls 伺服器（預設 https://ttls.markkulab.net）
-  --key KEY         ttls API 金鑰（或環境變數 AICUT_TTLS_API_KEY / .env.local；不會印出）
   --ffmpeg PATH     ffmpeg 執行檔（預設 PATH 裡的 ffmpeg；ffprobe 取同資料夾）
   --no-cache        不用逐字稿快取（預設同一檔案的轉寫結果快取在暫存目錄）
   --verify          cut 完成後用 ASR 重新轉寫成品並比對（人工驗收用）
@@ -99,22 +94,12 @@ function help(): void {
 範例：
   aicut cut ep12.m4a --judge -o ep12_cut.mp3 --verify
   aicut verify ep12.m4a ep12_cut.mp3
-  aicut music "lofi hip hop, warm, mellow" --duration 30 --bpm 90
-  aicut style song.mp3 "acoustic guitar arrangement" --from 30 --to 60
   aicut separate song.mp3 --format wav
 `);
 }
 
 // ---------------- 共用 ----------------
 
-async function client(flags: Record<string, string | true>): Promise<TtlsClient> {
-  const base = str(flags, "server", "https://ttls.markkulab.net").replace(/\/+$/, "");
-  const key = resolveKey(typeof flags.key === "string" ? flags.key : undefined) ?? (await keyFromEnvFile(process.cwd())) ?? (await keyFromEnvFile(path.dirname(new URL(import.meta.url).pathname)));
-  if (!key) throw new Error("缺少 ttls 金鑰：用 --key、環境變數 AICUT_TTLS_API_KEY 或 .env.local 提供");
-  const h = await health({ base, key });
-  if (!h.ok) throw new Error(`ttls 伺服器無法連線（${base}）：${h.detail ?? `HTTP ${h.status}`}`);
-  return { base, key };
-}
 
 function ffmpegOf(flags: Record<string, string | true>): Ffmpeg {
   const ff = str(flags, "ffmpeg", "ffmpeg");
@@ -140,25 +125,16 @@ async function getTranscript(file: string, ff: Ffmpeg, flags: Record<string, str
       /* 沒快取 */
     }
   }
-  const c = await client(flags);
   const tmp = await mkdtemp(path.join(os.tmpdir(), "aicut-up-"));
   try {
     const opus = path.join(tmp, "upload.ogg");
-    log("轉檔（16k mono opus 上傳用）…");
+    log("轉檔（16k mono opus，辨識用）…");
     await ff.toUploadOpus(file, opus);
-    log("上傳到 ttls 轉寫（faster-whisper）…");
-    let last = "";
-    const raw = (await transcribe(c, opus, {
-      language: str(flags, "lang", "zh"),
+    log("本機辨識中（faster-whisper，第一次會先下載模型）…");
+    const raw = (await transcribeLocal(opus, {
       model: str(flags, "model", "auto"),
-      hotwords: str(flags, "hotwords", ""),
-      onProgress: (status, progress, waiting) => {
-        const line = status === "queued" ? `  排隊中 ${Math.round(waiting)}s` : status === "busy" ? `  伺服器忙碌，${waiting}s 後重試` : `  ${status}${progress ? ` ${progress}` : ""}`;
-        if (line !== last) {
-          log(line);
-          last = line;
-        }
-      },
+      language: str(flags, "lang", "zh"),
+      onLine: (l) => log(`  ${l}`),
     })) as ServerTranscript;
     const { mkdir } = await import("node:fs/promises");
     await mkdir(cacheDir(), { recursive: true });
@@ -202,7 +178,7 @@ interface Analysis {
 async function analyze(file: string, ff: Ffmpeg, flags: Record<string, string | true>): Promise<Analysis> {
   const aggr = Math.max(0, Math.min(100, num(flags, "aggressiveness", 50)));
   const { transcript } = await getTranscript(file, ff, flags);
-  log(`逐字稿：${transcript.words.length} 字 · ${transcript.sentences.length} 句 · ${transcript.model || "ttls"}`);
+  log(`逐字稿：${transcript.words.length} 字 · ${transcript.sentences.length} 句 · ${transcript.model || "faster-whisper"}`);
   const candidates = runRulesAt({ transcript, loudness: [], loudnessHopMs: 100 }, aggr);
   const decisions: DecisionMap = {};
   const at = new Date().toISOString();
@@ -393,7 +369,7 @@ async function cmdCut(args: Args): Promise<void> {
 /** 用 ASR 重新轉寫成品，與 EDL 預期保留的字逐字比對。 */
 async function verifyOutput(a: Analysis, edl: Edl, outFile: string, ff: Ffmpeg, flags: Record<string, string | true>): Promise<VerifyReport> {
   if (!a.transcript.words.length) throw new Error("沒有逐字稿可比對（純人工剪輯無法用 ASR 驗證）");
-  log("驗證：把成品送回 ttls 重新轉寫…");
+  log("驗證：把成品用本機辨識重新轉寫…");
   const { transcript: outTr } = await getTranscript(outFile, ff, { ...flags, "no-cache": true });
   const probe = await ff.probe(outFile);
   // 被靜音（重錄這句 / 提起）的字成品裡本來就聽不到，不算漏字 —— 與 App 的 runVerify 同一條規則
@@ -473,115 +449,25 @@ async function cmdBeats(args: Args): Promise<void> {
   process.exitCode = ok ? 0 : 3;
 }
 
-async function cmdMusic(args: Args): Promise<void> {
-  const prompt = args.positional.join(" ").trim();
-  if (!prompt) throw new Error('用法：aicut music "<風格描述>" [--duration 30] [--bpm 90] [--quality fast|fine|max]');
-  const c = await client(args.flags);
-  const durationSec = Math.max(10, Math.min(240, num(args.flags, "duration", 30)));
-  const bpm = Math.max(0, Math.min(300, num(args.flags, "bpm", 0)));
-  const quality = str(args.flags, "quality", "fast");
-  const nCandidates = Math.max(1, Math.min(4, num(args.flags, "n", 1)));
-  const format = str(args.flags, "format", "mp3");
-  const dir = str(args.flags, "out-dir", process.cwd());
-  log(`ACE-Step 生成中（${durationSec} 秒${bpm ? ` · ${bpm} BPM` : ""} · ${quality} · ${nCandidates} 首）…`);
-  let last = "";
-  const outs = await generateMusic(c, {
-    prompt,
-    durationSec,
-    bpm,
-    quality,
-    nCandidates,
-    format,
-    onProgress: (status, sec) => {
-      const line = `  ${status} ${sec}s`;
-      if (line !== last) {
-        log(line);
-        last = line;
-      }
-    },
-  });
-  const { mkdir } = await import("node:fs/promises");
-  await mkdir(dir, { recursive: true });
-  const stem = prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "bgm";
-  for (const o of outs) {
-    const name = outs.length > 1 ? `${stem}-${o.index + 1}` : stem;
-    const p = path.join(dir, `${name}.${o.format}`);
-    await writeFile(p, o.data);
-    process.stdout.write(`${p}\n`);
-    log(`  ${(o.data.length / 1048576).toFixed(1)} MB${o.seed != null ? ` · seed ${o.seed}` : ""}`);
-  }
-}
-
-async function cmdStyle(args: Args): Promise<void> {
-  const [file, ...rest] = args.positional;
-  const prompt = rest.join(" ").trim();
-  if (!file || !prompt) throw new Error('用法：aicut style <音檔> "<目標曲風>" [--from 0] [--to 30] [--strength 0.7]');
-  const ff = ffmpegOf(args.flags);
-  const probe = await ff.probe(file);
-  const fromMs = Math.max(0, num(args.flags, "from", 0) * 1000);
-  const toMs = Math.min(probe.durationMs, num(args.flags, "to", 0) * 1000 || probe.durationMs);
-  if (toMs - fromMs < 2000) throw new Error("參考片段至少要 2 秒");
-  const strength = Math.max(0, Math.min(1, num(args.flags, "strength", 0.7)));
-  const nCandidates = Math.max(1, Math.min(4, num(args.flags, "n", 1)));
-  const format = str(args.flags, "format", "mp3");
-  const dir = str(args.flags, "out-dir", path.dirname(file));
-  const c = await client(args.flags);
-
-  const tmp = await mkdtemp(path.join(os.tmpdir(), "aicut-style-"));
-  try {
-    const clip = path.join(tmp, "source.wav");
-    log(`切出參考片段 ${fmtMs(fromMs)}–${fmtMs(toMs)}…`);
-    await ff.clip(file, fromMs, toMs, clip);
-    log(`上傳並轉換曲風（貼近度 ${(strength * 100).toFixed(0)}% · ${nCandidates} 首）…`);
-    let last = "";
-    const outs = await styleTransfer(c, {
-      prompt,
-      audioPath: clip,
-      coverStrength: strength,
-      durationSec: num(args.flags, "duration", (toMs - fromMs) / 1000),
-      nCandidates,
-      format,
-      onProgress: (status, sec) => {
-        const line = `  ${status} ${sec}s`;
-        if (line !== last) {
-          log(line);
-          last = line;
-        }
-      },
-    });
-    const { mkdir } = await import("node:fs/promises");
-    await mkdir(dir, { recursive: true });
-    const base = path.basename(file).replace(/\.[^.]+$/, "");
-    const stem = `${base}-${prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32) || "style"}`;
-    for (const o of outs) {
-      const name = outs.length > 1 ? `${stem}-${o.index + 1}` : stem;
-      const p = path.join(dir, `${name}.${o.format}`);
-      await writeFile(p, o.data);
-      process.stdout.write(`${p}\n`);
-      log(`  ${(o.data.length / 1048576).toFixed(1)} MB${o.seed != null ? ` · seed ${o.seed}` : ""}`);
-    }
-  } finally {
-    await rm(tmp, { recursive: true, force: true });
-  }
-}
-
 async function cmdSeparate(args: Args): Promise<void> {
   const file = args.positional[0];
   if (!file) throw new Error("請給音檔路徑");
-  const c = await client(args.flags);
   const stems = (str(args.flags, "stems", "vocals_accom") === "all" ? "all" : "vocals_accom") as "vocals_accom" | "all";
-  const format = str(args.flags, "format", "wav");
   const dir = str(args.flags, "out-dir", path.dirname(file));
-  log(`上傳並分離（demucs htdemucs，${stems === "all" ? "4 軌" : "人聲 + 伴奏"}）…`);
-  const res = await separate(c, file, stems, format);
   const { mkdir } = await import("node:fs/promises");
   await mkdir(dir, { recursive: true });
-  const base = path.basename(file).replace(/\.[^.]+$/, "");
+  log(`本機分離（demucs htdemucs，${stems === "all" ? "4 軌" : "人聲 + 伴奏"}）…`);
+  let last = "";
+  const res = await separateLocal(file, stems, dir, (l) => {
+    if (l !== last) {
+      log(`  ${l}`);
+      last = l;
+    }
+  });
   for (const s of res) {
-    const p = path.join(dir, `${base}_${s.name}.${s.format}`);
-    await writeFile(p, s.data);
-    process.stdout.write(`${p}\n`);
-    log(`  ${s.label}：${(s.data.length / 1048576).toFixed(1)} MB`);
+    process.stdout.write(`${s.path}
+`);
+    log(`  ${s.label}：${(s.bytes / 1048576).toFixed(1)} MB`);
   }
 }
 
@@ -600,10 +486,6 @@ async function main(): Promise<void> {
       return cmdVerify(args);
     case "beats":
       return cmdBeats(args);
-    case "music":
-      return cmdMusic(args);
-    case "style":
-      return cmdStyle(args);
     case "--version":
     case "version":
       process.stdout.write(`${VERSION}\n`);

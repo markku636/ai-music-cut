@@ -5,7 +5,7 @@
 // - 贅字詞表（fillerStats / lexicon）= 「這幾個字要剪掉」，影響的是候選。
 // 一個在辨識之前，一個在辨識之後。
 //
-// 儲存格式沿用設定裡原本的逗號分隔字串（ttls 與 faster-whisper 都吃這個形狀），
+// 儲存格式沿用設定裡原本的逗號分隔字串（faster-whisper 吃這個形狀），
 // 這裡只負責在「字串」與「一個一個的詞」之間來回，讓 UI 可以用晶片的方式編輯。
 
 import { isAnyFiller } from "./lexicon";

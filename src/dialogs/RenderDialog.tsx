@@ -237,7 +237,7 @@ export default function RenderDialog({
                   startVerify(done.out_path!, built?.edl.stats.keptMs ?? null);
                   onClose();
                 }}
-                title={t("把成品送回 ttls 重新轉寫，檢查有沒有剪掉不該剪的字")}
+                title={t("把成品用本機辨識重新轉寫一次，檢查有沒有剪掉不該剪的字")}
               >
                 {t("用 ASR 驗收")}
               </Button>

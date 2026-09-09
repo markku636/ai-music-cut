@@ -1,4 +1,4 @@
-//! Tauri command 薄層：`AppState` + 設定 / ffmpeg / 媒體 / ttls / 專案 / 開啟路徑。
+//! Tauri command 薄層：`AppState` + 設定 / ffmpeg / 媒體 / 專案 / 開啟路徑。
 use std::path::PathBuf;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,7 +9,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::error::{AppError, AppResult};
-use crate::{ffmpeg, media, project, store, ttls};
+use crate::{ffmpeg, media, project, store};
 
 pub struct AppState {
     pub http: reqwest::Client,
@@ -69,9 +69,6 @@ impl AppState {
         self.cancel_flags.lock().remove(job_id);
     }
 
-    fn base_url(&self) -> String {
-        self.settings.read().ttls_base_url.clone()
-    }
 }
 
 impl Default for AppState {
@@ -259,13 +256,7 @@ pub async fn media_cache_clear(app: AppHandle, fingerprint: Option<String>) -> A
     Ok(())
 }
 
-// ---------------- ttls 健康 / 金鑰 ----------------
 
-#[tauri::command]
-pub async fn ttls_health(state: State<'_, AppState>) -> AppResult<ttls::TtlsHealth> {
-    let base = state.base_url();
-    Ok(ttls::health(&state.http, &base).await)
-}
 
 #[derive(Serialize)]
 pub struct KeyStatus {
@@ -280,90 +271,15 @@ fn tail4(k: &str) -> String {
     chars[n..].iter().collect()
 }
 
-#[tauri::command]
-pub fn ttls_key_status() -> KeyStatus {
-    match ttls::api_key() {
-        Some(k) => KeyStatus { present: true, hint: Some(tail4(&k)) },
-        None => KeyStatus { present: false, hint: None },
-    }
-}
 
-#[tauri::command]
-pub fn ttls_key_set(key: String) -> AppResult<KeyStatus> {
-    let k = key.trim();
-    if k.is_empty() {
-        return Err(AppError::Invalid("金鑰不可為空".into()));
-    }
-    store::kc_set(store::TTLS_KEY_ACCOUNT, k)?;
-    Ok(KeyStatus { present: true, hint: Some(tail4(k)) })
-}
 
-#[tauri::command]
-pub fn ttls_key_clear() -> KeyStatus {
-    store::kc_delete(store::TTLS_KEY_ACCOUNT);
-    KeyStatus { present: false, hint: None }
-}
 
-#[tauri::command]
-pub async fn ttls_key_verify(state: State<'_, AppState>) -> AppResult<bool> {
-    let base = state.base_url();
-    ttls::verify_key(&state.http, &base).await
-}
 
-// ---------------- ttls 轉寫任務 ----------------
 
-#[tauri::command]
-pub async fn ttls_transcribe_start(
-    state: State<'_, AppState>,
-    upload_path: String,
-    language: String,
-    model: String,
-    hotwords: String,
-) -> AppResult<String> {
-    let base = state.base_url();
-    let opts = ttls::TranscribeOpts { language, model, hotwords };
-    ttls::transcribe_start(&state.http, &base, &upload_path, &opts).await
-}
 
-#[tauri::command]
-pub async fn ttls_transcribe_poll(state: State<'_, AppState>, job_id: String) -> AppResult<serde_json::Value> {
-    let base = state.base_url();
-    ttls::transcribe_poll(&state.http, &base, &job_id).await
-}
 
-#[tauri::command]
-pub async fn ttls_transcribe_result(state: State<'_, AppState>, job_id: String) -> AppResult<serde_json::Value> {
-    let base = state.base_url();
-    ttls::transcribe_result(&state.http, &base, &job_id).await
-}
 
-#[tauri::command]
-pub async fn ttls_transcribe_cancel(state: State<'_, AppState>, job_id: String) -> AppResult<()> {
-    let base = state.base_url();
-    ttls::transcribe_cancel(&state.http, &base, &job_id).await
-}
 
-#[tauri::command]
-pub async fn ttls_separate(
-    state: State<'_, AppState>,
-    job_id: String,
-    path: String,
-    stems: String,
-    target_format: String,
-    out_dir: Option<String>,
-) -> AppResult<Vec<ttls::SeparateStem>> {
-    let base = state.base_url();
-    let src = std::path::Path::new(&path);
-    let dir = match out_dir.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        Some(d) => std::path::PathBuf::from(d),
-        None => src.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")),
-    };
-    let base_name = src.file_stem().and_then(|s| s.to_str()).unwrap_or("audio").to_string();
-    let flag = state.cancel_flag(&job_id);
-    let r = ttls::separate(&state.http, &base, &path, &stems, &target_format, &dir, &base_name, flag).await;
-    state.cancel_flags.lock().remove(&job_id);
-    r
-}
 
 /// 把選取的一段切成 wav（放媒體快取目錄），給曲風轉換上傳用。
 #[tauri::command]
@@ -398,51 +314,13 @@ pub async fn media_combine(
     Ok(out_path)
 }
 
-/// 顯存不夠時請伺服器釋放（停音樂服務 / 清快取）。
-#[tauri::command]
-pub async fn ttls_gpu_release(state: State<'_, AppState>, music_action: Option<String>) -> AppResult<ttls::GpuRelease> {
-    let base = state.base_url();
-    ttls::gpu_release(&state.http, &base, music_action.as_deref().unwrap_or("stop")).await
-}
 
 // ---------------- ACE-Step 音樂生成 ----------------
 
-#[tauri::command]
-pub async fn ttls_music_start(state: State<'_, AppState>, opts: ttls::MusicOpts) -> AppResult<String> {
-    let base = state.base_url();
-    ttls::music_start(&state.http, &base, &opts).await
-}
 
-#[tauri::command]
-pub async fn ttls_music_style_start(state: State<'_, AppState>, opts: ttls::MusicStyleOpts) -> AppResult<String> {
-    let base = state.base_url();
-    ttls::music_style_start(&state.http, &base, &opts).await
-}
 
-#[tauri::command]
-pub async fn ttls_music_poll(state: State<'_, AppState>, job_id: String) -> AppResult<serde_json::Value> {
-    let base = state.base_url();
-    ttls::music_poll(&state.http, &base, &job_id).await
-}
 
-#[tauri::command]
-pub async fn ttls_music_fetch(
-    state: State<'_, AppState>,
-    job_id: String,
-    index: i64,
-    out_dir: String,
-    file_stem: String,
-    ext: String,
-) -> AppResult<String> {
-    let base = state.base_url();
-    ttls::music_fetch(&state.http, &base, &job_id, index, std::path::Path::new(&out_dir), &file_stem, &ext).await
-}
 
-#[tauri::command]
-pub async fn ttls_music_cancel(state: State<'_, AppState>, job_id: String) -> AppResult<()> {
-    let base = state.base_url();
-    ttls::music_cancel(&state.http, &base, &job_id).await
-}
 
 // ---------------- 輸出 ----------------
 
@@ -640,7 +518,36 @@ pub fn local_asr_hardware() -> crate::local_asr::AsrHardware {
     crate::local_asr::detect_hardware()
 }
 
-/// 用本機 faster-whisper 轉寫；回傳與 ttls 相同形狀的逐字稿文件。
+/// 本機分離（demucs）：python 與套件就緒了嗎。
+#[tauri::command]
+pub async fn local_separate_detect() -> crate::local_separate::LocalSeparateStatus {
+    crate::local_separate::detect().await
+}
+
+/// 本機分離的安裝指令（畫面上先給人看過再按）。
+#[tauri::command]
+pub fn local_separate_install_command() -> Vec<String> {
+    crate::local_separate::install_args()
+}
+
+#[tauri::command]
+pub async fn local_separate_install(app: tauri::AppHandle, job_id: String) -> AppResult<bool> {
+    crate::local_separate::install(app, job_id).await
+}
+
+/// 用本機 demucs 把音檔分成人聲 / 伴奏（或四軌）。
+#[tauri::command]
+pub async fn local_separate_run(
+    app: tauri::AppHandle,
+    job_id: String,
+    path: String,
+    stems: String,
+    out_dir: Option<String>,
+) -> AppResult<Vec<crate::local_separate::SeparateStem>> {
+    crate::local_separate::separate(app, job_id, path, stems, out_dir).await
+}
+
+/// 用本機 faster-whisper 轉寫。
 #[tauri::command]
 pub async fn local_asr_transcribe(
     app: tauri::AppHandle,

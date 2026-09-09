@@ -1722,6 +1722,16 @@ const en: Catalog = {
   "還沒有波形分析，用一般值": "No waveform analysis yet; using a typical value",
   "底噪約 {floor} dBFS → 降噪 {nr} dB（選一段純底噪當樣本會更準）": "Noise floor about {floor} dBFS → reduce by {nr} dB (a noise print from a pure-noise stretch is more accurate)",
   "底噪約 {floor} dBFS，已經夠安靜，不建議降噪": "Noise floor about {floor} dBFS is already quiet; no noise reduction needed",
+  "把成品用本機辨識重新轉寫一次，檢查有沒有剪掉不該剪的字": "Re-transcribe the output locally to check nothing was cut that should not have been",
+  "用你電腦上的 demucs（htdemucs）把「{name}」分成人聲與伴奏；伴奏軌就是去人聲版本。不上傳、不需要金鑰。{m} 分鐘的音檔在 CPU 上大約要幾分鐘，有顯示卡會快很多；期間可在工作列取消。": "Split “{name}” into vocals and accompaniment with demucs (htdemucs) on your own machine; the accompaniment track is the karaoke version. Nothing is uploaded and no key is needed. A {m}-minute file takes a few minutes on CPU and far less with a GPU; cancel any time from the job list.",
+  "找不到 python：先安裝 Python 3.9 以上並確認它在 PATH 上。": "No python found: install Python 3.9+ and make sure it is on your PATH.",
+  "還沒安裝 demucs（會連 torch 一起裝，幾百 MB）。": "demucs is not installed yet (it pulls in torch too, several hundred MB).",
+  "本機分離中…（進度在工作列）": "Separating locally… (progress is in the job list)",
+  "比對成品與來源…（有逐字稿時還會在本機重新轉寫一次，需要一點時間）": "Comparing output against source… (with a transcript it also re-transcribes locally, which takes a moment)",
+  "本機分離人聲（demucs）…": "Separating vocals locally (demucs)…",
+  "本機辨識中…": "Transcribing locally…",
+  "本機辨識": "Local transcription",
+  "在你電腦上辨識{est}，不上傳、不需要金鑰；波形已可先聽、先手動剪。": "Transcribed on your own machine{est} — nothing uploaded, no key needed. The waveform already plays and can be cut by hand.",
 };
 
 

@@ -1,6 +1,6 @@
-// ASR 驗收：把剛輸出的成品送回 ttls 重新轉寫，跟 EDL 預期保留的字逐字比對。
+// ASR 驗收：把剛輸出的成品用本機 faster-whisper 重新轉寫，跟 EDL 預期保留的字逐字比對。
 // 人機協作的最後一哩：AI 剪完、人只需要聽「機器覺得可疑」的那幾個接縫。
-import { api, errKind, errMessage, type TranscribeJobInfo } from "../api";
+import { api, errKind, errMessage } from "../api";
 import { normalizeTranscript, type ServerTranscript } from "../analysis/normalize";
 import { parseAnalysis } from "../analysis/peaks";
 import { auditSplice, type SpliceAuditReport } from "../analysis/spliceAudit";
@@ -15,8 +15,7 @@ import { edlOutDurationMs } from "../analysis/edl/joins";
 import { mapSrcToOut } from "../analysis/edl/map";
 import { resolveOverlays } from "../analysis/overlays";
 import { edlFor } from "./rules";
-import { withVramRetry } from "./gpu";
-import { isAbort, sleep, withBackoff } from "./retry";
+import { isAbort } from "./retry";
 import { useTranscript } from "../store/transcript";
 import { useSettings } from "../store/settings";
 
@@ -46,7 +45,6 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
   const jobs = useJobs.getState();
   const jobId = newJobId();
   const settings = useSettings.getState().s;
-  let ttlsJobId: string | null = null;
   let canceled = false;
   jobs.upsert({
     id: jobId,
@@ -58,7 +56,6 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
     message: opts.outPath,
     cancel: () => {
       canceled = true;
-      if (ttlsJobId) void api.ttlsTranscribeCancel(ttlsJobId).catch(() => {});
     },
   });
   const step = (label: string, pct: number | null = null, message = "") => jobs.upsert({ id: jobId, step: label, pct, message });
@@ -104,23 +101,8 @@ export async function runVerify(mediaId: string, opts: VerifyOpts): Promise<Veri
     const prep = await api.mediaPrepare(opts.outPath, fp);
     if (canceled) throw new Error("canceled");
 
-    step(t("上傳到 ttls 轉寫…"));
-    ttlsJobId = await withBackoff(() => withVramRetry(() => api.ttlsTranscribeStart(prep.upload_path, settings.asr_language, settings.asr_model, settings.hotwords), (m) => step(m)), {
-      onRetry: (n, d, e) => step(t("等待 ttls"), null, `${errMessage(e)}（${Math.round(d / 1000)}s，${n}/6）`),
-    });
-    const startedAt = Date.now();
-    let info: TranscribeJobInfo;
-    for (;;) {
-      if (canceled) throw new Error("canceled");
-      await sleep(Date.now() - startedAt < 60_000 ? 2000 : 5000);
-      info = await withBackoff(() => api.ttlsTranscribePoll(ttlsJobId!), { delaysMs: [3000, 5000, 10000, 20000] });
-      if (info.status === "queued") step(t("ttls 排隊中"), null, `${Math.round(info.waiting_sec ?? 0)}s`);
-      else if (info.status === "running" || info.status === "post") step(t("ttls 轉寫中"), null, info.progress ?? "");
-      else if (info.status === "done") break;
-      else if (info.status === "failed") throw new Error(info.error ?? t("轉寫失敗"));
-      else if (info.status === "cancelled") throw new Error("canceled");
-    }
-    const server = (await api.ttlsTranscribeResult(ttlsJobId)) as ServerTranscript;
+    step(t("本機辨識中…"));
+    const server = (await api.localAsrTranscribe(jobId, prep.upload_path, settings.asr_model, settings.asr_language)) as ServerTranscript;
     step(t("逐字比對"));
     const outTr = normalizeTranscript(server);
     const muted = (useDecisions.getState().effects[mediaId] ?? []).filter((e) => e.kind === "mute");

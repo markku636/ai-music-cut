@@ -61,15 +61,11 @@ export default function SettingsDialog({
   const s = useSettings((x) => x.s);
   const save = useSettings((x) => x.save);
   const ffmpeg = useSettings((x) => x.ffmpeg);
+  const probeAll = useSettings((x) => x.probeAll);
   const density = useUi((x) => x.density);
   const setDensity = useUi((x) => x.setDensity);
-  const ttls = useSettings((x) => x.ttls);
-  const key = useSettings((x) => x.key);
-  const probeAll = useSettings((x) => x.probeAll);
-  const refreshKey = useSettings((x) => x.refreshKey);
 
   const [draft, setDraft] = useState<AppSettings>(s);
-  const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [asrModels, setAsrModels] = useState<AsrModelSpec[]>([]);
   useEffect(() => {
@@ -86,38 +82,6 @@ export default function SettingsDialog({
     await save(p);
   };
 
-  const saveKey = async () => {
-    if (!apiKey.trim()) return;
-    setBusy("key");
-    try {
-      await api.ttlsKeySet(apiKey.trim());
-      setApiKey(""); // 不留在 React state
-      await refreshKey();
-      const ok = await api.ttlsKeyVerify().catch(() => null);
-      if (ok === true) toast.success(t("金鑰有效，已存入 OS 鑰匙圈"));
-      else if (ok === false) toast.error(t("金鑰已存入，但被伺服器拒絕（401）"));
-      else toast.success(t("金鑰已存入 OS 鑰匙圈"));
-    } catch (e) {
-      toast.error(errMessage(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const verify = async () => {
-    setBusy("verify");
-    try {
-      await save({ ttls_base_url: draft.ttls_base_url });
-      await probeAll();
-      const ok = await api.ttlsKeyVerify();
-      if (ok) toast.success(t("連線與金鑰皆正常"));
-      else toast.error(t("金鑰被伺服器拒絕（401）"));
-    } catch (e) {
-      toast.error(errMessage(e));
-    } finally {
-      setBusy(null);
-    }
-  };
 
   const detectFfmpeg = async () => {
     setBusy("ffmpeg");
@@ -153,56 +117,9 @@ export default function SettingsDialog({
       }
     >
       <div className="space-y-4">
-        <Section title={t("伺服器")}>
-          <Field label={t("ttls 伺服器網址")} hint={ttls ? (ttls.ok ? `${t("已連線")} · ${ttls.latency_ms ?? "?"} ms` : `${t("未連線")}${ttls.error ? ` · ${ttls.error}` : ""}`) : undefined}>
-            <Input value={draft.ttls_base_url} onChange={(e) => patch({ ttls_base_url: e.target.value })} onBlur={() => void commit({ ttls_base_url: draft.ttls_base_url.trim() })} spellCheck={false} />
-          </Field>
-          <Field
-            label="API Key（X-API-Key）"
-            hint={key?.present ? t("已儲存於 OS 鑰匙圈（••••{hint}）；不會寫入任何檔案", { hint: key.hint ?? "" }) : t("尚未設定；金鑰只存 OS 鑰匙圈，不進專案檔或設定檔")}
-          >
-            <div className="flex gap-2">
-              <Input
-                ref={keyInputRef}
-                type="password"
-                autoComplete="off"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder={key?.present ? "••••••••" : t("貼上 ttls 的 X-API-Key")}
-                className={`flex-1 transition-shadow ${highlight === "key" ? "ring-2 ring-accent" : ""}`}
-              />
-              <Button onClick={() => void saveKey()} disabled={!apiKey.trim()} loading={busy === "key"}>
-                {t("儲存至鑰匙圈")}
-              </Button>
-              <Button
-                variant="ghost"
-                disabled={!key?.present}
-                onClick={async () => {
-                  await api.ttlsKeyClear();
-                  await refreshKey();
-                }}
-              >
-                {t("清除")}
-              </Button>
-            </div>
-          </Field>
-          <Button onClick={() => void verify()} loading={busy === "verify"}>
-            {t("測試連線")}
-          </Button>
-        </Section>
-
         <Section title={t("逐字稿（辨識）")}>
           <FormGrid>
-            <Field
-              label={t("逐字稿來源")}
-              hint={t("預設是本機：用你電腦上的 faster-whisper，不上傳、不需要金鑰，第一次要裝套件與模型（下面一鍵裝）。有 ttls 金鑰的話切過去比較快，而且不佔你的機器。")}
-            >
-              <Select value={draft.asr_source || "ttls"} onChange={(e) => void commit({ asr_source: e.target.value })}>
-                <option value="ttls">{t("ttls 伺服器（上傳）")}</option>
-                <option value="local">{t("本機 faster-whisper（不上傳）")}</option>
-              </Select>
-            </Field>
-            {(draft.asr_source || "ttls") === "local" && <LocalAsrSetup />}
+            <LocalAsrSetup />
             <Field label={t("辨識語言")}>
               <Select value={draft.asr_language} onChange={(e) => void commit({ asr_language: e.target.value })}>
                 <option value="zh">中文（zh/en 混講）</option>
@@ -211,33 +128,19 @@ export default function SettingsDialog({
                 <option value="auto">auto</option>
               </Select>
             </Field>
-            {/*
-              本機與 ttls 的模型清單**不一樣**：ttls 那邊是伺服器自己挑，本機這邊是把名字
-              直接餵給 faster-whisper。所以切到本機時要列本機真的有的那幾個，並標出顯存 ——
-              下載大小跟跑不跑得動是兩回事。
-            */}
             <Field
               label={t("辨識模型")}
               hint={
-                (draft.asr_source || "ttls") === "local"
-                  ? t("顯存是 int8 的估計值（這個 App 就是用 int8 跑的）。auto 會依你的顯示卡自己挑。")
-                  : undefined
+                t("顯存是 int8 的估計值（這個 App 就是用 int8 跑的）。auto 會依你的顯示卡自己挑。")
               }
             >
               <Select value={draft.asr_model} onChange={(e) => void commit({ asr_model: e.target.value })}>
                 <option value="auto">auto（依 VRAM 選）</option>
-                {(draft.asr_source || "ttls") === "local" ? (
-                  asrModels.map((m) => (
-                    <option key={m.name} value={m.name}>
-                      {m.name}（{t("顯存")} {formatMb(m.vram_int8_mb)}{"，"}{formatSpeed(m.speed_x)}）
-                    </option>
-                  ))
-                ) : (
-                  <>
-                    <option value="large-v3">large-v3（最準）</option>
-                    <option value="large-v3-turbo">large-v3-turbo（快）</option>
-                  </>
-                )}
+                {asrModels.map((m) => (
+                  <option key={m.name} value={m.name}>
+                    {m.name}（{t("顯存")} {formatMb(m.vram_int8_mb)}{"，"}{formatSpeed(m.speed_x)}）
+                  </option>
+                ))}
               </Select>
             </Field>
           </FormGrid>

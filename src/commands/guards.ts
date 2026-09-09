@@ -84,7 +84,7 @@ export function installCommandReactivity(): () => void {
         bumpCommandTick();
     }),
     useSettings.subscribe((s, p) => {
-      if (s.ffmpeg !== p.ffmpeg || s.key !== p.key || s.claude !== p.claude || s.s !== p.s) bumpCommandTick();
+      if (s.ffmpeg !== p.ffmpeg || s.claude !== p.claude || s.s !== p.s) bumpCommandTick();
     }),
     useUi.subscribe((s, p) => {
       if (s.tab !== p.tab || s.railOpen !== p.railOpen || s.density !== p.density) bumpCommandTick();

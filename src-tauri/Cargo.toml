@@ -1,6 +1,6 @@
 [package]
 name = "ai-podcast-cut"
-version = "0.109.0"
+version = "0.110.0"
 description = "AI Podcast Cut — Smart podcast editing desktop tool"
 license = "MIT"
 edition = "2021"
@@ -34,8 +34,6 @@ chrono = { version = "0.4", features = ["serde"] }
 blake3 = "1"
 # Windows 路徑正規化不帶 \\?\ 前綴（ffmpeg / asset protocol 都吃不下 verbatim path）。
 dunce = "1"
-# debug build 才讀 repo 根 .env.local（gitignored）的 AICUT_TTLS_API_KEY。
-dotenvy = "0.15"
 rand = "0.8"
 # 內建 MCP server（loopback + bearer token），供 claude CLI 以 --mcp-config 連入操作剪輯決策。
 axum = "0.8"
@@ -43,15 +41,6 @@ axum = "0.8"
 ebur128 = "0.1"
 # 串流剪接輸出 concat.wav。
 hound = "3"
-
-[target.'cfg(windows)'.dependencies]
-keyring = { version = "3", features = ["windows-native"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", features = ["sync-secret-service"] }
 
 [features]
 default = ["custom-protocol"]

@@ -1,7 +1,7 @@
 // 伺服器 /v1/transcribe 結果 → Transcript（ms、字 id、句子切分）。
 import type { Segment, Sentence, Transcript, VadRegion, Word } from "./types";
 
-/** ttls `/v1/transcribe` 回應（秒）。 */
+/** 本機 faster-whisper sidecar 的回應（秒）。 */
 export interface ServerTranscript {
   model?: string | null;
   language?: string | null;

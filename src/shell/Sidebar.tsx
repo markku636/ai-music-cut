@@ -6,7 +6,6 @@ import { cancelLocalAnalysis } from "../pipeline/waveform";
 import { getPlayer, stopRange } from "../preview/playerRef";
 import { useJobs, type Job, type JobKind } from "../store/jobs";
 import { useProject, type MediaItem } from "../store/project";
-import { useSettings } from "../store/settings";
 import { useTranscript } from "../store/transcript";
 import { formatDuration } from "../time";
 import * as A from "../commands/appActions";
@@ -72,13 +71,11 @@ export default function Sidebar({ width }: { width: number }) {
   const t = useT();
   const onOpen = () => void A.openMedia();
   const onAnalyze = (mediaId: string) => A.analyzeWithPreflight(mediaId);
-  const onOpenSettings = (focus?: "key" | "ffmpeg") => A.openSettings(focus ?? null);
   const media = useProject((s) => s.media);
   const activeId = useProject((s) => s.activeMediaId);
   const setActive = useProject((s) => s.setActive);
   const removeMedia = useProject((s) => s.removeMedia);
   const local = useTranscript((s) => s.local);
-  const key = useSettings((s) => s.key);
   const jobs = useJobs((s) => s.jobs);
   const cancelJob = useJobs((s) => s.cancel);
   const removeJob = useJobs((s) => s.remove);
@@ -91,20 +88,6 @@ export default function Sidebar({ width }: { width: number }) {
     if (m.analysis === "error") return <Badge tone="danger">{t("失敗")}</Badge>;
     const wave = jobs.find((j) => j.kind === "waveform" && j.mediaId === m.id && j.status === "running");
     if (wave) return <Spinner size={12} className="text-info" />;
-    if (key !== null && !key.present) {
-      return (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenSettings("key");
-          }}
-          title={t("分析需要 ttls 金鑰；點擊設定")}
-        >
-          <Badge tone="warning">{t("需金鑰")}</Badge>
-        </button>
-      );
-    }
     if (active) {
       return (
         <Button

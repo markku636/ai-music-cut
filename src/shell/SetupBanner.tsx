@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, Bot, KeyRound, WifiOff } from "lucide-react";
+import { AlertTriangle, Bot } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "../ui/index";
 import Icon from "../ui/Icon";
@@ -37,18 +37,15 @@ function writeFlag(storage: Storage | null, key: string) {
  */
 export default function SetupBanner() {
   const t = useT();
-  const onOpenSettings = (focus?: "key" | "ffmpeg") => openSettings(focus ?? null);
+  const onOpenSettings = (focus?: "ffmpeg") => openSettings(focus ?? null);
   const loaded = useSettings((s) => s.loaded);
   const ffmpeg = useSettings((s) => s.ffmpeg);
-  const ttls = useSettings((s) => s.ttls);
-  const key = useSettings((s) => s.key);
   const claude = useSettings((s) => s.claude);
-  const probeAll = useSettings((s) => s.probeAll);
   const active = useProject(selectActiveMedia);
   const [, bump] = useState(0);
   const rerender = () => bump((n) => n + 1);
 
-  if (!loaded || key === null) return null;
+  if (!loaded) return null;
 
   let tone: Tone;
   let icon: LucideIcon;
@@ -63,38 +60,6 @@ export default function SetupBanner() {
       <Button size="sm" variant="primary" onClick={() => onOpenSettings("ffmpeg")}>
         {t("指定 ffmpeg 路徑")}
       </Button>
-    );
-  } else if (ttls && !ttls.ok) {
-    tone = "warning";
-    icon = WifiOff;
-    text = t("ttls 伺服器離線（{err}）：波形與播放不受影響，分析需等它恢復。", { err: ttls.error ?? "" });
-    action = (
-      <Button size="sm" onClick={() => void probeAll()}>
-        {t("重試")}
-      </Button>
-    );
-  } else if (ttls?.ok && !key.present) {
-    if (readFlag(typeof sessionStorage !== "undefined" ? sessionStorage : null, "aicut:banner.key")) return null;
-    if (active && active.analysis !== "ready") return null;
-    tone = "warning";
-    icon = KeyRound;
-    text = t("尚未設定 ttls 金鑰：現在可以播放與看波形；要轉寫逐字稿並找出贅字，請先貼上金鑰。");
-    action = (
-      <>
-        <Button size="sm" variant="primary" onClick={() => onOpenSettings("key")}>
-          {t("貼上金鑰")}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            writeFlag(sessionStorage, "aicut:banner.key");
-            rerender();
-          }}
-        >
-          {t("稍後")}
-        </Button>
-      </>
     );
   } else if (claude && !claude.installed && active?.analysis === "ready") {
     if (readFlag(typeof localStorage !== "undefined" ? localStorage : null, "aicut:banner.claude")) return null;

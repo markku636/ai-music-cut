@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Music } from "lucide-react";
 import { AUDIO_EXTENSIONS } from "../brand";
+import { placeBed } from "../analysis/bedPlacement";
 import { errMessage } from "../api";
 import { DEFAULT_DUCK, overlayId, planDuck, voiceRegionsInOutput, type Overlay } from "../analysis/overlays";
 import { withUndoToast } from "../commands/undoToast";
@@ -11,6 +12,7 @@ import { useProject } from "../store/project";
 import { useTranscript } from "../store/transcript";
 import { Button, Field, Modal, Segmented } from "../ui/index";
 import { pickOpenFile, toast } from "../ui";
+import { formatMs } from "../time";
 
 type Where = "intro" | "outro";
 
@@ -48,12 +50,22 @@ export default function IntroOutroDialog({ mediaId, onClose }: { mediaId: string
     }
   };
 
+  // 成品長度與落點只算一份：畫面上先講的跟按下去真的做的必須是同一個答案，
+  // 各算一次的話兩邊會慢慢漂開，而且不會有人發現。
+  const outLen = useMemo(() => {
+    const edl = edlFor(mediaId);
+    return edl && edl.keeps.length ? Math.max(...edl.keeps.map((k) => k.outEndMs)) : (main?.probe?.duration_ms ?? 0);
+    // 對話框開著的期間 EDL 不會變（沒有東西可以在這裡改剪輯），所以不必訂閱 decisions。
+    // 但拉音量滑桿會重繪，`edlFor` 每次都算一遍太貴 —— 所以還是要 memo。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mediaId, main]);
+  const place = bed?.probe ? placeBed(where, bed.probe.duration_ms, outLen) : null;
+
   const apply = async () => {
-    if (!bed?.probe || !main) return;
+    if (!bed?.probe || !main || !place) return;
     const edl = edlFor(mediaId);
     const bedDur = bed.probe.duration_ms;
-    const outLen = edl && edl.keeps.length ? Math.max(...edl.keeps.map((k) => k.outEndMs)) : (main.probe?.duration_ms ?? 0);
-    const outStartMs = where === "intro" ? 0 : Math.max(0, Math.round(outLen - bedDur));
+    const outStartMs = place.outStartMs;
     const o: Overlay = {
       id: overlayId("music", outStartMs),
       lane: "music",
@@ -100,6 +112,23 @@ export default function IntroOutroDialog({ mediaId, onClose }: { mediaId: string
     >
       <div className="space-y-4 text-sm">
         <div className="text-fg/70">{t("選一個音樂檔，放到開頭或結尾。講話的時候音樂會自動變小聲。")}</div>
+        {place && (
+          // 按下去**之前**就講清楚會放在哪 —— 尤其是「音樂比節目長」那一種：
+          // 片尾的起點會被夾到 0，使用者要的是片尾，拿到的是一整集的墊樂。
+          <div className={`rounded-sm px-2 py-1.5 text-xs ${place.longerThanEpisode ? "bg-warning/15 text-warning" : "bg-inset/60 text-fg/60"}`}>
+            <div className="tabular-nums">
+              {t("會放在成品的 {from} – {to}（節目長 {len}）", {
+                from: formatMs(place.outStartMs, { millis: false }),
+                to: formatMs(place.outEndMs, { millis: false }),
+                len: formatMs(outLen, { millis: false }),
+              })}
+            </div>
+            {place.longerThanEpisode && <div className="mt-0.5">{t("這個音樂比節目還長，會從頭蓋到尾。想要真的當片尾的話，換一段短一點的。")}</div>}
+            {!place.longerThanEpisode && place.extendsOutputMs > 0 && (
+              <div className="mt-0.5">{t("成品會因此變長 {ms}", { ms: formatMs(place.extendsOutputMs, { millis: false }) })}</div>
+            )}
+          </div>
+        )}
         <Field label={t("音樂檔")}>
           <div className="flex gap-2 items-center">
             <select value={bedId} onChange={(e) => setBedId(e.target.value)} className="flex-1 h-8 rounded-sm bg-inset border border-fg/10 text-sm px-2" disabled={busy}>

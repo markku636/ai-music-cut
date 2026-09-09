@@ -1016,6 +1016,7 @@ const en: Catalog = {
   "總覽": "Overview",
   "成品": "output",
   "成品順序": "Arrangement",
+  "把拖選的那一段拿掉，後面的接上來": "Removes the range you dragged; what follows moves up",
   "會放在成品的 {from} – {to}（節目長 {len}）": "Goes at {from} – {to} of the output (episode is {len})",
   "這個音樂比節目還長，會從頭蓋到尾。想要真的當片尾的話，換一段短一點的。": "This track is longer than the episode, so it covers the whole thing. For a real outro, pick something shorter.",
   "成品會因此變長 {ms}": "The output gets {ms} longer",

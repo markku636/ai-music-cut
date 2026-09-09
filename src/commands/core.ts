@@ -214,7 +214,9 @@ export const CORE_COMMANDS: Command[] = [
     surfaces: ["menu", "palette", "context", "simple"],
     simple: true,
     simpleLabel: "剪掉選的這段",
-    simpleHint: "先在波形上拖一段",
+    // 說明是「按下去會怎樣」，不是「還缺什麼」—— 缺什麼由 enabled().why 講。
+    // 這兩件事寫成同一句的話，使用者拖完選取之後這一行還在叫他去拖。
+    simpleHint: "把拖選的那一段拿掉，後面的接上來",
     simpleOrder: 4,
     keywords: ["cut", "delete"],
     // 有選取剪選取；沒有選取但選了候選 → 拒絕候選（Delete 的舊語意）

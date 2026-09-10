@@ -161,7 +161,7 @@ export default function SettingsDialog({
         </Section>
 
         <Section title={t("AI")}>
-          <AiBackendSettings draft={draft} commit={commit} />
+          <AiBackendSettings draft={draft} patch={patch} commit={commit} />
           {(draft.agent_backend || "claude") === "codex" && (
             <div className="rounded-md border border-fg/10 px-3 py-2 text-[11px] text-fg/60 space-y-1">
               <div>{t("codex 走 `codex exec --output-schema`。模型請在 codex 自己的設定裡指定（$CODEX_HOME/config.toml 的 model）。")}</div>

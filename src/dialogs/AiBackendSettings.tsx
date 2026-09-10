@@ -10,7 +10,7 @@ import { toast } from "../ui";
 import Icon from "../ui/Icon";
 import { useT } from "../i18n";
 import { endpointOf, isApiBackendId, presetsFor, type LlmBackend } from "../llm/presets";
-import { allSkills, addSkill, removeSkill, toggleSkill, updateSkill } from "../assistant/skills";
+import { allSkills, addSkill, removeSkill, toggleSkill, updateSkill, type Skill } from "../assistant/skills";
 import { useSettings } from "../store/settings";
 
 /** 這個後端的 Base URL / 模型設定欄位名（兩組欄位長一樣，只有 key 不同）。 */
@@ -22,9 +22,13 @@ function fieldsOf(backend: LlmBackend): { base: keyof AppSettings; model: keyof 
 
 export default function AiBackendSettings({
   draft,
+  patch,
   commit,
 }: {
   draft: AppSettings;
+  /** 只更新草稿（打字中）。 */
+  patch: (p: Partial<AppSettings>) => void;
+  /** 更新草稿並存檔（下拉、離開欄位時）。 */
   commit: (p: Partial<AppSettings>) => Promise<void>;
 }) {
   const t = useT();
@@ -79,6 +83,21 @@ export default function AiBackendSettings({
 
   const skills = allSkills(draft);
   const on = new Set(draft.assistant_skills_on ?? []);
+  // 技能的名稱 / 內容打字中先留在本地，離開欄位才寫回設定檔（避免每敲一個字存一次）。
+  const [edits, setEdits] = useState<Record<string, { name?: string; body?: string }>>({});
+  const editOf = (id: string, field: "name" | "body", fallback: string) => edits[id]?.[field] ?? fallback;
+  const setEdit = (id: string, field: "name" | "body", v: string) =>
+    setEdits((m) => ({ ...m, [id]: { ...m[id], [field]: v } }));
+  const flush = (id: string, field: "name" | "body") => {
+    const v = edits[id]?.[field];
+    if (v === undefined) return;
+    setEdits((m) => {
+      const next = { ...m, [id]: { ...m[id] } };
+      delete next[id][field];
+      return next;
+    });
+    void updateSkill(id, { [field]: v } as Partial<Pick<Skill, "name" | "body">>);
+  };
 
   return (
     <div className="space-y-3">
@@ -125,7 +144,12 @@ export default function AiBackendSettings({
           label={t("Base URL")}
           hint={baseUrl ? t("實際會打：{url}", { url: endpointOf(target, baseUrl) }) : t("結尾有沒有 /v1 都可以，自帶路徑（如 /anthropic）會照原樣使用。")}
         >
-          <Input value={baseUrl} onChange={(e) => void commit({ [f.base]: e.target.value } as Partial<AppSettings>)} placeholder="https://api.openai.com/v1" />
+          <Input
+            value={baseUrl}
+            onChange={(e) => patch({ [f.base]: e.target.value } as Partial<AppSettings>)}
+            onBlur={(e) => void commit({ [f.base]: e.target.value.trim() } as Partial<AppSettings>)}
+            placeholder="https://api.openai.com/v1"
+          />
         </Field>
 
         <Field
@@ -161,7 +185,8 @@ export default function AiBackendSettings({
                 className="flex-1"
                 value={model}
                 placeholder="gpt-5 / claude-sonnet-5 / qwen3…"
-                onChange={(e) => void commit({ [f.model]: e.target.value } as Partial<AppSettings>)}
+                onChange={(e) => patch({ [f.model]: e.target.value } as Partial<AppSettings>)}
+                onBlur={(e) => void commit({ [f.model]: e.target.value.trim() } as Partial<AppSettings>)}
               />
             )}
             <Button variant="secondary" disabled={testing || !baseUrl.trim()} onClick={() => void test()}>
@@ -205,7 +230,12 @@ export default function AiBackendSettings({
                 {sk.builtin ? (
                   <span className="text-[12px] text-fg/80">{sk.name}</span>
                 ) : (
-                  <Input className="flex-1" value={sk.name} onChange={(e) => void updateSkill(sk.id, { name: e.target.value })} />
+                  <Input
+                    className="flex-1"
+                    value={editOf(sk.id, "name", sk.name)}
+                    onChange={(e) => setEdit(sk.id, "name", e.target.value)}
+                    onBlur={() => flush(sk.id, "name")}
+                  />
                 )}
                 {sk.builtin ? (
                   <Button className="ml-auto" variant="ghost" icon={Wand2} onClick={() => void addSkill(`${sk.name}（${t("自訂")}）`, sk.body)}>
@@ -222,8 +252,9 @@ export default function AiBackendSettings({
               ) : (
                 <textarea
                   rows={3}
-                  value={sk.body}
-                  onChange={(e) => void updateSkill(sk.id, { body: e.target.value })}
+                  value={editOf(sk.id, "body", sk.body)}
+                  onChange={(e) => setEdit(sk.id, "body", e.target.value)}
+                  onBlur={() => flush(sk.id, "body")}
                   className="w-full resize-y rounded-sm bg-inset border border-fg/10 px-2 py-1.5 text-[12px] outline-none focus:border-accent/60"
                 />
               )}

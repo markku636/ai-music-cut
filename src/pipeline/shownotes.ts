@@ -3,7 +3,7 @@ import { normalizeShowNotes, notesPrompt, notesSource, SHOW_NOTES_SCHEMA, type R
 import { aiOutputLanguage, t } from "../i18n";
 import { languageName, outputLanguageLine } from "../analysis/lang";
 import { useProject } from "../store/project";
-import { agentBackend, useSettings } from "../store/settings";
+import { agentBackend, primaryModel } from "../store/settings";
 import { useTranscript } from "../store/transcript";
 import { edlFor } from "./rules";
 import { resolvePrompt } from "../analysis/prompts";
@@ -42,7 +42,7 @@ export async function generateShowNotes(mediaId: string): Promise<ShowNotes> {
   const outLang = aiOutputLanguage(tr.language);
   const langLine = outputLanguageLine(outLang);
   const prompt = notesPrompt(src, { title: media.name, durationMs, languageLine: langLine });
-  const model = useSettings.getState().s.claude_model || null;
+  const model = primaryModel();
 
   let raw: unknown;
   try {

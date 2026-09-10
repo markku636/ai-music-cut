@@ -24,6 +24,10 @@ pub const SERVER_NAME: &str = "aicut";
 const PROTOCOL_VERSION: &str = "2025-06-18";
 const TOOL_TIMEOUT_SECS: u64 = 60;
 
+/// 給模型的剪輯守則。claude CLI 走 MCP `initialize` 拿到這段；
+/// HTTP 供應商沒有 handshake，由 `llm::agent_loop` 直接接在系統提示後面 —— 同一份，不要分岔。
+pub const INSTRUCTIONS: &str = "你正在操作 AI Podcast Cut（podcast 智慧剪輯）。以自然順暢為最高原則：先用 get_project_summary 看狀態（沒有逐字稿也能用；analyzed=false 就是還沒分析，這時沒有候選可判讀，但刀片 / 修剪 / 標記 / 章節 / 配樂都能直接做）、list_candidates 看候選，再用 set_decisions 接受或拒絕；unclear/rambling 類只建議不自動剪。要動剪輯手法時：list_seams 看有哪些接縫 → trim_seam 修剪（ripple 會改變成品長度、roll 不會）、blade_at 切一刀、insert_pause 在切點補呼吸。要拿掉雜音但保留節奏就用 set_selection + lift_selection（提起不關洞），不要用 add_cut。口頭禪 / 重複的詞用 find_text 先看幾次、再用 cut_text 一次剪掉（一次 undo 就能全還原），不要用 add_cut 逐段剪；find_text 沒命中時會附上這集真正的口頭禪。afterKeepId 只在下一次修剪前有效，連續操作請每次重新呼叫 list_seams。配樂：list_media → place_overlay（位置用成品時間）→ duck_overlay 讓它在人聲下自動閃避；閃避是看得見的音量控制點，不是壓縮器。章節用 set_chapters（會寫進成品檔案，標題要具體）。錄音本身有底噪 / 隆隆聲時先 get_cleanup 看量測結果，值得做才 set_cleanup（齒音沒有量測依據，不要自己開）。使用者說「這句可以放預告」就 add_highlight，之後那些會串成一支預告輸出。要節目筆記用 write_show_notes（讀逐字稿產摘要 / 章節 / 節錄，時間戳自動換算成成品時間），已經產過的用 get_show_notes 拿就好，不要重跑。你聽不到聲音，所以「哪裡小聲 / 這集吵不吵 / 要不要修聲」一律先用 get_loudness_profile 看響度輪廓，不要憑逐字稿猜、也不要叫使用者自己去聽。多人節目先 list_speakers 看有沒有講者標籤（一人一軌用 sync_mics 合併時會自動指派；單軌只能用 assign_speaker 手動標，不要自己猜）。「來賓的口頭禪剪掉、主持人的留著」用 cut_fillers_by_speaker，不要用 cut_text —— 那個不分是誰講的；不確定會剪到什麼就先 dryRun。要字幕或逐字稿用 export_captions（時間戳是成品時間，被剪掉的字整個不出現）。要把一次錄的多集切開先用 list_split_parts 看會切成幾段，分割輸出本身在 App 的「依章節分割輸出」裡做。一個人錄音講壞了常常不說「重講」就直接再講一次，同一句會有兩三個版本 —— 用 list_takes 找出來，keep_take 留一個、其餘剪掉（一次 undo）。**那剪掉的是一整句真正的內容，不是贅字**，所以先把幾次嘗試念給使用者聽、讓他挑，不要自己決定；預設是留最後一次。使用者做完一輪判斷之後，可以用 learn_filler_decisions 把「他親手做過的贅字裁決」記起來（同一集重複呼叫是覆蓋），累積幾集之後 suggest_filler_rules 會建議哪些詞該進詞表 —— 那是**使用者自己的做法**，不是你的意見，所以照著回報就好，不要自己加碼。詞表只影響下一次分析要不要提出這個詞，不會動到已經做好的剪輯決策。";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolDef {
     pub name: String,
@@ -164,7 +168,7 @@ async fn dispatch(ctx: &Ctx, req: &Value) -> Option<Value> {
                 "protocolVersion": requested,
                 "capabilities": { "tools": { "listChanged": false } },
                 "serverInfo": { "name": SERVER_NAME, "version": env!("CARGO_PKG_VERSION") },
-                "instructions": "你正在操作 AI Podcast Cut（podcast 智慧剪輯）。以自然順暢為最高原則：先用 get_project_summary 看狀態（沒有逐字稿也能用；analyzed=false 就是還沒分析，這時沒有候選可判讀，但刀片 / 修剪 / 標記 / 章節 / 配樂都能直接做）、list_candidates 看候選，再用 set_decisions 接受或拒絕；unclear/rambling 類只建議不自動剪。要動剪輯手法時：list_seams 看有哪些接縫 → trim_seam 修剪（ripple 會改變成品長度、roll 不會）、blade_at 切一刀、insert_pause 在切點補呼吸。要拿掉雜音但保留節奏就用 set_selection + lift_selection（提起不關洞），不要用 add_cut。口頭禪 / 重複的詞用 find_text 先看幾次、再用 cut_text 一次剪掉（一次 undo 就能全還原），不要用 add_cut 逐段剪；find_text 沒命中時會附上這集真正的口頭禪。afterKeepId 只在下一次修剪前有效，連續操作請每次重新呼叫 list_seams。配樂：list_media → place_overlay（位置用成品時間）→ duck_overlay 讓它在人聲下自動閃避；閃避是看得見的音量控制點，不是壓縮器。章節用 set_chapters（會寫進成品檔案，標題要具體）。錄音本身有底噪 / 隆隆聲時先 get_cleanup 看量測結果，值得做才 set_cleanup（齒音沒有量測依據，不要自己開）。使用者說「這句可以放預告」就 add_highlight，之後那些會串成一支預告輸出。要節目筆記用 write_show_notes（讀逐字稿產摘要 / 章節 / 節錄，時間戳自動換算成成品時間），已經產過的用 get_show_notes 拿就好，不要重跑。你聽不到聲音，所以「哪裡小聲 / 這集吵不吵 / 要不要修聲」一律先用 get_loudness_profile 看響度輪廓，不要憑逐字稿猜、也不要叫使用者自己去聽。多人節目先 list_speakers 看有沒有講者標籤（一人一軌用 sync_mics 合併時會自動指派；單軌只能用 assign_speaker 手動標，不要自己猜）。「來賓的口頭禪剪掉、主持人的留著」用 cut_fillers_by_speaker，不要用 cut_text —— 那個不分是誰講的；不確定會剪到什麼就先 dryRun。要字幕或逐字稿用 export_captions（時間戳是成品時間，被剪掉的字整個不出現）。要把一次錄的多集切開先用 list_split_parts 看會切成幾段，分割輸出本身在 App 的「依章節分割輸出」裡做。一個人錄音講壞了常常不說「重講」就直接再講一次，同一句會有兩三個版本 —— 用 list_takes 找出來，keep_take 留一個、其餘剪掉（一次 undo）。**那剪掉的是一整句真正的內容，不是贅字**，所以先把幾次嘗試念給使用者聽、讓他挑，不要自己決定；預設是留最後一次。使用者做完一輪判斷之後，可以用 learn_filler_decisions 把「他親手做過的贅字裁決」記起來（同一集重複呼叫是覆蓋），累積幾集之後 suggest_filler_rules 會建議哪些詞該進詞表 —— 那是**使用者自己的做法**，不是你的意見，所以照著回報就好，不要自己加碼。詞表只影響下一次分析要不要提出這個詞，不會動到已經做好的剪輯決策。"
+                "instructions": INSTRUCTIONS
             })
         }
         "ping" => json!({}),
@@ -178,29 +182,43 @@ async fn dispatch(ctx: &Ctx, req: &Value) -> Option<Value> {
             if !ctx.bridge.tools.read().iter().any(|t| t.name == name) {
                 return Some(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32602, "message": format!("unknown tool {name}") } }));
             }
-            let call_id = uuid::Uuid::new_v4().to_string();
-            let (tx, rx) = oneshot::channel();
-            ctx.bridge.pending.lock().insert(call_id.clone(), tx);
-            let _ = ctx.app.emit("mcp-tool-call", ToolCallEvent { id: call_id.clone(), name: name.clone(), args });
-            match tokio::time::timeout(std::time::Duration::from_secs(TOOL_TIMEOUT_SECS), rx).await {
-                Ok(Ok(Ok(v))) => {
-                    let text = match v {
-                        Value::String(s) => s,
-                        other => serde_json::to_string(&other).unwrap_or_default(),
-                    };
-                    json!({ "content": [{ "type": "text", "text": text }], "isError": false })
-                }
-                Ok(Ok(Err(msg))) => json!({ "content": [{ "type": "text", "text": msg }], "isError": true }),
-                Ok(Err(_)) => json!({ "content": [{ "type": "text", "text": "tool handler dropped" }], "isError": true }),
-                Err(_) => {
-                    ctx.bridge.pending.lock().remove(&call_id);
-                    json!({ "content": [{ "type": "text", "text": format!("tool {name} timed out after {TOOL_TIMEOUT_SECS}s") }], "isError": true })
-                }
+            match call_tool(&ctx.app, &ctx.bridge, &name, args).await {
+                Ok(text) => json!({ "content": [{ "type": "text", "text": text }], "isError": false }),
+                Err(msg) => json!({ "content": [{ "type": "text", "text": msg }], "isError": true }),
             }
         }
         _ => return Some(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": format!("method not found: {method}") } })),
     };
     Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
+}
+
+/// 執行一支工具：發 `mcp-tool-call` 給前端 → 等 `mcp_tool_result` 回寫（逾時 60 秒）。
+///
+/// 兩條路徑共用：claude CLI 走 JSON-RPC 進來（`tools/call`），HTTP 供應商的 agent loop
+/// （`llm::agent_loop`）直接呼叫這裡。工具是否存在由呼叫端檢查 —— JSON-RPC 那邊要回
+/// 標準的 -32602 錯誤碼，agent loop 則只要一句人話。
+pub async fn call_tool(app: &AppHandle, bridge: &McpBridge, name: &str, args: Value) -> Result<String, String> {
+    let call_id = uuid::Uuid::new_v4().to_string();
+    let (tx, rx) = oneshot::channel();
+    bridge.pending.lock().insert(call_id.clone(), tx);
+    let _ = app.emit("mcp-tool-call", ToolCallEvent { id: call_id.clone(), name: name.to_string(), args });
+    match tokio::time::timeout(std::time::Duration::from_secs(TOOL_TIMEOUT_SECS), rx).await {
+        Ok(Ok(Ok(v))) => Ok(match v {
+            Value::String(s) => s,
+            other => serde_json::to_string(&other).unwrap_or_default(),
+        }),
+        Ok(Ok(Err(msg))) => Err(msg),
+        Ok(Err(_)) => Err("tool handler dropped".to_string()),
+        Err(_) => {
+            bridge.pending.lock().remove(&call_id);
+            Err(format!("tool {name} timed out after {TOOL_TIMEOUT_SECS}s"))
+        }
+    }
+}
+
+/// 工具是否在目錄裡（HTTP agent loop 用；JSON-RPC 那邊有自己的錯誤碼路徑）。
+pub fn has_tool(bridge: &McpBridge, name: &str) -> bool {
+    bridge.tools.read().iter().any(|t| t.name == name)
 }
 
 // ---------------- commands ----------------

@@ -1,4 +1,11 @@
-//! AI 助手 / AI 判讀：驅動本機 `claude` CLI（使用者的 Claude 訂閱登入）。承襲 db-kit agent.rs。
+//! AI 助手 / AI 判讀：驅動本機 `claude` CLI（使用者的 Claude 訂閱登入）、`codex` CLI，
+//! 或直接以 HTTP 打 Anthropic / OpenAI 相容端點（見 `llm/`）。承襲 db-kit agent.rs。
+//!
+//! 四種後端由設定的 `agent_backend` 決定，共用同一組 `claude-stream` 事件，前端不必分辨：
+//! - `claude`：CLI + `--mcp-config` 連本 App 的 MCP server
+//! - `codex`：CLI（只走結構化產出；助手仍回 claude —— App 寫不進使用者的 config.toml）
+//! - `anthropic-api` / `openai-api`：`llm::agent_loop` 自己跑工具迴圈，工具直接呼叫
+//!   `mcp::call_tool`，所以那 29 支剪輯工具照樣可用。
 //!
 //! - 助手（agent 模式）：`-p --output-format stream-json`，NDJSON 逐行轉成 `claude-stream` 事件推給前端；
 //!   透過 `--mcp-config` 連進本 App 內建的 MCP server（mcp.rs），`--allowedTools mcp__aicut` 只放行自家工具，
@@ -260,9 +267,16 @@ pub async fn claude_send(
     mode: Option<String>,
     system_prompt: Option<String>,
 ) -> AppResult<()> {
+    let mode = mode.unwrap_or_else(|| "agent".to_string());
+
+    // HTTP 供應商：不開子程序，改跑自家的工具迴圈（工具來源同樣是內建 MCP bridge）。
+    let backend = state.settings.read().agent_backend.clone();
+    if let Some(kind) = crate::llm::LlmKind::parse(&backend) {
+        return llm_send(app, state, req_id, prompt, session_id, model, &mode, kind, system_prompt).await;
+    }
+
     let bin = resolve_claude_bin().await.ok_or_else(|| AppError::Agent("找不到 claude CLI，請先安裝 Claude Code 並登入".into()))?;
     let workspace = workspace_dir(&app).await?;
-    let mode = mode.unwrap_or_else(|| "agent".to_string());
 
     let mut cmd = make_cmd(&bin);
     cmd.arg("-p")
@@ -347,6 +361,210 @@ pub async fn claude_cancel(state: State<'_, AppState>, req_id: String) -> AppRes
     Ok(())
 }
 
+// ---- HTTP 供應商（Anthropic / OpenAI 相容） ----
+
+/// 從設定取這個供應商的 Base URL 與模型。
+fn llm_endpoint(state: &AppState, kind: crate::llm::LlmKind) -> (String, String) {
+    let s = state.settings.read();
+    match kind {
+        crate::llm::LlmKind::Anthropic => (s.llm_anthropic_base_url.clone(), s.llm_anthropic_model.clone()),
+        crate::llm::LlmKind::OpenAi => (s.llm_openai_base_url.clone(), s.llm_openai_model.clone()),
+    }
+}
+
+/// 助手的 HTTP 路徑：先回應前端（`system` 事件帶自產的 session id），
+/// 再於背景跑工具迴圈，逐字送 `text`、每支工具送 `tool` / `tool_result`，收尾送 `result` + `done`。
+#[allow(clippy::too_many_arguments)]
+async fn llm_send(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req_id: String,
+    prompt: String,
+    session_id: Option<String>,
+    model: Option<String>,
+    mode: &str,
+    kind: crate::llm::LlmKind,
+    system_prompt: Option<String>,
+) -> AppResult<()> {
+    let (base_url, cfg_model) = llm_endpoint(&state, kind);
+    let model = model.filter(|m| !m.trim().is_empty()).unwrap_or(cfg_model);
+    let cfg = crate::llm::LlmConfig::resolve(kind, Some(&base_url), Some(&model));
+    if cfg.base.is_empty() {
+        return Err(AppError::Agent("尚未設定 API Base URL".into()));
+    }
+    if cfg.model.trim().is_empty() {
+        return Err(AppError::Agent("尚未指定模型（請在設定的 AI 區塊填模型名稱）".into()));
+    }
+
+    let with_tools = mode == "agent";
+    // HTTP 沒有伺服器端 session，對話歷史存在 App 記憶體裡，id 由這裡產。
+    let sid = session_id.filter(|s| !s.trim().is_empty()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let mut history = state.llm_sessions.lock().get(&sid).cloned().unwrap_or_default();
+
+    // CLI 會從 MCP handshake 拿到剪輯守則，HTTP 沒有 handshake，所以接在系統提示後面。
+    let system = match system_prompt.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(sp) if with_tools => format!("{sp}\n\n{}", crate::mcp::INSTRUCTIONS),
+        Some(sp) => sp.to_string(),
+        None if with_tools => crate::mcp::INSTRUCTIONS.to_string(),
+        None => String::new(),
+    };
+
+    emit(
+        &app,
+        AgentEvent {
+            req_id: req_id.clone(),
+            kind: "system".into(),
+            session_id: Some(sid.clone()),
+            model: Some(cfg.model.clone()),
+            ..Default::default()
+        },
+    );
+
+    if let Some(h) = state.agent_jobs.lock().remove(&req_id) {
+        h.abort();
+    }
+
+    let app2 = app.clone();
+    let req2 = req_id.clone();
+    let jobs = state.agent_jobs.clone();
+    let sessions = state.llm_sessions.clone();
+    let bridge = state.mcp.clone();
+    let handle = tauri::async_runtime::spawn(async move {
+        let started = std::time::Instant::now();
+        let sink_app = app2.clone();
+        let sink_req = req2.clone();
+        let sink = move |ev: crate::llm::StreamEvent| match ev {
+            crate::llm::StreamEvent::Text(t) => {
+                emit(&sink_app, AgentEvent { req_id: sink_req.clone(), kind: "text".into(), text: Some(t), ..Default::default() })
+            }
+            crate::llm::StreamEvent::ToolStart(name) => {
+                emit(&sink_app, AgentEvent { req_id: sink_req.clone(), kind: "tool".into(), tool: Some(name), ..Default::default() })
+            }
+            crate::llm::StreamEvent::ToolResult { text, is_error } => emit(
+                &sink_app,
+                AgentEvent { req_id: sink_req.clone(), kind: "tool_result".into(), text: Some(text), is_error: Some(is_error), ..Default::default() },
+            ),
+        };
+
+        let sys = if system.trim().is_empty() { None } else { Some(system.as_str()) };
+        let result = crate::llm::agent_loop::run(
+            &app2,
+            &bridge,
+            crate::llm::client(),
+            &cfg,
+            with_tools,
+            &mut history,
+            prompt,
+            sys,
+            &sink,
+        )
+        .await;
+
+        let ms = started.elapsed().as_millis() as u64;
+        let code = match result {
+            Ok(text) => {
+                sessions.lock().insert(sid.clone(), history);
+                emit(
+                    &app2,
+                    AgentEvent {
+                        req_id: req2.clone(),
+                        kind: "result".into(),
+                        session_id: Some(sid.clone()),
+                        is_error: Some(false),
+                        text: Some(text),
+                        duration_ms: Some(ms),
+                        ..Default::default()
+                    },
+                );
+                0
+            }
+            Err(e) => {
+                // 失敗的那一輪不寫回歷史：留著壞掉的 tool_use / tool_result，
+                // 下一次送出會整串被端點拒絕。
+                emit(&app2, AgentEvent { req_id: req2.clone(), kind: "error".into(), text: Some(e), ..Default::default() });
+                emit(
+                    &app2,
+                    AgentEvent {
+                        req_id: req2.clone(),
+                        kind: "result".into(),
+                        session_id: Some(sid.clone()),
+                        is_error: Some(true),
+                        duration_ms: Some(ms),
+                        ..Default::default()
+                    },
+                );
+                1
+            }
+        };
+        emit(&app2, AgentEvent { req_id: req2.clone(), kind: "done".into(), code: Some(code), ..Default::default() });
+        jobs.lock().remove(&req2);
+    });
+    state.agent_jobs.lock().insert(req_id, handle);
+    Ok(())
+}
+
+/// 寫入 / 刪除 API 金鑰（空字串 = 刪除）。金鑰只進 OS keychain，不落地到設定檔。
+#[tauri::command]
+pub async fn llm_key_set(kind: String, key: String) -> AppResult<()> {
+    let k = crate::llm::LlmKind::parse(&kind).ok_or_else(|| AppError::Agent(format!("未知的供應商：{kind}")))?;
+    crate::store::kc_set(k.key_account(), key.trim())
+}
+
+/// 只回「有沒有金鑰」，永不回傳明文。env 有設也算有。
+#[tauri::command]
+pub async fn llm_key_status(kind: String) -> bool {
+    match crate::llm::LlmKind::parse(&kind) {
+        Some(k) => crate::llm::resolve_key(k).is_some(),
+        None => false,
+    }
+}
+
+/// 供應商狀態（狀態列的燈與設定畫面用）。
+///
+/// 刻意由後端算：Base URL 正規化與「是不是地端端點」這兩條規則只能有一份，
+/// 前端再實作一次就會兩邊不一致。
+#[derive(Serialize)]
+pub struct LlmStatus {
+    /// 正規化後的 Base URL（空 = 沒設定）。
+    pub base: String,
+    pub model: String,
+    pub has_key: bool,
+    /// 地端端點（localhost / 127.0.0.1 / 區網）不需要金鑰。
+    pub local: bool,
+    /// 可以跑了：有 Base URL、有模型，且有金鑰或是地端端點。
+    pub ready: bool,
+}
+
+#[tauri::command]
+pub async fn llm_status(app: AppHandle, kind: String) -> LlmStatus {
+    let Some(k) = crate::llm::LlmKind::parse(&kind) else {
+        return LlmStatus { base: String::new(), model: String::new(), has_key: false, local: false, ready: false };
+    };
+    let (base_url, model) = {
+        let state = app.state::<AppState>();
+        llm_endpoint(&state, k)
+    };
+    let cfg = crate::llm::LlmConfig::resolve(k, Some(&base_url), Some(&model));
+    let has_key = cfg.api_key.is_some();
+    let local = cfg.is_local();
+    LlmStatus {
+        ready: !cfg.base.is_empty() && !cfg.model.trim().is_empty() && (has_key || local),
+        base: cfg.base,
+        model: cfg.model,
+        has_key,
+        local,
+    }
+}
+
+/// 取模型清單（順便當「測試連線」用）。抓不到回空陣列，前端退回手填。
+#[tauri::command]
+pub async fn llm_list_models(kind: String, base_url: Option<String>) -> Vec<String> {
+    match crate::llm::LlmKind::parse(&kind) {
+        Some(k) => crate::llm::models::list(crate::llm::client(), k, base_url.as_deref()).await,
+        None => Vec::new(),
+    }
+}
+
 /// 一次性結構化輸出（AI 判讀）：零工具、限回合；回 `structured_output`（退回解析 `result` 字串）。
 #[tauri::command]
 /// 結構化產出。`backend` 只認 "codex"，其他一律走 claude ——
@@ -363,6 +581,25 @@ pub async fn claude_structured(
     if backend.as_deref() == Some("codex") {
         let workspace = workspace_dir(&app).await?;
         return crate::codex::structured(workspace, prompt, schema, model, system_prompt, timeout_ms).await;
+    }
+    // HTTP 供應商：走 llm::structured（Anthropic 強制 tool_choice、OpenAI response_format，各有降級鏈）。
+    if let Some(kind) = backend.as_deref().and_then(crate::llm::LlmKind::parse) {
+        let state = app.state::<AppState>();
+        let (base_url, cfg_model) = llm_endpoint(&state, kind);
+        let model = model.filter(|m| !m.trim().is_empty()).unwrap_or(cfg_model);
+        let cfg = crate::llm::LlmConfig::resolve(kind, Some(&base_url), Some(&model));
+        if cfg.base.is_empty() {
+            return Err(AppError::Agent("尚未設定 API Base URL".into()));
+        }
+        if cfg.model.trim().is_empty() {
+            return Err(AppError::Agent("尚未指定模型".into()));
+        }
+        let timeout = std::time::Duration::from_millis(timeout_ms.unwrap_or(240_000));
+        let fut = crate::llm::structured(crate::llm::client(), &cfg, system_prompt.as_deref(), &prompt, &schema, 8192);
+        return match tokio::time::timeout(timeout, fut).await {
+            Ok(r) => r.map_err(AppError::Agent),
+            Err(_) => Err(AppError::Timeout(timeout.as_millis() as u64)),
+        };
     }
     let bin = resolve_claude_bin().await.ok_or_else(|| AppError::Agent("找不到 claude CLI，請先安裝 Claude Code 並登入".into()))?;
     let workspace = workspace_dir(&app).await?;

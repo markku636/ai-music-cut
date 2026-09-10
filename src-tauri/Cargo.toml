@@ -1,6 +1,6 @@
 [package]
 name = "ai-podcast-cut"
-version = "0.135.0"
+version = "0.136.0"
 description = "AI Podcast Cut — Smart podcast editing desktop tool"
 license = "MIT"
 edition = "2021"
@@ -41,6 +41,18 @@ axum = "0.8"
 ebur128 = "0.1"
 # 串流剪接輸出 concat.wav。
 hound = "3"
+
+# API 金鑰存 OS 原生金鑰庫（Windows 認證管理員 / macOS Keychain / Linux Secret Service）：
+# 設定檔一律不得出現金鑰（store.rs 有測試把這條釘住）。三平台各自的原生後端分開宣告，
+# 於非該平台編譯時 Cargo 直接忽略。
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
 
 [features]
 default = ["custom-protocol"]

@@ -12,6 +12,7 @@ import { parseHotwords } from "../analysis/hotwords";
 import { formatMb, formatSpeed } from "../analysis/asrFit";
 import HotwordsDialog from "./HotwordsDialog";
 import LocalAsrSetup from "./LocalAsrSetup";
+import AiBackendSettings from "./AiBackendSettings";
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -160,22 +161,15 @@ export default function SettingsDialog({
         </Section>
 
         <Section title={t("AI")}>
-          <Field
-            label={t("結構化產出的後端")}
-            hint={t("AI 判讀、審核、節目筆記走哪個 CLI。AI 助手不受影響 —— 它要透過 App 內建的 MCP server 操作剪輯，而 codex 要連上那個 server 得改你自己的 config.toml，所以助手一律走 claude。")}
-          >
-            <Select value={draft.agent_backend || "claude"} onChange={(e) => void commit({ agent_backend: e.target.value })}>
-              <option value="claude">{t("Claude Code（claude CLI）")}</option>
-              <option value="codex">{t("Codex（codex CLI）")}</option>
-            </Select>
-          </Field>
+          <AiBackendSettings draft={draft} commit={commit} />
           {(draft.agent_backend || "claude") === "codex" && (
             <div className="rounded-md border border-fg/10 px-3 py-2 text-[11px] text-fg/60 space-y-1">
               <div>{t("codex 走 `codex exec --output-schema`。模型請在 codex 自己的設定裡指定（$CODEX_HOME/config.toml 的 model）。")}</div>
               <div className="text-warning">{t("沒裝的話：npm i -g @openai/codex，然後執行 codex login。")}</div>
+              <div>{t("選 codex 時 AI 助手仍走 claude —— 它要連上 App 內建的 MCP server，那得改你自己的 config.toml。")}</div>
             </div>
           )}
-          <Field label={t("Claude 模型（claude CLI --model）")} hint={t("AI 判讀與助手都用本機 claude 登入身分；sonnet 速度與品質均衡")}>
+          <Field label={t("Claude 模型（claude CLI --model）")} hint={t("只有 claude 後端吃這個；API 後端的模型在上面的 API 後端設定裡填。")}>
             <Select value={draft.claude_model || "sonnet"} onChange={(e) => void commit({ claude_model: e.target.value })}>
               <option value="opus">opus</option>
               <option value="sonnet">sonnet</option>

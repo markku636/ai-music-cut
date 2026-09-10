@@ -3,7 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { api, errMessage, type ClaudeStreamEvent } from "../api";
 import { uiLanguageLine } from "../i18n";
 import { resolvePrompt } from "../analysis/prompts";
-import { useSettings } from "./settings";
+import { primaryModel } from "./settings";
+import { composeSystemPrompt, currentSkills } from "../assistant/skills";
 
 export interface ToolRow {
   name: string;
@@ -146,11 +147,13 @@ export const useAssistantChat = create<AssistantChatStore>((set, get) => {
           { id: `${reqId}-a`, role: "assistant" as const, text: "", tools: [], ts: Date.now() },
         ].slice(-MAX_MSGS),
       }));
-      const model = useSettings.getState().s.claude_model || "sonnet";
+      // API 供應商回 null（模型在後端設定裡）
+      const model = primaryModel();
       // 助手是在跟剪輯的人講話，跟著介面語言
       const lang = uiLanguageLine();
       // 助手的人格設定可以在「提示詞」對話框改；語言指示永遠是執行期接上去的
-      const base = resolvePrompt("assistant");
+      // 人設可在「提示詞」對話框改；勾選中的技能接在人設後面（見 assistant/skills.ts）
+      const base = composeSystemPrompt(resolvePrompt("assistant"), currentSkills());
       const sys = lang ? `${base}\n${lang}` : base;
       try {
         await api.claudeSend(reqId, text, get().sessionId, model, "agent", sys);

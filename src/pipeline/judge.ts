@@ -12,7 +12,7 @@ import { t, uiLanguageLine } from "../i18n";
 import { useDecisions } from "../store/decisions";
 import { newJobId, useJobs } from "../store/jobs";
 import { useProject } from "../store/project";
-import { agentBackend, useSettings } from "../store/settings";
+import { agentBackend, primaryModel, reviewModel, useSettings } from "../store/settings";
 import { useTranscript } from "../store/transcript";
 import { toast } from "../ui";
 
@@ -65,7 +65,8 @@ export async function runJudge(mediaId: string): Promise<void> {
 
   const rec = (useProject.getState().analysis[mediaId] ?? {}) as Record<string, unknown>;
   const cache = { ...((rec.llm as Record<string, CachedWindow> | undefined) ?? {}) };
-  const model = useSettings.getState().s.claude_model || "sonnet";
+  // API 供應商回 null（模型在後端設定裡；claude 的別名餵給 OpenAI 端點只會 404）
+  const model = primaryModel();
   // 判讀理由是給**剪輯的人**看的，所以跟著介面語言，不跟著節目語言
   const lang = uiLanguageLine();
   // 兩個角色的人格設定都可以在「提示詞」對話框改；語言指示是執行期接上去的
@@ -75,7 +76,7 @@ export async function runJudge(mediaId: string): Promise<void> {
   const reviewSys = lang ? `${reviewerBase}\n${lang}` : reviewerBase;
   const st = useSettings.getState().s;
   const withReviewer = (st.judge_roles || "editor+reviewer").includes("reviewer");
-  const reviewModel = st.claude_review_model || "haiku";
+  const judgeReviewModel = reviewModel();
   const reviewCache = { ...((rec.llmReview as Record<string, CachedReview> | undefined) ?? {}) };
   // 兩趟：先剪輯提議、再審核覆核。進度分兩段，取消在兩段之間都會生效。
   const allWindows = windows.slice();
@@ -145,7 +146,7 @@ export async function runJudge(mediaId: string): Promise<void> {
           if (hit) {
             Object.assign(reviewOpinions, hit.opinions);
           } else {
-            const r = await reviewWindow(tr, w, candidates, decisions, cutIds, { model: reviewModel, systemPrompt: reviewSys });
+            const r = await reviewWindow(tr, w, candidates, decisions, cutIds, { model: judgeReviewModel, systemPrompt: reviewSys });
             Object.assign(reviewOpinions, r.opinions);
             warnings.push(...r.warnings.map((x) => `review ${x}`));
             if (Object.keys(r.opinions).length) reviewCache[key] = { hash: w.hash, opinions: r.opinions, at: new Date().toISOString() };

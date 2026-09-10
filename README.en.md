@@ -87,20 +87,41 @@ For any other amount, use [PayPal.Me](https://paypal.me/226network). The same bu
 
 ## AI backend
 
-**Structured output** (AI judging, review, show notes) can use **Claude Code** or **Codex**.
-Codex goes through `codex exec --output-schema`; its model is set in Codex's own `$CODEX_HOME/config.toml`.
-If it is not installed: `npm i -g @openai/codex`, then `codex login`.
+Four choices, and **AI judging, review, show notes and the assistant all use the same one**:
 
-**Click `claude 2.1.201 · sonnet` in the status bar** to switch backend and model (judging and review each have their own).
-The model is something you may want to change before every judging run — the hard episode gets one opus pass, the rest get swept with haiku — and burying it on the second page of a settings dialog means three clicks every time. With Codex selected the model dropdowns are not greyed out but replaced with a sentence explaining why (Codex reads its model from its own config.toml, which this app cannot write to): greying something out without explaining it just reads as broken.
+| Backend | How it authenticates | What you must install |
+| --- | --- | --- |
+| **Claude Code** | your own Claude subscription sign-in | the `claude` CLI |
+| **Codex** | your own ChatGPT subscription sign-in | the `codex` CLI |
+| **Anthropic-compatible API** | base URL + API key | nothing |
+| **OpenAI-compatible API** | base URL + API key (local endpoints need none) | nothing |
+
+The two API backends speak the public protocols (`/v1/messages` and `/chat/completions`), so the
+official APIs, proxies (OpenRouter / DeepSeek / Kimi / GLM / Groq) and local inference
+(Ollama / LM Studio / vLLM) all work. Settings has a preset list that fills in the base URL, and
+"Test connection" asks the endpoint for its model list (if it has none, type the model name — that
+is not treated as an error).
+
+**Keys are stored only in the OS keychain** (Windows Credential Manager / macOS Keychain / Linux
+Secret Service). The settings file has no key field at all and the front end never sees the plain
+text — it can only ask whether a key is set. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` also work and
+take precedence over the keychain.
+
+**Click the status-bar button** to switch backend and model (the claude backend keeps separate
+models for judging and review). The model is something you may want to change before every judging
+run — the hard episode gets one opus pass, the rest get swept with haiku — and burying it on the
+second page of a settings dialog means three clicks every time. With Codex selected the model
+dropdowns are not greyed out but replaced with a sentence explaining why (Codex reads its model
+from its own config.toml, which this app cannot write to): greying something out without
+explaining it just reads as broken.
 
 ![Switching models](docs/screenshot-model.png)
 
-> **The AI assistant (tool loop) always uses claude** and ignores this setting.
-> The assistant drives editing decisions through the app's built-in MCP server, and for Codex to
-> reach that server you would have to edit your own `config.toml` — that is your environment's
-> configuration, and the app cannot write it. The settings screen says so, so nobody switches over
-> expecting everything to keep working.
+> **With Codex selected the assistant still runs on claude**: it drives editing decisions through
+> the app's built-in MCP server, and for Codex to reach that server you would have to edit your own
+> `config.toml` — that is your environment's configuration, and the app cannot write it.
+> **The API backends do not have this limitation**: their tool loop runs inside the app's Rust side
+> and calls the same MCP bridge directly, so every editing tool stays available.
 
 ## Prompts
 

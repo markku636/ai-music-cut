@@ -6,6 +6,8 @@ import { useT } from "../i18n";
 import { useAssistant } from "../store/assistant";
 import { useAssistantChat, type ChatMsg } from "../store/assistantChat";
 import { useSettings } from "../store/settings";
+import { isApiBackendId } from "../llm/presets";
+import { allSkills, toggleSkill } from "./skills";
 import { selectActiveMedia, useProject } from "../store/project";
 
 const WIDTH = 380;
@@ -22,6 +24,8 @@ export default function AssistantPanel({ embedded = false }: { embedded?: boolea
   const cancel = useAssistantChat((s) => s.cancel);
   const clear = useAssistantChat((s) => s.clear);
   const claude = useSettings((s) => s.claude);
+  const settings = useSettings((s) => s.s);
+  const llm = useSettings((s) => s.llm);
   const active = useProject(selectActiveMedia);
   const [input, setInput] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
@@ -39,7 +43,12 @@ export default function AssistantPanel({ embedded = false }: { embedded?: boolea
     setInput("");
     void send(v);
   };
-  const ready = !!claude?.installed;
+  // 助手在 codex 後端仍走 claude（它要連 App 內建的 MCP server），所以只有 API 後端才看 llm 狀態。
+  const backend = settings.agent_backend || "claude";
+  const apiBackend = isApiBackendId(backend) ? backend : null;
+  const ready = apiBackend ? !!llm[apiBackend]?.ready : !!claude?.installed;
+  const skills = allSkills(settings);
+  const skillsOn = new Set(settings.assistant_skills_on ?? []);
 
   return (
     <div
@@ -49,14 +58,22 @@ export default function AssistantPanel({ embedded = false }: { embedded?: boolea
       <div className="h-9 shrink-0 flex items-center gap-2 px-3 border-b border-fg/10">
         <Icon icon={Sparkles} size={14} className="text-accent" />
         <span className="text-xs text-fg/45 uppercase tracking-wide">{t("AI 助手")}</span>
-        <span className="text-[11px] text-fg/35 truncate">{claude?.version ? `claude ${claude.version.split(" ")[0]}` : ""}</span>
+        <span className="text-[11px] text-fg/35 truncate">
+          {apiBackend ? llm[apiBackend]?.model || t("未指定模型") : claude?.version ? `claude ${claude.version.split(" ")[0]}` : ""}
+        </span>
         <IconButton icon={Eraser} label={t("清除對話")} iconSize={14} box="w-6 h-6" className="ml-auto" onClick={clear} disabled={busy} />
         <IconButton icon={ChevronRight} label={t("收合面板")} iconSize={16} box="w-6 h-6" onClick={() => setOpen(false)} />
       </div>
 
       {!ready && (
         <div className="px-3 py-2 text-[11px] text-warning/90 bg-warning/10 border-b border-fg/10 leading-relaxed">
-          {claude ? t("找不到 claude CLI 或尚未登入：請安裝 Claude Code 並執行 claude login。") : t("偵測 claude CLI 中…")}
+          {apiBackend
+            ? llm[apiBackend]?.base
+              ? t("這個 API 後端還缺模型或金鑰，請到設定的「AI 後端設定」補上。")
+              : t("這個 API 後端還沒設定 Base URL，請到設定的「AI 後端設定」填。")
+            : claude
+              ? t("找不到 claude CLI 或尚未登入：請安裝 Claude Code 並執行 claude login。")
+              : t("偵測 claude CLI 中…")}
         </div>
       )}
 
@@ -82,7 +99,28 @@ export default function AssistantPanel({ embedded = false }: { embedded?: boolea
         )}
       </div>
 
-      <div className="shrink-0 border-t border-fg/10 p-2">
+      <div className="shrink-0 border-t border-fg/10 p-2 space-y-1.5">
+        {skills.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[10px] text-fg/30 mr-0.5">{t("技能")}</span>
+            {skills.map((sk) => {
+              const on = skillsOn.has(sk.id);
+              return (
+                <button
+                  key={sk.id}
+                  type="button"
+                  onClick={() => void toggleSkill(sk.id)}
+                  title={sk.body}
+                  className={`px-1.5 py-0.5 rounded-full border text-[10px] ${
+                    on ? "border-accent/60 bg-accent/15 text-accent" : "border-fg/10 text-fg/45 hover:text-fg/70 hover:bg-fg/5"
+                  }`}
+                >
+                  {sk.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="flex gap-1 items-end">
           <textarea
             value={input}
@@ -93,7 +131,7 @@ export default function AssistantPanel({ embedded = false }: { embedded?: boolea
                 submit();
               }
             }}
-            placeholder={ready ? t("例：把 10 分鐘後的「就是」都剪掉，但句首的留著") : t("需要 claude CLI")}
+            placeholder={ready ? t("例：把 10 分鐘後的「就是」都剪掉，但句首的留著") : apiBackend ? t("需要先設定 API 後端") : t("需要 claude CLI")}
             disabled={!ready}
             rows={2}
             className="flex-1 resize-none rounded-sm bg-inset border border-fg/10 px-2 py-1.5 text-sm outline-none focus:border-accent/60 disabled:opacity-50"

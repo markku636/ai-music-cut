@@ -268,23 +268,37 @@ AI Podcast / 音訊智慧剪輯桌面工具（Tauri 2 + React 18），也有 CLI
 
 ## AI 後端
 
-**結構化產出**（AI 判讀、審核、節目筆記）可以選 **Claude Code** 或 **Codex**。
-codex 走 `codex exec --output-schema`，模型在 codex 自己的 `$CODEX_HOME/config.toml` 指定。
-沒安裝的話：`npm i -g @openai/codex` 再 `codex login`。
+四選一，**判讀、審核、節目筆記與 AI 助手都走同一個後端**：
 
-**點狀態列的 `claude 2.1.201 · sonnet` 就能切**後端與模型（判讀 / 審核各一個）。
+| 後端 | 怎麼認證 | 需要裝什麼 |
+| --- | --- | --- |
+| **Claude Code** | 你自己的 Claude 訂閱登入 | `claude` CLI |
+| **Codex** | 你自己的 ChatGPT 訂閱登入 | `codex` CLI |
+| **Anthropic 相容 API** | Base URL + API Key | 不用裝東西 |
+| **OpenAI 相容 API** | Base URL + API Key（地端可免） | 不用裝東西 |
+
+兩個 API 後端打的是各家的公開協定（`/v1/messages` 與 `/chat/completions`），
+所以官方 API、代理（OpenRouter / DeepSeek / Kimi / GLM / Groq）與地端推論
+（Ollama / LM Studio / vLLM）都能接。設定裡有預設清單可以一鍵帶入 Base URL，
+按「測試連線」會直接跟端點要模型清單（要不到就自己填模型名，不當成錯誤）。
+
+**金鑰只存 OS 原生金鑰庫**（Windows 認證管理員 / macOS Keychain / Linux Secret Service），
+設定檔裡永遠沒有金鑰欄位，前端也拿不到明文 —— 只問得到「有沒有設定」。
+也可以改用環境變數 `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`（會蓋過金鑰庫裡的）。
+
+**點狀態列那顆按鈕就能切**後端與模型（claude 後端可分開指定判讀 / 審核模型）。
 模型是每次跑判讀之前都可能想換的東西 —— 難判的那一集先用 opus 跑一次、其他用 haiku 掃 ——
 埋在設定對話框第二段等於每次三下點擊。選 codex 時模型下拉不是灰掉而是換成一句說明
 （codex 的模型在它自己的 config.toml，App 寫不進去）：只灰掉不解釋，人只會以為壞了。
 
 ![切模型](docs/screenshot-model.png)
 
-> **AI 助手（工具迴圈）一律走 claude**，不受這個設定影響。
-> 助手是透過 App 內建的 MCP server 直接操作剪輯決策，而 codex 要連上那個 server
-> 得改使用者自己的 `config.toml` —— 那是使用者環境的設定，App 寫不進去。
-> 設定畫面會把這件事講出來，不會讓人以為切過去什麼都能用。
+> **選 codex 時 AI 助手仍走 claude**：助手是透過 App 內建的 MCP server 直接操作剪輯決策，
+> 而 codex 要連上那個 server 得改使用者自己的 `config.toml` —— 那是使用者環境的設定，
+> App 寫不進去。**API 後端沒有這個限制**：工具迴圈在 App 的 Rust 端自己跑，
+> 直接呼叫同一個 MCP bridge，所以那些剪輯工具照樣可用。
 
-## 提示詞
+## 提示詞與技能
 
 四個角色的系統提示詞（剪輯 / 審核 / 節目筆記 / 助手）可以在 App 裡直接改（工具列「提示詞」）。
 這些字串就是 AI 的行為本身 —— 判讀鬆緊、審核立場、節目筆記的口氣 —— 寫死在原始碼裡

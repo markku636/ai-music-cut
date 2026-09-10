@@ -10,6 +10,7 @@ mod error;
 mod ffmpeg;
 mod formats;
 mod fx;
+mod llm;
 mod mcp;
 mod merge;
 mod mix;
@@ -118,6 +119,10 @@ pub fn run() {
             agent::claude_send,
             agent::claude_cancel,
             agent::claude_structured,
+            agent::llm_key_set,
+            agent::llm_key_status,
+            agent::llm_list_models,
+            agent::llm_status,
             mcp::mcp_set_tools,
             mcp::mcp_tool_result,
             mcp::mcp_info,

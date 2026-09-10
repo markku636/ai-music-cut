@@ -18,8 +18,13 @@ pub struct AppState {
     pub settings: Arc<RwLock<store::AppSettings>>,
     /// 可取消工作的旗標（key = job_id）：分析 / 輸出等長跑 ffmpeg 迴圈定期檢查。
     pub cancel_flags: Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>,
-    /// AI 助手進行中的問答背景任務（key = req_id）。取消時 abort 即終止 claude 子程序。
+    /// AI 助手進行中的問答背景任務（key = req_id）。取消時 abort 即終止 claude 子程序，
+    /// HTTP 供應商則是 drop 掉 reqwest 串流關閉連線。
     pub agent_jobs: Arc<Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>>,
+    /// HTTP 供應商（Anthropic / OpenAI 相容）的對話歷史（key = session id）。
+    /// CLI 的 session 由 CLI 自己保管，走 HTTP 就得自己存 —— 每回合整串重送，
+    /// 故 `llm::agent_loop::trim_history` 會修剪長度。App 關掉即消失（不落地）。
+    pub llm_sessions: Arc<Mutex<HashMap<String, Vec<crate::llm::Message>>>>,
     /// 內建 MCP server 橋接（port / token / 工具目錄 / 等待中的工具呼叫）。
     pub mcp: Arc<crate::mcp::McpBridge>,
     /// 安裝檔內建的 ffmpeg 目錄（setup 時從 resource_dir 算出；dev / 未內建時為 None）。
@@ -39,6 +44,7 @@ impl AppState {
             settings: Arc::new(RwLock::new(store::AppSettings::default())),
             cancel_flags: Arc::new(Mutex::new(HashMap::new())),
             agent_jobs: Arc::new(Mutex::new(HashMap::new())),
+            llm_sessions: Arc::new(Mutex::new(HashMap::new())),
             mcp: Arc::new(crate::mcp::McpBridge::new()),
             bundled_ffmpeg: Arc::new(RwLock::new(None)),
             record_jobs: Arc::new(crate::record::RecordRegistry::default()),

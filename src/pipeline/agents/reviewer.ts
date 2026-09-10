@@ -12,7 +12,7 @@ import { resolvePrompt } from "../../analysis/prompts";
 import { REVIEW_SCHEMA, type ReviewOutput } from "../../analysis/llm/schema";
 import type { JudgeWindow } from "../../analysis/llm/windows";
 import type { Candidate, DecisionMap, Opinion, Transcript } from "../../analysis/types";
-import { agentBackend } from "../../store/settings";
+import { agentBackend, reviewModelLabel } from "../../store/settings";
 
 export interface ReviewResult {
   /** 候選 id → 審核意見。 */
@@ -46,7 +46,8 @@ export function validateReview(raw: unknown, w: JudgeWindow, alias: Map<string, 
 }
 
 export interface ReviewWindowOptions {
-  model: string;
+  /** 送給後端的模型名；API 供應商為 null（模型在後端設定裡）。 */
+  model: string | null;
   systemPrompt?: string;
   timeoutMs?: number;
 }
@@ -70,7 +71,8 @@ export async function reviewWindow(
   const now = new Date().toISOString();
   try {
     const raw = await api.claudeStructured(r.prompt, REVIEW_SCHEMA, opts.model, sys, opts.timeoutMs ?? 240_000, agentBackend());
-    return validateReview(raw, w, r.alias, opts.model, now);
+    // 存證用的名字不能是 null：API 供應商的模型名要從設定拿。
+    return validateReview(raw, w, r.alias, opts.model ?? reviewModelLabel(), now);
   } catch (e) {
     // 單一視窗失敗就降級成「只有剪輯意見」，不要讓整趟判讀失敗
     return { opinions: {}, warnings: [`${w.id}: ${errMessage(e)}`] };

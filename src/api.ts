@@ -7,8 +7,18 @@ import type { RenderFormat } from "./analysis/formats";
 export interface AppSettings {
   ffmpeg_path: string | null;
   claude_model: string;
-  /** 結構化產出的 CLI："claude" 或 "codex"。 */
+  /** AI 後端："claude" / "codex"（本機 CLI）或 "anthropic-api" / "openai-api"（HTTP 相容端點）。 */
   agent_backend: string;
+  /** Anthropic 相容端點（金鑰在 OS keychain，不在這裡）。 */
+  llm_anthropic_base_url: string;
+  llm_anthropic_model: string;
+  /** OpenAI 相容端點（金鑰在 OS keychain，不在這裡）。 */
+  llm_openai_base_url: string;
+  llm_openai_model: string;
+  /** 助手技能：使用者自訂的那幾條（JSON 字串；形狀見 assistant/skills.ts）。內建的不存。 */
+  assistant_skills: string[];
+  /** 勾選中的技能 id（含內建）。 */
+  assistant_skills_on: string[];
   claude_review_model: string;
   /** "editor" | "editor+reviewer" */
   judge_roles: string;
@@ -33,6 +43,15 @@ export interface AppSettings {
   filler_observations: string[];
   /** 按過「不要」的詞表建議（norm）。不存的話下次打開又會跳出同一條。 */
   filler_dismissed: string[];
+}
+
+/** HTTP AI 後端的狀態（Base URL 正規化與地端判定都由 Rust 端算，前端不重複實作）。 */
+export interface LlmStatus {
+  base: string;
+  model: string;
+  has_key: boolean;
+  local: boolean;
+  ready: boolean;
 }
 
 export interface FfmpegStatus {
@@ -550,6 +569,12 @@ export const api = {
    */
   claudeStructured: (prompt: string, schema: unknown, model: string | null, systemPrompt: string | null, timeoutMs?: number, backend?: string | null) =>
     invoke<unknown>("claude_structured", { prompt, schema, model, systemPrompt, timeoutMs: timeoutMs ?? null, backend: backend ?? null }),
+  // HTTP AI 後端（Anthropic / OpenAI 相容）：金鑰只進 OS keychain，前端只能寫入與查詢「有沒有」。
+  llmKeySet: (kind: string, key: string) => invoke<void>("llm_key_set", { kind, key }),
+  llmKeyStatus: (kind: string) => invoke<boolean>("llm_key_status", { kind }),
+  llmStatus: (kind: string) => invoke<LlmStatus>("llm_status", { kind }),
+  // 模型清單（同時當「測試連線」）。抓不到回空陣列，UI 退回手填。
+  llmListModels: (kind: string, baseUrl?: string | null) => invoke<string[]>("llm_list_models", { kind, baseUrl: baseUrl ?? null }),
   mcpSetTools: (tools: McpToolDef[]) => invoke<number>("mcp_set_tools", { tools }),
   mcpToolResult: (id: string, result: unknown, error: string | null) => invoke<boolean>("mcp_tool_result", { id, result, error }),
   mcpInfo: () => invoke<McpInfo>("mcp_info"),

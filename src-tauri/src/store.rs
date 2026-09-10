@@ -1,8 +1,9 @@
 //! App 設定持久化 + OS keychain。
 //!
 //! - `settings.json` 放 `<app_config_dir>`（原子寫入：tmp + rename）。
-//! - ttls API key **只存 OS keychain**（service `ai-music-cut` / account `ttls-api-key`），
-//!   永不落地磁碟、永不回傳前端（`ttls_key_status` 只回末 4 碼提示）。
+//! - API 金鑰**只存 OS keychain**（service `ai-music-cut`）：ttls 的 `ttls-api-key`、
+//!   Anthropic / OpenAI 相容供應商的 `llm-anthropic-key` / `llm-openai-key`。
+//!   永不落地磁碟、永不回傳前端（只回「有沒有」）。
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
@@ -14,6 +15,8 @@ use crate::error::{AppError, AppResult};
 // 改名 AI Podcast Cut 之後 service 名刻意不動：換了名字舊使用者的 API key 就找不到了。
 pub const SETTINGS_FILE: &str = "settings.json";
 pub const TTLS_KEY_ACCOUNT: &str = "ttls-api-key";
+/// keychain service 名。改名 AI Podcast Cut 時刻意沒動它 —— 換了舊使用者的金鑰就找不到。
+const KEYCHAIN_SERVICE: &str = "ai-music-cut";
 
 /// App 全域設定（磁碟格式）。**沒有任何 secret 欄位**——金鑰在 keychain。
 /// 新安裝預設走**本機**辨識。
@@ -26,6 +29,18 @@ pub const TTLS_KEY_ACCOUNT: &str = "ttls-api-key";
 
 fn default_agent_backend() -> String {
     "claude".to_string()
+}
+
+fn default_anthropic_base_url() -> String {
+    "https://api.anthropic.com".to_string()
+}
+
+fn default_anthropic_model() -> String {
+    "claude-sonnet-5".to_string()
+}
+
+fn default_openai_base_url() -> String {
+    "https://api.openai.com/v1".to_string()
 }
 
 /// 使用者另存的輸出預設。內建的那幾個寫在前端，**不存這裡** ——
@@ -49,10 +64,32 @@ pub struct AppSettings {
     pub ffmpeg_path: Option<String>,
     /// claude CLI 的 --model（空＝CLI 預設）。
     pub claude_model: String,
-    /// 結構化產出要用哪個 CLI："claude"（預設）或 "codex"。
-    /// 助手的工具迴圈不受這個影響，一律 claude。
+    /// AI 後端："claude"（預設）/ "codex" / "anthropic-api" / "openai-api"。
+    ///
+    /// 前兩個是本機 CLI（吃使用者的訂閱登入），後兩個直接打相容端點。
+    /// codex 的助手工具迴圈仍走 claude（App 寫不進使用者的 config.toml），
+    /// 但 API 供應商的助手是自家 agent loop（`llm::agent_loop`），工具照樣可用。
     #[serde(default = "default_agent_backend")]
     pub agent_backend: String,
+    /// Anthropic 相容端點的 Base URL 與模型（金鑰在 keychain）。
+    #[serde(default = "default_anthropic_base_url")]
+    pub llm_anthropic_base_url: String,
+    #[serde(default = "default_anthropic_model")]
+    pub llm_anthropic_model: String,
+    /// OpenAI 相容端點的 Base URL 與模型（金鑰在 keychain）。模型沒有合理預設，留空要求填。
+    #[serde(default = "default_openai_base_url")]
+    pub llm_openai_base_url: String,
+    #[serde(default)]
+    pub llm_openai_model: String,
+    /// 助手的技能範本，一筆一個 JSON 字串（形狀由前端 assistant/skills.ts 定義）。
+    ///
+    /// 跟 project_templates 一樣存不透明字串：欄位會跟著功能長，讀壞的前端自己濾掉。
+    /// 內建技能**不存這裡**，才能跟著版本更新；這裡只有使用者自己寫的那幾條。
+    #[serde(default)]
+    pub assistant_skills: Vec<String>,
+    /// 目前勾選中的技能 id（含內建的）。
+    #[serde(default)]
+    pub assistant_skills_on: Vec<String>,
     /// 審核 agent 用的模型（第二輪覆核；預設用比較便宜的 haiku）。
     pub claude_review_model: String,
     /// AI 判讀跑幾個角色："editor"＝只有剪輯；"editor+reviewer"＝剪輯提議、審核覆核。
@@ -106,6 +143,12 @@ impl Default for AppSettings {
             ffmpeg_path: None,
             claude_model: "sonnet".to_string(),
             agent_backend: default_agent_backend(),
+            llm_anthropic_base_url: default_anthropic_base_url(),
+            llm_anthropic_model: default_anthropic_model(),
+            llm_openai_base_url: default_openai_base_url(),
+            llm_openai_model: String::new(),
+            assistant_skills: Vec::new(),
+            assistant_skills_on: Vec::new(),
             claude_review_model: "haiku".to_string(),
             judge_roles: "editor+reviewer".to_string(),
             default_aggressiveness: 50,
@@ -183,8 +226,38 @@ pub async fn write_json<T: Serialize>(app: &AppHandle, file: &str, value: &T) ->
 
 // ---- keychain ----
 
+/// 寫入 keychain。secret 為空字串時視為「刪除該項」。
+pub fn kc_set(account: &str, secret: &str) -> AppResult<()> {
+    let entry = keyring::Entry::new(KEYCHAIN_SERVICE, account)
+        .map_err(|e| AppError::Storage(format!("keychain 開啟失敗：{e}")))?;
+    if secret.is_empty() {
+        let _ = entry.delete_credential();
+        return Ok(());
+    }
+    entry
+        .set_password(secret)
+        .map_err(|e| AppError::Storage(format!("keychain 寫入失敗：{e}")))?;
+    Ok(())
+}
 
-
+/// 讀取 keychain。不存在或任何錯誤都回 None（不洩漏 secret，只記 account）。
+pub fn kc_get(account: &str) -> Option<String> {
+    let entry = match keyring::Entry::new(KEYCHAIN_SERVICE, account) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("[store] keychain 開啟失敗 ({account})：{e}");
+            return None;
+        }
+    };
+    match entry.get_password() {
+        Ok(p) => Some(p),
+        Err(keyring::Error::NoEntry) => None,
+        Err(e) => {
+            eprintln!("[store] keychain 讀取失敗 ({account})：{e}");
+            None
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
